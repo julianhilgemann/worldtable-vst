@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<FILTERGRAPH>
+  <!-- Test rig for JUCE's AudioPluginHost (launch with tools/host/run_host.sh):
+       on-screen keyboard -> MIDI Input -> Worldtable (AU) -> Audio Output.
+       Needs the AU installed: configure with -DWORLDTABLE_COPY_PLUGINS=ON.
+       No absolute paths: the AU is found by its component codes (aumu Wtbl Wrld). -->
+  <FILTER uid="1" x="0.25" y="0.12">
+    <PLUGIN name="MIDI Input" format="Internal" category="I/O devices" manufacturer="JUCE"
+            file="" uniqueId="0" isInstrument="0" numInputs="0" numOutputs="0"/>
+  </FILTER>
+  <FILTER uid="2" x="0.5" y="0.45" uiopen_Normal="1" uiLastX_Normal="660" uiLastY_Normal="80">
+    <PLUGIN name="Worldtable" format="AudioUnit" category="Synths" manufacturer="Worldtable"
+            file="AudioUnit:Synths/aumu,Wtbl,Wrld" uniqueId="0" isInstrument="1"
+            numInputs="0" numOutputs="2"/>
+  </FILTER>
+  <FILTER uid="3" x="0.5" y="0.85">
+    <PLUGIN name="Audio Output" format="Internal" category="I/O devices" manufacturer="JUCE"
+            file="" uniqueId="0" isInstrument="0" numInputs="2" numOutputs="0"/>
+  </FILTER>
+  <!-- MIDI Logger (built into the host) shows that keyboard MIDI is flowing. -->
+  <FILTER uid="4" x="0.8" y="0.45" uiopen_Normal="1" uiLastX_Normal="60" uiLastY_Normal="560">
+    <PLUGIN name="MIDI Logger" format="Internal" category="Synth" manufacturer="JUCE"
+            file="" uniqueId="0" isInstrument="0" numInputs="0" numOutputs="0"/>
+  </FILTER>
+  <CONNECTION srcFilter="1" srcChannel="4096" dstFilter="2" dstChannel="4096"/>
+  <CONNECTION srcFilter="1" srcChannel="4096" dstFilter="4" dstChannel="4096"/>
+  <CONNECTION srcFilter="2" srcChannel="0" dstFilter="3" dstChannel="0"/>
+  <CONNECTION srcFilter="2" srcChannel="1" dstFilter="3" dstChannel="1"/>
+</FILTERGRAPH>
