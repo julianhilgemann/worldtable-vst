@@ -1,0 +1,44 @@
+# Single source of truth for all plugin parameters.
+# tools/gen_params.py generates C++ (APVTS layout + ID constants) and JS (UI).
+# IDs are permanent once released. Draft — finish in Phase 1.
+
+version: 1
+groups:
+  global:
+    - { id: mode,        name: "Mode",        type: choice, choices: [Listen, Play], default: Listen }
+    - { id: root,        name: "Root",        type: choice, choices: [C, C#, D, D#, E, F, F#, G, G#, A, A#, B], default: C }
+    - { id: scale,       name: "Scale",       type: choice, choices: [Major, Minor, Dorian, Lydian, PentaMinor, Just], default: Dorian }
+    - { id: sensitivity, name: "World Sensitivity", type: float, min: 0, max: 1, default: 0.5, modulatable: false }
+    - { id: master,      name: "Master",      type: float, min: -60, max: 6, default: -6, unit: dB }
+
+  oscA:
+    - { id: oscA_table,  name: "Osc A Table", type: choice, choices: [Factory, WorldSeries, WorldHarmonics], default: WorldHarmonics }
+    - { id: oscA_pos,    name: "Osc A Position", type: float, min: 0, max: 1, default: 0.3, modulatable: true }
+    - { id: oscA_level,  name: "Osc A Level", type: float, min: 0, max: 1, default: 0.8, modulatable: true }
+  oscB:
+    - { id: oscB_pos,    name: "Osc B Position", type: float, min: 0, max: 1, default: 0.6, modulatable: true }
+    - { id: oscB_level,  name: "Osc B Level", type: float, min: 0, max: 1, default: 0.5, modulatable: true }
+  voice:
+    - { id: unison,      name: "Unison", type: int, min: 1, max: 4, default: 2 }
+    - { id: detune,      name: "Detune", type: float, min: 0, max: 1, default: 0.2, modulatable: true }
+    - { id: noise,       name: "Noise",  type: float, min: 0, max: 1, default: 0.05, modulatable: true }
+    - { id: attack,      name: "Attack", type: float, min: 0.01, max: 30, default: 4, unit: s, skew: 0.3 }
+    - { id: release,     name: "Release", type: float, min: 0.05, max: 60, default: 12, unit: s, skew: 0.3 }
+  filter:
+    - { id: cutoff,      name: "Cutoff", type: float, min: 20, max: 20000, default: 1800, unit: Hz, skew: 0.25, modulatable: true }
+    - { id: reso,        name: "Resonance", type: float, min: 0, max: 1, default: 0.15, modulatable: true }
+  lfo:   # repeated ×4 by the generator: lfo1_rate … lfo4_shape
+    template:
+      - { id: "lfo{n}_rate",  name: "LFO {n} Rate", type: float, min: 0.001, max: 2, default: 0.02, unit: Hz, skew: 0.2, modulatable: true }
+      - { id: "lfo{n}_shape", name: "LFO {n} Shape", type: choice, choices: [Sine, Triangle, SmoothRandom, Breath], default: Sine }
+    count: 4
+  fx:
+    - { id: delay_mix,   name: "Delay Mix", type: float, min: 0, max: 1, default: 0.2, modulatable: true }
+    - { id: verb_size,   name: "Reverb Size", type: float, min: 0, max: 1, default: 0.8, modulatable: true }
+    - { id: verb_mix,    name: "Reverb Mix", type: float, min: 0, max: 1, default: 0.45, modulatable: true }
+    - { id: verb_freeze, name: "Reverb Freeze", type: bool, default: false }
+
+# Non-automatable state (ValueTree, not APVTS): mappings, focus, frozen snapshot.
+state:
+  data_slots: 8          # D1…D8
+  mod_matrix_slots: 16
