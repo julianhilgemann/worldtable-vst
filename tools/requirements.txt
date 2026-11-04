@@ -1,0 +1,3 @@
+# Python deps for repo tooling (gen_params.py, check_mock_params.py, record_fixtures.py).
+# Install: uv venv .venv && uv pip install -r tools/requirements.txt
+PyYAML==6.0.3

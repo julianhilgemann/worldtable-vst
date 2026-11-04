@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Build output
+/build/
+/build-*/
+/cmake-build-*/
+/out/
+
+# Machine-local CMake presets (e.g. build dir outside a path with '&')
+CMakeUserPresets.json
+
+# Dependency caches (CPM / FetchContent)
+/.cpm-cache/
+/_deps/
+
+# Python tooling
+/.venv/
+__pycache__/
+*.pyc
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+
+# Offline renders are produced per PR for listening; keep them out of git unless explicitly added
+/renders/*.wav

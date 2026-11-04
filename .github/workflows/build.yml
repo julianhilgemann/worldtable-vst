@@ -1,0 +1,47 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS,   os: macos-15 }      # arm64
+          - { name: Windows, os: windows-2025 }
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # ctest + pluginval are wired in T0.3.
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v7
+        with:
+          name: Worldtable-${{ matrix.name }}
+          path: |
+            build/Worldtable_artefacts/Release/VST3
+            build/Worldtable_artefacts/Release/AU
+            build/Worldtable_artefacts/Release/Standalone
+          if-no-files-found: error
+          retention-days: 14
