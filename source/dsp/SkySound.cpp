@@ -14,6 +14,11 @@ namespace worldtable::dsp
 
 static_assert (! (Exciter::kTickSeconds < sky::SkyModel::kTickSeconds) && ! (Exciter::kTickSeconds > sky::SkyModel::kTickSeconds),
                "the exciter's tick is the Sky Model's");
+static_assert (static_cast<int> (Phase::quiet) == static_cast<int> (sky::SkyPhase::quiet)
+               && static_cast<int> (Phase::growth) == static_cast<int> (sky::SkyPhase::growth)
+               && static_cast<int> (Phase::onset) == static_cast<int> (sky::SkyPhase::onset)
+               && static_cast<int> (Phase::recovery) == static_cast<int> (sky::SkyPhase::recovery),
+               "Harmony's Phase mirrors the sky's");
 
 namespace
 {
@@ -23,6 +28,8 @@ constexpr double kDisplacementForFullDetuneKm = 160.0;
 constexpr double kDriftKnotSeconds = 20.0;
 
 double midiHz (double note) noexcept { return 440.0 * std::pow (2.0, (note - 69.0) / 12.0); }
+
+int minuteOf (double modelTimeUtc) noexcept { return static_cast<int> (std::floor (modelTimeUtc / 60.0)); }
 } // namespace
 
 void SkySound::prepare (double rate, int nodes, uint32_t soundSeed, const Settings& s, const Chord& start) noexcept
@@ -57,7 +64,10 @@ void SkySound::prepare (double rate, int nodes, uint32_t soundSeed, const Settin
     pending = {};
     pendingValid = pendingUrgent = false;
     changes = 0;
+    chordTick = 0;
+    pendingFromHarmony = false;
     guardResets = 0;
+    harmonyEngine.discardPending();
     voiceBank (0, applied, -1);
     resonators.setActive (0, true);
 }
@@ -74,6 +84,7 @@ void SkySound::requestChord (const Chord& chord, bool urgent) noexcept
     pending = chord;
     pendingValid = true;
     pendingUrgent = urgent;
+    pendingFromHarmony = false;
 }
 
 int SkySound::note (int bank, Layer layer, int voice) const noexcept
@@ -105,8 +116,31 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
     const double realS = realSeconds();
 
     for (const auto& e : events)
+    {
         if (e.type == sky::SkyEvent::Type::onset)
+        {
             exciter.onset (realS, e.strength, e.node * vpn);
+            harmonyEngine.onOnset (e.strength, minuteOf (e.modelTimeUtc));
+        }
+        else if (e.type == sky::SkyEvent::Type::phase && e.phase != sky::SkyPhase::onset)
+        {
+            harmonyEngine.onPhase (static_cast<Phase> (e.phase), minuteOf (e.modelTimeUtc));
+        }
+    }
+    harmonyEngine.update (realS);
+    if (! pendingValid && harmonyEngine.hasPending())
+    {
+        pending = harmonyEngine.pendingChord();
+        pendingUrgent = harmonyEngine.pendingUrgent();
+        pendingValid = true;
+        pendingFromHarmony = true;
+    }
+    else if (pendingFromHarmony && pendingValid && harmonyEngine.hasPending())
+    {
+        // A key, Mood or Transpose change while the chord waits is heard when it lands.
+        pending = harmonyEngine.pendingChord();
+        pendingUrgent = harmonyEngine.pendingUrgent();
+    }
 
     // Chord changes: the old bank retires once silent (one T60 after the crossfade), then the next
     // may come. An urgent change doesn't wait: it ends the crossfade and damps the old bank over
@@ -135,7 +169,12 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
         dampStart = -1.0;
     }
     if (pendingValid && xf >= 1.0 && ! resonators.isActive (other))
+    {
+        const bool fromHarmony = pendingFromHarmony;
         applyChord (realS);
+        if (fromHarmony)
+            harmonyEngine.take (realS);
+    }
 
     // pan and presence slew toward the dome geometry (updated at 10 Hz)
     if (tickCount % 10 == 1 || ! panInit)
@@ -278,6 +317,8 @@ void SkySound::applyChord (double realS) noexcept
     xfStart = realS;
     applied = pending;
     pendingValid = false;
+    pendingFromHarmony = false;
+    chordTick = tickCount;
     ++changes;
 }
 

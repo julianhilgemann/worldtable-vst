@@ -1,5 +1,6 @@
 #include "AllocationCounter.h"
 #include "data/SkyDays.h"
+#include "dsp/Harmony.h"
 #include "dsp/ResonatorBank.h"
 #include "dsp/SkySound.h"
 #include "dsp/Voicing.h"
@@ -297,6 +298,8 @@ const SoundGolden& soundGolden()
 }
 
 /** The notes of `bank` match the golden's, per layer and voice. Returns the mismatches. */
+juce::String labelOf (const dsp::Chord& chord) { return juce::String::fromUTF8 (dsp::nameOf (chord).label.data()); }
+
 int noteMismatches (const dsp::SkySound& sound, int bank, const juce::var& notes)
 {
     int bad = 0;
@@ -555,4 +558,118 @@ TEST_CASE ("SkySound takes waiting chords on the same ticks at 44.1 and 48 kHz",
     CHECK (at48[0] == 21);
     CHECK (at48[1] >= 21 + 120 + 200);   // the 1.2 s fade, then the 2 s ring-out
     CHECK (ticksOfChanges (44100.0) == at48);
+}
+
+//==================================================================================================
+TEST_CASE ("the sky's progression writes the golden's chord changes", "[sound][progression][golden]")
+{
+    const auto& g = soundGolden();
+    const auto& json = g.json;
+    const auto* applied = json["applied"].getArray();
+    REQUIRE (applied != nullptr);
+    const auto seed = static_cast<uint32_t> (static_cast<int> (json["seed"]));
+
+    struct Change { uint64_t tick; int bank; juce::String label; };
+    struct Run
+    {
+        std::vector<Change> changes;
+        std::array<std::array<std::array<int, 128>, dsp::kNumLayers>, 2> notes {};
+        int voices = 0;
+        int64_t allocations = 0;
+        juce::String startLabel;
+        int startNoteErrors = 0;
+    };
+
+    const auto run = [&] (int block, double seconds) -> Run
+    {
+        auto rt = stormRuntime (48000.0, g.startUtc, json["speed"]);
+        rt->process (0, nullptr);   // apply the seek so current().phase is the phase at 17:20
+        dsp::SkySound sound;
+        auto& harmony = sound.harmony();
+        harmony.setSeed (seed);
+        harmony.setKey (2);
+        harmony.setMood (dsp::Mood::bright);
+        harmony.setProgression (1.0);
+        harmony.start (static_cast<dsp::Phase> (rt->model().current().phase));
+
+        Run r;
+        r.startLabel = labelOf (harmony.chord());
+        sound.prepare (48000.0, kNodes, seed, dsp::SkySound::Settings {}, harmony.chord());
+        r.startNoteErrors = noteMismatches (sound, 0, json["start"]["notes"]);
+
+        const auto total = static_cast<int> (std::lround (seconds * 48000.0));
+        std::vector<float> l (static_cast<size_t> (total)), rr (static_cast<size_t> (total));
+        uint32_t seen = sound.chordChanges();
+        for (int done = 0; done < total;)
+        {
+            const int n = std::min (block > 0 ? block : 64 + static_cast<int> ((static_cast<uint64_t> (done) * 7919u) % 1937u), total - done);
+            const auto before = testing::allocationsOnThisThread();
+            sound.process (*rt, l.data() + done, rr.data() + done, n);
+            r.allocations += testing::allocationsOnThisThread() - before;
+            if (sound.chordChanges() != seen)
+            {
+                seen = sound.chordChanges();
+                r.changes.push_back ({ sound.lastChordTick(), sound.currentBank(), labelOf (sound.chord()) });
+            }
+            done += n;
+        }
+        r.voices = sound.voices();
+        for (int b = 0; b < 2; ++b)
+            for (int layer = 0; layer < dsp::kNumLayers; ++layer)
+                for (int v = 0; v < r.voices; ++v)
+                    r.notes[static_cast<size_t> (b)][static_cast<size_t> (layer)][static_cast<size_t> (v)]
+                        = sound.note (b, static_cast<Layer> (layer), v);
+        return r;
+    };
+
+    const auto full = run (480, g.seconds);
+    CHECK (full.startLabel == juce::String (json["start"]["label"].toString()));
+    CHECK (full.startNoteErrors == 0);
+    CHECK (full.changes.size() == static_cast<size_t> (applied->size()));
+    CHECK (full.allocations == 0);
+
+    for (size_t i = 0; i < full.changes.size() && i < static_cast<size_t> (applied->size()); ++i)
+    {
+        const auto& want = (*applied)[static_cast<int> (i)];
+        INFO ("change " << i);
+        CHECK (full.changes[i].tick == static_cast<uint64_t> (static_cast<int> (want["tick"])));
+        CHECK (full.changes[i].bank == static_cast<int> (want["bank"]));
+        CHECK (full.changes[i].label == juce::String (want["label"].toString()));
+
+        const auto bank = static_cast<size_t> (static_cast<int> (want["bank"]));
+        int bad = 0;
+        for (int layer = 0; layer < dsp::kNumLayers; ++layer)
+            for (int v = 0; v < full.voices; ++v)
+                if (full.notes[bank][static_cast<size_t> (layer)][static_cast<size_t> (v)]
+                    != static_cast<int> (want["notes"][layer][v]))
+                    ++bad;
+        CHECK (bad == 0);
+    }
+
+    if (full.changes.size() == 2)   // the golden's storm: onset at 4692, recovery at 10863
+    {
+        CHECK (full.changes[0].tick == 4692);
+        CHECK (full.changes[0].label == juce::String::fromUTF8 ("B♭maj7"));
+        CHECK (full.changes[1].tick == 10863);
+        CHECK (full.changes[1].label == juce::String::fromUTF8 ("Gm add9"));
+    }
+
+    // Block size: the first change must land on the same tick with a 37-sample block.
+    const auto small = run (37, 60.0);
+    REQUIRE_FALSE (small.changes.empty());
+    CHECK (small.changes[0].tick == full.changes[0].tick);
+    CHECK (small.changes[0].label == full.changes[0].label);
+    CHECK (small.changes[0].bank == full.changes[0].bank);
+    CHECK (small.allocations == 0);
+
+    const auto mid = run (128, 60.0);
+    REQUIRE_FALSE (mid.changes.empty());
+    CHECK (mid.changes[0].tick == full.changes[0].tick);
+    CHECK (mid.changes[0].label == full.changes[0].label);
+
+    const auto mixed = run (0, 60.0);   // deterministic 64–2000 blocks
+    REQUIRE_FALSE (mixed.changes.empty());
+    CHECK (mixed.changes[0].tick == full.changes[0].tick);
+    CHECK (mixed.changes[0].label == full.changes[0].label);
+    CHECK (mixed.allocations == 0);
 }

@@ -15,7 +15,7 @@
 //   WorldtableRender --sky --out renders/T3.1-storm.wav [--day 2024-05-10] [--from 17:20]
 //                    [--speed 24] [--seconds 300] [--voices 64|128] [--seed 1] [--gain 0] [--dry]
 //                    [--mood bright|bittersweet|nocturnal] [--root D] [--chord 0..2]
-//                    [--transpose 0] [--register 0] [--spread 2]
+//                    [--transpose 0] [--register 0] [--spread 2] [--progression 0..1]
 
 #include "PluginProcessor.h"
 #include "data/SkyDays.h"
@@ -89,6 +89,7 @@ struct SkyRenderOptions
     worldtable::dsp::Mood mood = worldtable::dsp::Mood::bright;
     int root = 2, chord = 0, transpose = 0;
     double registerSemitones = 0.0, spread = 2.0;
+    double progression = 0.0;           // 0: hold the chord; 1: the sky writes the progression
 };
 
 bool parseMood (const juce::String& text, worldtable::dsp::Mood& mood)
@@ -136,27 +137,33 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
         : feed.dayStartUtc() + 3600.0 * o.from.upToFirstOccurrenceOf (":", false, false).getIntValue()
                              + 60.0 * o.from.fromFirstOccurrenceOf (":", false, false).getIntValue();
 
-    // start early enough that the pre-roll ends at `from` (model time per tick: 10 ms × speed)
+    // A progression run starts exactly at `from` (as the golden does); the held-chord run keeps the
+    // 20 s pre-roll so its resonators are already ringing.
+    const double preRollDuration = o.progression > 0.0 ? 0.0 : kPreRollSeconds;
     const double modelPerTick = sky::SkyModel::kTickSeconds * o.speed;
-    const auto wantTicks = static_cast<int64_t> (std::lround (kPreRollSeconds / sky::SkyModel::kTickSeconds));
+    const auto wantTicks = static_cast<int64_t> (std::lround (preRollDuration / sky::SkyModel::kTickSeconds));
     const auto preTicks = o.speed > 0.0 ? std::min (wantTicks, static_cast<int64_t> ((startUtc - feed.dayStartUtc()) / modelPerTick))
                                         : wantTicks;
     runtime.seek (startUtc - static_cast<double> (preTicks) * modelPerTick);
     runtime.setSpeed (o.speed);
     runtime.prepare (o.rate);
-
-    dsp::Harmony hold;
-    hold.setMood (o.mood);
-    hold.setKey (o.root);
-    hold.setChordIndex (o.chord);
-    hold.setTranspose (o.transpose);
+    runtime.process (0, nullptr);   // apply the seek, so the phase at `from` is known
 
     dsp::SkySound sound;
     dsp::SkySound::Settings settings;
     settings.voicesPerNode = o.voices > params.nodes ? 2 : 1;
     settings.registerSemitones = o.registerSemitones;
     settings.spread = o.spread;
-    const dsp::Chord startChord = hold.chord();
+
+    auto& harmony = sound.harmony();
+    harmony.setSeed (o.seed);
+    harmony.setMood (o.mood);
+    harmony.setKey (o.root);
+    harmony.setChordIndex (o.chord);
+    harmony.setTranspose (o.transpose);
+    harmony.setProgression (o.progression);
+    harmony.start (static_cast<dsp::Phase> (runtime.model().current().phase));
+    const dsp::Chord startChord = harmony.chord();
     const dsp::ChordName startName = dsp::nameOf (startChord);
     sound.prepare (o.rate, params.nodes, o.seed, settings, startChord);
 
@@ -260,8 +267,10 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
     };
     std::cout << "sky:     " << o.day << " from " << hhmm (startUtc) << " to " << hhmm (runtime.model().modelTimeUtc())
               << " UT at " << o.speed << "x, seed " << o.seed << ", " << sound.voices() << " voices per layer\n"
-              << "chord:   " << startName.label.data() << " (" << startName.roman.data() << ") held; "
-              << (sound.chordChanges() - chordsBefore) << " changes, "
+              << "chord:   " << startName.label.data() << " (" << startName.roman.data() << ") start, progression "
+              << juce::String (o.progression, 2) << "; "
+              << (sound.chordChanges() - chordsBefore) << " changes -> "
+              << dsp::nameOf (sound.chord()).label.data() << ", "
               << (runtime.model().current().onsetCount - onsetsBefore) << " onsets in the file\n"
               << "length:  " << o.seconds << " s @ " << o.rate << " Hz" << (o.dry ? " (dry)" : "") << "\n"
               << "peak:    " << juce::Decibels::gainToDecibels (peak, -200.0f) << " dBFS\n"
@@ -319,6 +328,7 @@ int main (int argc, char* argv[])
         else if (a == "--transpose") sky.transpose = next().getIntValue();
         else if (a == "--register") sky.registerSemitones = next().getDoubleValue();
         else if (a == "--spread")  sky.spread = next().getDoubleValue();
+        else if (a == "--progression") sky.progression = juce::jlimit (0.0, 1.0, next().getDoubleValue());
         else return fail ("unknown argument " + a);
     }
 

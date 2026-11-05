@@ -351,3 +351,154 @@ TEST_CASE ("Harmony doesn't allocate", "[harmony][realtime]")
 
     REQUIRE (testing::allocationsOnThisThread() == before);
 }
+
+//==================================================================================================
+TEST_CASE ("progression: the sky writes the chord", "[harmony][progression]")
+{
+    using dsp::ChordFunction;
+    using dsp::Phase;
+
+    // Progression 0 holds: no phase, onset or time makes a request.
+    dsp::Harmony hold;
+    hold.setSeed (1);
+    hold.setKey (2);
+    hold.setMood (dsp::Mood::bright);
+    hold.start (Phase::growth);
+    REQUIRE (labelOf (hold.chord()) == "Dmaj7");     // home, not the growth chord
+    REQUIRE_FALSE (hold.hasPending());
+    hold.onOnset (0.9f, 100);
+    hold.onPhase (Phase::recovery, 101);
+    hold.update (5000.0);
+    REQUIRE_FALSE (hold.hasPending());
+
+    // Progression 1 follows the phase at start.
+    dsp::Harmony h;
+    h.setSeed (1);
+    h.setKey (2);
+    h.setMood (dsp::Mood::bright);
+    h.setProgression (1.0);
+    h.start (Phase::growth);
+    REQUIRE (h.progression() == 1.0);
+    REQUIRE (labelOf (h.chord()) == "Dmaj7sus2");
+    h.update (0.0);
+    REQUIRE_FALSE (h.hasPending());
+
+    // An onset takes the awe move, urgent, deterministic for a seed and minute.
+    h.onOnset (0.9f, 1000);
+    REQUIRE (h.hasPending());
+    REQUIRE (h.pendingUrgent());
+    REQUIRE (h.pendingFunction() == static_cast<int> (ChordFunction::awe));
+    const dsp::Chord awe = h.pendingChord();
+    const int aweDegree = awe.degree;
+    REQUIRE ((aweDegree == 8 || aweDegree == 4 || aweDegree == 9));
+    REQUIRE (textOf (h.pendingReason()) == "onset → chromatic mediant");
+
+    dsp::Harmony same;
+    same.setSeed (1);
+    same.setKey (2);
+    same.setMood (dsp::Mood::bright);
+    same.setProgression (1.0);
+    same.start (Phase::growth);
+    same.onOnset (0.9f, 1000);
+    REQUIRE (sameChord (same.pendingChord(), awe));
+    REQUIRE (same.pendingIndex() == h.pendingIndex());
+
+    // A newer request replaces a pending one; take clears it.
+    h.onPhase (Phase::recovery, 1001);
+    REQUIRE (h.hasPending());
+    REQUIRE (h.pendingFunction() == static_cast<int> (ChordFunction::borrowed));
+    REQUIRE (textOf (h.pendingReason()) == "recovery → borrowed chord");
+    h.take (0.0);
+    REQUIRE_FALSE (h.hasPending());
+
+    // Quiet always returns home.
+    h.onPhase (Phase::quiet, 1002);
+    REQUIRE (h.hasPending());
+    REQUIRE (h.pendingFunction() == static_cast<int> (ChordFunction::home));
+    REQUIRE (labelOf (h.pendingChord()) == "Dmaj7");
+    h.take (0.0);
+
+    // A weak onset only adds tension, with the sketch's reason.
+    h.onOnset (0.1f, 1003);
+    REQUIRE (h.hasPending());
+    REQUIRE (h.pendingFunction() == static_cast<int> (ChordFunction::tension));
+    REQUIRE (textOf (h.pendingReason()) == "weak onset → tension");
+    h.take (0.0);
+
+    // No immediate repeat of the previous chord of the same function.
+    int previous = -1;
+    int seen = 0;
+    for (int minute = 0; minute < 40; ++minute)
+    {
+        h.onOnset (0.9f, minute);
+        REQUIRE (h.hasPending());
+        const int index = h.pendingIndex();
+        if (previous >= 0)
+            CHECK (index != previous);
+        previous = index;
+        ++seen;
+        h.take (static_cast<double> (minute));
+    }
+    REQUIRE (seen == 40);
+
+    // The pending chord follows a key change while it waits.
+    h.setKey (2);
+    h.onOnset (0.9f, 42);
+    REQUIRE (h.pendingChord().key == 2);
+    h.setKey (0);
+    REQUIRE (h.pendingChord().key == 0);
+    h.update (1.0);                                  // the control change re-requests the target
+    REQUIRE (h.pendingChord().key == 0);
+}
+
+TEST_CASE ("progression: wander and take reset the clock", "[harmony][progression]")
+{
+    using dsp::Phase;
+
+    dsp::Harmony h;
+    h.setSeed (1);
+    h.setKey (2);
+    h.setProgression (1.0);
+    h.start (Phase::growth);
+
+    h.update (1.0);
+    REQUIRE_FALSE (h.hasPending());                  // the first delay is at least 150 s
+    h.update (400.0);
+    REQUIRE (h.hasPending());
+    REQUIRE_FALSE (h.pendingUrgent());               // a wander waits for the bank
+    REQUIRE (h.pendingFunction() == 1);              // stays in the current function
+    REQUIRE (textOf (h.pendingReason()) == "wander");
+
+    const int index = h.pendingIndex();
+    h.update (5000.0);                               // no second request while one is pending
+    REQUIRE (h.pendingIndex() == index);
+
+    h.take (400.0);
+    REQUIRE_FALSE (h.hasPending());
+    h.update (500.0);
+    REQUIRE_FALSE (h.hasPending());                  // the delay restarted at take()
+    h.update (900.0);
+    REQUIRE (h.hasPending());
+    REQUIRE (h.pendingFunction() == 1);
+    REQUIRE (textOf (h.pendingReason()) == "wander");
+}
+
+TEST_CASE ("progression: a control change re-voices at progression 0", "[harmony][progression]")
+{
+    using dsp::Phase;
+
+    dsp::Harmony h;
+    h.setKey (2);
+    h.setMood (dsp::Mood::bright);
+    h.start (Phase::growth);
+    REQUIRE (labelOf (h.chord()) == "Dmaj7");
+
+    h.setKey (0);
+    REQUIRE_FALSE (h.hasPending());                  // the setter only flags it
+    h.update (0.01);
+    REQUIRE (h.hasPending());
+    REQUIRE (h.pendingChord().key == 0);
+    REQUIRE (labelOf (h.pendingChord()) == "Cmaj7");
+    h.take (0.01);
+    REQUIRE_FALSE (h.hasPending());
+}

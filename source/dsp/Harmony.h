@@ -76,10 +76,18 @@ struct ChordName
 };
 ChordName nameOf (const Chord&) noexcept;
 
+/** The substorm phase, in the sky's order (SkySound.cpp asserts the two agree). */
+enum class Phase : int { quiet = 0, growth = 1, onset = 2, recovery = 3 };
+
 /** The chord the instrument holds (spec/01 §4): root key, Mood, chord shape and Transpose from the
     UI, or the last chord latched from MIDI. A note-on latches the held notes; all notes off keeps
     the last chord. The chord controls clear the latch, so the next note-on takes over again;
-    Transpose applies to both. `chord()` is what SkySound::requestChord() wants. */
+    Transpose applies to both. `chord()` is what SkySound::requestChord() wants.
+
+    It also runs the progression (spec/05 §3): the sky's phase writes the chord function and the
+    seeded choice; T3.3. `start`, `setSeed` and the setters may be called from the host before
+    playback; `onPhase`, `onOnset`, `update`, `take` and the `pending*` readers are audio-thread.
+    The progression's default is 0 (hold); the sketch's 1 is the plug-in's parameter default (T3.6). */
 class Harmony
 {
 public:
@@ -109,7 +117,41 @@ public:
     /** Audio thread: true (and copies `out`) when chord() differs from the last poll. */
     bool poll (Chord& out) noexcept;
 
+    //== Progression (spec/05 §3; T3.3) ==========================================================
+    void setProgression (double amount) noexcept;      ///< 0 hold … 1 follow the sky
+    double progression() const noexcept;
+    void setSeed (uint32_t seed) noexcept;             ///< the sound seed; before playback
+    uint32_t seed() const noexcept;
+
+    /** Seeds the target from the phase at the start (no request); call before playback. */
+    void start (Phase) noexcept;
+
+    /** A phase change (SkySound skips the onset phase: onOnset handles it). */
+    void onPhase (Phase, int modelMinute, const char* reason = nullptr) noexcept;
+
+    /** A substorm onset; a weak one (< 0.3, a quiet-day pseudo-breakup) only adds tension. */
+    void onOnset (float strength, int modelMinute) noexcept;
+
+    /** Per tick: consumes a control change, then wanders if the current function is stale. */
+    void update (double realSeconds) noexcept;
+
+    bool hasPending() const noexcept;
+    Chord pendingChord() const noexcept;
+    bool pendingUrgent() const noexcept;
+    int pendingFunction() const noexcept;
+    int pendingIndex() const noexcept;
+    const char* pendingReason() const noexcept;
+
+    /** The sound applied the pending chord: clear it and restart the wander clock. */
+    void take (double realSeconds) noexcept;
+
+    /** Drops a pending request without touching the clock (prepare). */
+    void discardPending() noexcept { pendingValid = false; }
+
 private:
+    void request (int function, int index, const char* reason) noexcept;
+    double wanderDelay() const noexcept;
+    static int functionOf (Phase) noexcept;
     bool relatch (bool requireKnownShape) noexcept;
 
     std::atomic<int> keyPc { 2 };                 ///< D
@@ -124,6 +166,19 @@ private:
     Chord latchedData {};
     Chord lastPolled {};
     bool hasPolled = false;
+
+    // progression (audio-thread state; setters above only flag it)
+    std::atomic<double> progressionAmount { 0.0 };
+    std::atomic<uint32_t> soundSeed { 1 };
+    std::atomic<bool> revoice { false };
+    std::atomic<const char*> revoiceReason { nullptr };
+    int targetFunction = 0, targetIndex = 0;
+    std::array<int, kNumFunctions> lastIndex { -1, -1, -1, -1 };
+    int moves = 0, wanders = 0;
+    double lastChangeS = 0.0, wanderAfterS = 0.0;
+    bool pendingValid = false, pendingUrgentFlag = false;
+    int pendingFn = 0, pendingIdx = 0;
+    const char* pendingWhy = "";
 };
 
 } // namespace worldtable::dsp
