@@ -164,6 +164,7 @@ TEST_CASE ("a latched chord gets a derived name", "[harmony]")
     REQUIRE (dsp::nameOf (c).minor);
 
     c.intervals = { 0, 2, 4, 7, 0 };   // pitch-class intervals, as the latch stores them
+    c.count = 4;
     REQUIRE (labelOf (c) == "Cadd9");
 
     c.intervals = { 0, 1, 6, 0, 0 };   // not a shape we know

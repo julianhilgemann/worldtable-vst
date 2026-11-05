@@ -77,7 +77,7 @@ sky/        SkyModel (step, reset, seed), Reservoir (loading, substorm phases),
             dome projection), Astronomy (sun, moon, stars), Rng, SkySnapshot
 dsp/        SkySound (the curtain → resonators, per tick; chord double-banking),
             ResonatorBank, Exciter, Voicing (layer slots, ranges, voice-leading),
-            Harmony (scales, chords, progression), Sparkles (event voices,
+            Harmony (scales, chords, chord hold, MIDI latch; progression T3.3), Sparkles (event voices,
             whistlers), Drift (tape wobble),
             mod/ (SlowLfo, RandomWalk, EnvFollower, ModMatrix, Triggers),
             RawField (POC WavetableOsc + table exchange), AutoGain,

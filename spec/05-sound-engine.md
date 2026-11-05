@@ -9,7 +9,9 @@ the browser on the T1.2 sky; mapping and constants in §12; the owner signed off
 the direction. **§1–2 ported to C++** (T3.1: `dsp/SkySound`, `ResonatorBank`,
 `Exciter`, `Voicing`): the dry sound matches the sketch (null test −135 dB) and
 plays through `WorldtableRender --sky`; the plug-in keeps the POC voice until
-the effects and parameters arrive (T3.5, T3.6).
+the effects and parameters arrive (T3.5, T3.6). **§3's vocabulary, naming,
+chord hold, scales and MIDI latch are ported too** (T3.2: `dsp/Harmony`); the
+progression engine and Mood-driven moves are T3.3.
 
 ```
 SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet layers) ─┐

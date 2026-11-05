@@ -110,8 +110,7 @@ public:
     bool poll (Chord& out) noexcept;
 
 private:
-    void relatch() noexcept;
-    Chord latchedChord() const noexcept;
+    bool relatch (bool requireKnownShape) noexcept;
 
     std::atomic<int> keyPc { 2 };                 ///< D
     std::atomic<int> moodIndex { 0 };

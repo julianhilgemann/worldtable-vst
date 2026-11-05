@@ -14,9 +14,12 @@
 //
 //   WorldtableRender --sky --out renders/T3.1-storm.wav [--day 2024-05-10] [--from 17:20]
 //                    [--speed 24] [--seconds 300] [--voices 64|128] [--seed 1] [--gain 0] [--dry]
+//                    [--mood bright|bittersweet|nocturnal] [--root D] [--chord 0..2]
+//                    [--transpose 0] [--register 0] [--spread 2]
 
 #include "PluginProcessor.h"
 #include "data/SkyDays.h"
+#include "dsp/Harmony.h"
 #include "dsp/SkySound.h"
 #include "dsp/fx/Limiter.h"
 #include "dsp/fx/ShimmerReverb.h"
@@ -82,7 +85,39 @@ struct SkyRenderOptions
     int voices = 64;
     uint32_t seed = 1;
     bool dry = false;
+    // The held chord (T3.2): the sketch's default is bright, root D, chord 0 → Dmaj7.
+    worldtable::dsp::Mood mood = worldtable::dsp::Mood::bright;
+    int root = 2, chord = 0, transpose = 0;
+    double registerSemitones = 0.0, spread = 2.0;
 };
+
+bool parseMood (const juce::String& text, worldtable::dsp::Mood& mood)
+{
+    const auto t = text.trim().toLowerCase();
+    if (t == "bright")      { mood = worldtable::dsp::Mood::bright; return true; }
+    if (t == "bittersweet") { mood = worldtable::dsp::Mood::bittersweet; return true; }
+    if (t == "nocturnal")   { mood = worldtable::dsp::Mood::nocturnal; return true; }
+    return false;
+}
+
+/** "D", "F#", "Bb" or 0–11. */
+int parseRoot (const juce::String& text)
+{
+    static const char* names[] = { "C", "C#", "DB", "D", "D#", "EB", "E", "F", "F#", "GB", "G", "G#", "AB", "A", "A#", "BB", "B" };
+    static const int pcs[] = { 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 8, 9, 10, 10, 11 };
+    auto up = text.trim().toUpperCase().replace ("\xE2\x99\xAD", "B").replace ("\xE2\x99\xAF", "#");
+    if (up.isEmpty())
+        return -1;
+    if (up.containsOnly ("0123456789"))
+    {
+        const int pc = up.getIntValue();
+        return pc >= 0 && pc < 12 ? pc : -1;
+    }
+    for (size_t i = 0; i < std::size (names); ++i)
+        if (up == names[i])
+            return pcs[i];
+    return -1;
+}
 
 int renderSky (const juce::File& out, const SkyRenderOptions& o)
 {
@@ -110,10 +145,20 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
     runtime.setSpeed (o.speed);
     runtime.prepare (o.rate);
 
+    dsp::Harmony hold;
+    hold.setMood (o.mood);
+    hold.setKey (o.root);
+    hold.setChordIndex (o.chord);
+    hold.setTranspose (o.transpose);
+
     dsp::SkySound sound;
     dsp::SkySound::Settings settings;
     settings.voicesPerNode = o.voices > params.nodes ? 2 : 1;
-    sound.prepare (o.rate, params.nodes, o.seed, settings, dsp::Chord::dMaj7());
+    settings.registerSemitones = o.registerSemitones;
+    settings.spread = o.spread;
+    const dsp::Chord startChord = hold.chord();
+    const dsp::ChordName startName = dsp::nameOf (startChord);
+    sound.prepare (o.rate, params.nodes, o.seed, settings, startChord);
 
     dsp::ShimmerReverb reverb;
     reverb.prepare (o.rate);
@@ -215,7 +260,8 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
     };
     std::cout << "sky:     " << o.day << " from " << hhmm (startUtc) << " to " << hhmm (runtime.model().modelTimeUtc())
               << " UT at " << o.speed << "x, seed " << o.seed << ", " << sound.voices() << " voices per layer\n"
-              << "chord:   D maj7 held; " << (sound.chordChanges() - chordsBefore) << " changes, "
+              << "chord:   " << startName.label.data() << " (" << startName.roman.data() << ") held; "
+              << (sound.chordChanges() - chordsBefore) << " changes, "
               << (runtime.model().current().onsetCount - onsetsBefore) << " onsets in the file\n"
               << "length:  " << o.seconds << " s @ " << o.rate << " Hz" << (o.dry ? " (dry)" : "") << "\n"
               << "peak:    " << juce::Decibels::gainToDecibels (peak, -200.0f) << " dBFS\n"
@@ -258,6 +304,21 @@ int main (int argc, char* argv[])
         else if (a == "--seed")    sky.seed = static_cast<uint32_t> (next().getLargeIntValue());
         else if (a == "--gain")    sky.gainDb = next().getDoubleValue();
         else if (a == "--dry")     sky.dry = true;
+        else if (a == "--mood")
+        {
+            if (! parseMood (next(), sky.mood))
+                return fail ("--mood must be bright, bittersweet or nocturnal");
+        }
+        else if (a == "--root")
+        {
+            sky.root = parseRoot (next());
+            if (sky.root < 0)
+                return fail ("--root must be a pitch class 0-11 or a note name (C, F#, Bb, ...)");
+        }
+        else if (a == "--chord")   sky.chord = juce::jlimit (0, 2, next().getIntValue());
+        else if (a == "--transpose") sky.transpose = next().getIntValue();
+        else if (a == "--register") sky.registerSemitones = next().getDoubleValue();
+        else if (a == "--spread")  sky.spread = next().getDoubleValue();
         else return fail ("unknown argument " + a);
     }
 
