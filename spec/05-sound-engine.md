@@ -146,7 +146,8 @@ Journey bounces and A/B them against the references.
 
 ## 12. Sketch mapping and constants (T1.3, 2026-11-05)
 Source of truth: `prototype/sky/sound/engine.js` `SOUND_DEFAULTS` and
-`sound/harmony.js` `VOCABULARY`. First pass, before the owner's listening.
+`sound/harmony.js` `VOCABULARY`. First pass; the owner signed off the direction
+on 2026-11-05 ("sounds fine … run with it"), constants unchanged. N = 64 per layer.
 
 | Sky | Sound |
 |---|---|
