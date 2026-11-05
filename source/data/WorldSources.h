@@ -5,7 +5,7 @@
 namespace worldtable::data
 {
 
-/** The curated POC sources, indexed like params::WtSource. */
+/** The curated POC sources (T3.6: no longer a parameter list; the raw-field layer will pick). */
 struct SourceDef
 {
     enum class Kind { ndbcSpectral, usgsGeomag };

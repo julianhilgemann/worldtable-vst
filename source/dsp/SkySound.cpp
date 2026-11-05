@@ -72,6 +72,14 @@ void SkySound::prepare (double rate, int nodes, uint32_t soundSeed, const Settin
     resonators.setActive (0, true);
 }
 
+void SkySound::setSettings (const Settings& s) noexcept
+{
+    const int vpn = settings.voicesPerNode;
+    settings = s;
+    settings.voicesPerNode = vpn;   // fixed by prepare()
+    exciter.setSettings (settings.exciter);
+}
+
 void SkySound::process (sky::SkyRuntime& runtime, float* left, float* right, int numSamples) noexcept
 {
     outLeft = left;
@@ -207,6 +215,9 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
     exciter.tick (realS, sky.activity, brightness.data());
 
     const double gainK = 1.0 - std::exp (-kTick / s.gainSlewSeconds);
+    const double breathPhase = 2.0 * kPi * kBreathHz * realS;
+    const double breath = 1.0 - 0.35 * s.breathDepth * (0.5 - 0.5 * std::cos (breathPhase));
+    const double breathViolet = breath * (1.0 - 0.15 * s.breathDepth * (0.5 - 0.5 * std::cos (breathPhase)));
     std::array<double, kNumLayers> radius {}, norm {};
     for (size_t l = 0; l < kNumLayers; ++l)
     {
@@ -216,12 +227,13 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
     const double dampR = resonators.radius (kDampT60);
     const double preGain = 2.0 / std::sqrt (3.0 * V);
 
-    // The sketch fills w[cur] and then w[other] with `other` from before this tick's change, so on
-    // the tick a chord is taken the new bank gets the whole bed for 10 ms (w[other] overwrites it)
-    // and the old one none. Kept as it is: the golden is the sketch.
+    // `other` was computed before applyChord(): on the tick a chord is taken it names the new bank,
+    // so the weights must use the fresh counterpart. With the stale index both writes land on the
+    // new bank and it gets the whole bed for 10 ms out of a silent start (the T3.1 quirk, fixed in
+    // T3.6: sketch and port together, golden re-exported).
     std::array<double, ResonatorBank::kBanks> w {};
     w[static_cast<size_t> (cur)] = std::sin (0.5 * kPi * xf);
-    w[static_cast<size_t> (other)] = std::cos (0.5 * kPi * xf);
+    w[static_cast<size_t> (1 - cur)] = std::cos (0.5 * kPi * xf);
 
     for (int v = 0; v < V; ++v)
     {
@@ -243,8 +255,10 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
             {
                 return l == 0 ? nd[i].red : l == 1 ? nd[i].green : nd[i].violet;
             };
-            // √colour: a storm is brighter and wider, not 25 dB louder (auto-gain does the rest)
-            const double target = s.level[li] * std::sqrt (colour (i0) + (colour (i1) - colour (i0)) * f) * presence[vi];
+            // √colour: a storm is brighter and wider, not 25 dB louder (auto-gain does the rest).
+            // Breath (T3.6) moves all three layers a little, the violet ones a little more.
+            const double target = s.level[li] * std::sqrt (colour (i0) + (colour (i1) - colour (i0)) * f) * presence[vi]
+                                * (l == 2 ? breathViolet : breath);
             gain[gi] += (target - gain[gi]) * gainK;
             const double g = gain[gi] * preGain;
             const double cents = s.detuneCents * (y / kDisplacementForFullDetuneKm)

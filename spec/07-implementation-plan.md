@@ -17,15 +17,17 @@ plug-in renderer → OSC.
 | M3: T3.3 progression (the sky writes the chords) | merged (#14) |
 | M3: T3.5a FX I (AutoGain, DC, render chain) | merged (#15) |
 | M3: T3.5b FX II (Phaser, Chorus, shimmer fifth) | merged (#16) |
-| M3: T3.6 retire POC + wire the plug-in + parameters | next |
+| M3: T3.6 the instrument: SkySound + FX in the plug-in, parameters v1, chord readout | merged |
+| M3: T3.6b raw-field wavetable layer | after T3.4 |
 | M3: T3.4 sparkles/whistlers/Breath | after (needs the owner's design/ear) |
 
 **Reused from the POC:** CMake/CI, `gen_params.py`, `WorldtableRender`,
 `WorldtableUICheck`, WebView bridge and mock backend, Drive, SVF, LFO, ADSR,
 delay, shimmer reverb, limiter, geomag parser and CMO factory data, cache,
 table exchange (raw-field layer).
-**Retired (T3.6):** Euclid, `wavespec` source and builder B, wavetable as the
-main voice, yellow-on-navy look, ambient-level switcher.
+**Retired (T3.6):** Euclid, `wavespec` source and builder B, the POC voice (`Engine`,
+`Voice`, LFOs, envelopes), the world-data feed and its UI panels, wavetable as the main
+voice, the yellow-on-navy look (partly; the final UI is M6), the ambient-level switcher.
 
 ## M0 — Foundations (in parallel with M1)
 - T0.3 ctest + pluginval in CI.
@@ -66,7 +68,9 @@ Exit: owner signs off the look and the sound direction; mapping recorded in
 - T3.4 Layers (red/green/violet), sparkles, whistlers, drift and tape wobble, Breath.
 - T3.5 FX chain in spec order (new Phaser, Chorus/Ensemble; tape delay;
   shimmer at octave and fifth), AutoGain.
-- T3.6 Retire POC parts; raw-field wavetable layer; `parameters.yaml` v1 rewrite.
+- T3.6 Retire the POC voice; `dsp::Instrument` (SkySound + FX + MIDI latch) in the
+  plug-in; `parameters.yaml` v1; chord readout. (Done; the raw-field wavetable layer moved
+  to T3.6b.)
 **Hear:** the plug-in plays the storm day, in a DAW and in TouchDesigner.
 
 ## M4 — Modulation and autopilot

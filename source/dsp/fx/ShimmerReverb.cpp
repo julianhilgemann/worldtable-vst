@@ -64,11 +64,15 @@ void ShimmerReverb::prepare (double rate)
     shimmerHpCoef = 1.0f - std::exp (-kTwoPi * 350.0f / static_cast<float> (rate));
     shimmerLpCoef = 1.0f - std::exp (-kTwoPi * 7000.0f / static_cast<float> (rate));
 
-    sizeSmoother.setTime (0.5f, rate / kChunk);
-    sizeSmoother.reset (settings.size);
+    sizeCoef = onePoleCoef (0.5f, rate);   // per sample: 0.5 s glide
+    targetSize = currentSize = settings.size;
+    predelayCoef = onePoleCoef (0.15f, rate);
+    predelayTarget = predelayCurrent = settings.predelayMs * 0.001f * static_cast<float> (rate);
+    coefCount = 0;
 
     reset();
     setSettings (settings);
+    updateLineCoefficients();
 }
 
 void ShimmerReverb::reset() noexcept
@@ -90,25 +94,28 @@ void ShimmerReverb::reset() noexcept
 void ShimmerReverb::setSettings (const Settings& s) noexcept
 {
     settings = s;
-
-    // Size glides (changing it means changing delay lengths, which would otherwise click).
-    const float size = sizeSmoother.next (std::clamp (s.size, 0.0f, 1.0f));
-    const float scale = kMinScale + (1.0f - kMinScale) * size;
-    const float rt60 = std::max (0.1f, s.decaySeconds);
-
-    for (size_t i = 0; i < kLines; ++i)
-    {
-        lineDelay[i] = kLineMs[i] * scale * 0.001f * static_cast<float> (sampleRate);
-        lineGain[i] = std::pow (10.0f, -3.0f * lineDelay[i] / (rt60 * static_cast<float> (sampleRate)));
-    }
+    targetSize = std::clamp (s.size, 0.0f, 1.0f);
 
     // damping 0 → 18 kHz, 1 → 1.2 kHz one-pole low-pass inside each line
     const float dampHz = 1200.0f * std::pow (15.0f, 1.0f - std::clamp (s.damping, 0.0f, 1.0f));
     lpCoef = 1.0f - std::exp (-kTwoPi * dampHz / static_cast<float> (sampleRate));
 
     modDepth = std::clamp (s.modulation, 0.0f, 1.0f) * kMaxModMs * 0.001f * static_cast<float> (sampleRate);
-    predelaySamples = std::clamp (s.predelayMs, 0.0f, 250.0f) * 0.001f * static_cast<float> (sampleRate);
+    predelayTarget = std::clamp (s.predelayMs, 0.0f, 250.0f) * 0.001f * static_cast<float> (sampleRate);
     shimmerGain = 0.55f * std::clamp (s.shimmer, 0.0f, 1.0f);
+}
+
+/** Line lengths and decay gains for the current (glided) size. Called on a fixed 64-sample grid
+    inside process(), so it is independent of the host's block size. */
+void ShimmerReverb::updateLineCoefficients() noexcept
+{
+    const float scale = kMinScale + (1.0f - kMinScale) * currentSize;
+    const float rt60 = std::max (0.1f, settings.decaySeconds);
+    for (size_t i = 0; i < kLines; ++i)
+    {
+        lineDelay[i] = kLineMs[i] * scale * 0.001f * static_cast<float> (sampleRate);
+        lineGain[i] = std::pow (10.0f, -3.0f * lineDelay[i] / (rt60 * static_cast<float> (sampleRate)));
+    }
 }
 
 void ShimmerReverb::process (float* left, float* right, int numSamples) noexcept
@@ -125,12 +132,21 @@ void ShimmerReverb::process (float* left, float* right, int numSamples) noexcept
 
     for (int n = 0; n < numSamples; ++n)
     {
+        // The size glides per sample; the coefficients follow on an absolute 64-sample grid.
+        currentSize += (targetSize - currentSize) * sizeCoef;
+        predelayCurrent += (predelayTarget - predelayCurrent) * predelayCoef;
+        if (++coefCount >= kChunk)
+        {
+            coefCount = 0;
+            updateLineCoefficients();
+        }
+
         const float inL = left[n], inR = right[n];
 
         predelayL.write (inL);
         predelayR.write (inR);
-        float xL = predelaySamples > 0.5f ? predelayL.read (predelaySamples) : inL;
-        float xR = predelaySamples > 0.5f ? predelayR.read (predelaySamples) : inR;
+        float xL = predelayCurrent > 0.5f ? predelayL.read (predelayCurrent) : inL;
+        float xR = predelayCurrent > 0.5f ? predelayR.read (predelayCurrent) : inR;
 
         for (size_t i = 0; i < kDiffusers; ++i)
         {

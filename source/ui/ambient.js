@@ -1,12 +1,11 @@
-/* Ambient background — prototype (spec/tasks/TP.2).
- *   0 off · 1 CSS gradients · 2 WebGL shader · 3 shader driven by the world data
- * Per-viewer UI state only (no plug-in parameters). Reads the same state the
- * views draw from (window.__wtState: table + telemetry), never talks to C++. */
+/* Ambient background (spec/tasks/TP.2, simplified in T3.6).
+ *   0 off · 1 CSS gradients · 2 WebGL shader (the sky's activity drives the aurora)
+ * Per-viewer UI state only (no plug-in parameters). Reads window.__wtState.tel,
+ * never talks to C++. The POC level switcher is gone (spec/07); the default is 2. */
 (function () {
   "use strict";
   const root = document.getElementById("ambient");
-  const pick = document.getElementById("ambient-pick");
-  if (!root || !pick) return;
+  if (!root) return;
 
   const RES = 0.5;          // canvas pixels per CSS pixel: soft gradients need no detail
   const FPS = 30;           // the motion is slow; 30 fps is smooth and halves the GPU work
@@ -134,7 +133,6 @@ void main() {
     }
     if (!prog || !gl.getProgramParameter(prog, gl.LINK_STATUS)) {
       glFailed = true; gl = null; canvas.remove(); canvas = null;
-      for (const b of pick.querySelectorAll("button")) if (+b.dataset.level >= 2) b.disabled = true;
       return false;
     }
     gl.useProgram(prog);
@@ -162,65 +160,20 @@ void main() {
   }
   window.addEventListener("resize", resize);
 
-  // ---------- level 3: what the data says ----------
-  let featGen = -1, feat = null;
-  function features(t) {
-    if (featGen === t.generation && feat) return feat;
-    const F = t.frames, n = t.rawPoints;
-    const energy = new Float32Array(F), centroid = new Float32Array(F);
-    for (let f = 0; f < F; f++) {
-      let sum = 0, wsum = 0, mn = 1e9, mx = -1e9, dsum = 0;
-      for (let i = 0; i < n; i++) {
-        const v = t.raw[f * n + i];
-        sum += v; wsum += v * i;
-        mn = Math.min(mn, v); mx = Math.max(mx, v);
-        if (i) dsum += Math.abs(v - t.raw[f * n + i - 1]);
-      }
-      if (t.isSpectrum) {
-        energy[f] = sum;
-        centroid[f] = sum > 0 ? wsum / sum / (n - 1) : 0.3;
-      } else {
-        energy[f] = dsum / (n - 1) * 8 + (mx - mn);   // activity: wiggle + swing of H
-        centroid[f] = 0.5;
-      }
-    }
-    let lo = Infinity, hi = -Infinity;
-    for (const e of energy) { lo = Math.min(lo, e); hi = Math.max(hi, e); }
-    for (let f = 0; f < F; f++) energy[f] = hi - lo > 1e-6 ? 0.15 + 0.85 * (energy[f] - lo) / (hi - lo) : 0.5;
-    featGen = t.generation;
-    feat = { energy, centroid };
-    return feat;
-  }
-
   function targets() {
-    const S = window.__wtState || {}, t = S.table, tel = S.tel || {};
-    const ocean = !t || t.isSpectrum !== false;
-    const tg = { mode: ocean ? 0 : 1, energy: 0.55, scale: 2.0, speed: 1.0, glow: 0.3, pulse: 0, drift: 0 };
-    if (level === 3 && t && t.raw && t.frames > 0) {
-      const f = features(t);
-      const x = clamp(tel.pos ?? 0, 0, 1) * (t.frames - 1);
-      const i = Math.floor(x), j = Math.min(i + 1, t.frames - 1), fr = x - i;
-      const e = lerp(f.energy[i], f.energy[j], fr), c = lerp(f.centroid[i], f.centroid[j], fr);
-      tg.energy = e;
-      if (ocean) {
-        // mean frequency of the spectrum (axis 0.033–0.49 Hz) → wave period; roll at that period
-        const hz = 0.033 + c * (0.49 - 0.033), period = clamp(1 / hz, 4, 20);
-        tg.speed = clamp((2 * Math.PI / period) / 0.8, 0.4, 2.0);
-        tg.scale = clamp(3.6 - 0.15 * period, 1.2, 3.2);              // long period → long waves
-      } else {
-        tg.speed = lerp(0.5, 1.8, e);
-      }
-      const pk = Math.max(tel.peakL || 0, tel.peakR || 0);
-      tg.glow = clamp(((pk > 0 ? 20 * Math.log10(pk) : -100) + 42) / 36, 0, 1);
-      tg.pulse = tel.ampEnv || 0;
-      tg.drift = tel.lfo1 || 0;
-    }
+    const S = window.__wtState || {}, tel = S.tel || {};
+    const sky = tel.sky || {};
+    const tg = { mode: 1, energy: clamp(sky.activity ?? 0.55, 0, 1), scale: 2.0, speed: 1.0, glow: 0.3, pulse: 0, drift: 0 };
+    const pk = Math.max(tel.peakL || 0, tel.peakR || 0);
+    tg.glow = clamp(((pk > 0 ? 20 * Math.log10(pk) : -100) + 42) / 36, 0, 1);
+    tg.speed = 0.5 + 1.3 * clamp(sky.energy ?? 0.5, 0, 1);
+    tg.drift = clamp(((sky.energy ?? 0.5) - 0.5) * 2, -1, 1);
     return tg;
   }
 
   // smoothed values (what the shader actually sees)
   const sm = { mode: 0, energy: 0.55, scale: 2.0, speed: 1.0, glow: 0.3, drift: 0, envFast: 0, envSlow: 0 };
-  let phase = 0, last = performance.now(), lastDraw = 0, seenTable = false;
+  let phase = 0, last = performance.now(), lastDraw = 0;
 
   function tick(now) {
     requestAnimationFrame(tick);
@@ -229,11 +182,6 @@ void main() {
     if (level < 2 || !gl || document.hidden) return;
 
     const tg = targets();
-    const S = window.__wtState || {};
-    if (!seenTable && S.table) {          // first data: start there instead of morphing into it
-      seenTable = true;
-      Object.assign(sm, { mode: tg.mode, energy: tg.energy, scale: tg.scale, speed: tg.speed });
-    }
     sm.mode = follow(sm.mode, tg.mode, dt, 1.2);
     sm.energy = follow(sm.energy, tg.energy, dt, 2.5);
     sm.scale = follow(sm.scale, tg.scale, dt, 3.0);
@@ -266,15 +214,9 @@ void main() {
     c.toggle("ambient-on", l > 0);
     c.toggle("ambient-1", l === 1);
     c.toggle("ambient-gl", l >= 2);
-    for (const b of pick.querySelectorAll("button")) b.classList.toggle("on", +b.dataset.level === l);
     if (l >= 2) resize();
     try { localStorage.setItem(KEY, String(l)); } catch (e) { /* storage may be unavailable */ }
   }
-
-  pick.addEventListener("click", (e) => {
-    const b = e.target.closest("button");
-    if (b && !b.disabled) setLevel(+b.dataset.level);
-  });
 
   // #ambient=N picks a level; #...&bgonly hides the panels (for reviewing the background itself)
   if (/(?:^|[#&])bgonly(?:&|$)/.test(location.hash || "")) document.body.classList.add("bg-only");
@@ -286,9 +228,9 @@ void main() {
   }
   if (initial === null) {
     const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    initial = reduce ? 0 : 3;
+    initial = reduce ? 0 : 2;
   }
-  setLevel(clamp(initial | 0, 0, 3));
+  setLevel(clamp(initial | 0, 0, 2));
   requestAnimationFrame(tick);
 
   window.__wtAmbient = { get level() { return level; }, setLevel, smoothed: sm };

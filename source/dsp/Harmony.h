@@ -80,9 +80,16 @@ ChordName nameOf (const Chord&) noexcept;
 enum class Phase : int { quiet = 0, growth = 1, onset = 2, recovery = 3 };
 
 /** The chord the instrument holds (spec/01 §4): root key, Mood, chord shape and Transpose from the
-    UI, or the last chord latched from MIDI. A note-on latches the held notes; all notes off keeps
-    the last chord. The chord controls clear the latch, so the next note-on takes over again;
+    UI, or the last chord latched from MIDI. A note-on latches the held notes; the latch follows the
+    notes as they shrink. The chord controls clear the latch, so the next note-on takes over again;
     Transpose applies to both. `chord()` is what SkySound::requestChord() wants.
+
+    MIDI vs progression (T3.6, owner decision 2026-11-05): while notes are latched the held chord
+    is authoritative. The sky keeps sensing — `onPhase`/`onOnset`/`update` still advance the target
+    function and shape — but `request()` does not raise a pending chord. On the last note-off the
+    latch clears and `chord()` is the sky's current chord, which the host (Instrument) polls and
+    requests, so the progression resumes from where the sky is then. With Progression 0 that is
+    the UI's held chord.
 
     It also runs the progression (spec/05 §3): the sky's phase writes the chord function and the
     seeded choice; T3.3. `start`, `setSeed` and the setters may be called from the host before
@@ -108,8 +115,10 @@ public:
     /** MIDI latch (audio thread): the held notes → a chord. */
     void noteOn (int midiNote) noexcept;
     void noteOff (int midiNote) noexcept;
+    void allNotesOff() noexcept;
     bool midiHeld() const noexcept;
     int  heldCount() const noexcept;              ///< notes held, not distinct pitch classes
+    bool isLatched() const noexcept;              ///< a MIDI chord is sounding
 
     /** The sounding chord: latched if MIDI is holding, else the held vocabulary chord, transposed. */
     Chord chord() const noexcept;

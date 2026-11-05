@@ -17,6 +17,11 @@ class SkyFeed
 public:
     static constexpr double kJourneySpeed = 24.0;   ///< spec/01 §3: 24 h → 1 h
 
+    /** Where the default Journey starts: 17:20 UT on the storm day, the onset window every M3
+        render uses. Starting at 00:00 would open 43 real minutes before the storm. The autopilot
+        (T4.4) owns the mode and the start from here. */
+    static constexpr double kDefaultJourneyStart = 17.0 * 3600.0 + 20.0 * 60.0;
+
     explicit SkyFeed (SkyRuntime&);
 
     /** Builds `dayId` for `seed` and `params` and publishes it. Returns false for an unknown day or

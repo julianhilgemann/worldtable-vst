@@ -11,10 +11,13 @@ wind and releases it in substorms. The same model state is *heard* (a modal
 resonator bank tuned to a slowly progressing chord), *seen* (an all-sky dome
 above a magnetometer station in Alaska) and *sent* (OSC to TouchDesigner).
 
-**Status (2026-11-05).** The proof of concept (wavetable synth fed by ocean
-and magnetometer data, WebView UI) works end to end on macOS (PR #2). The v1
-direction above is specified; next is the Sky Model prototype in the browser
-(`spec/tasks/T1.1-*`, `T1.2-*`).
+**Status (2026-11-06).** M3's instrument is playable in a DAW: the Sky Model
+replays the 10–11 May 2024 storm, the curtain is heard through the resonator
+bank, the slow progression writes the chords, and the spec's FX chain
+(Drive → Phaser → Chorus → tape delay → shimmer reverb → limiter) runs in the
+plug-in. `parameters.yaml` is the v1 set and the editor shows the chord. Next:
+sparkles/whistlers/Breath (T3.4), the dome UI (M6), live data (M5); see
+`spec/07-implementation-plan.md`.
 
 ## Spec
 Read in this order: `spec/00-vision.md` → `spec/03-architecture.md` → the
@@ -41,10 +44,13 @@ Agent rules: `CLAUDE.md`.
 cmake --preset dev && cmake --build --preset dev && ctest --preset dev
 cmake --preset release -DWORLDTABLE_COPY_PLUGINS=ON && cmake --build --preset release   # installs AU + VST3
 open build/release/Worldtable_artefacts/Release/Standalone/Worldtable.app
-build/release/WorldtableRender_artefacts/Release/WorldtableRender --out renders/x.wav --seconds 45
+build/release/WorldtableRender_artefacts/Release/WorldtableRender --seconds 120 --out renders/x.wav
+build/release/WorldtableRender_artefacts/Release/WorldtableRender --sky --from 17:20 \
+  --seconds 120 --progression 1 --out renders/sky.wav      # the validation path
 open source/ui/index.html            # UI with mock data, no build needed
 ```
-More options (live fetch, UI from disk, UI check): `spec/tasks/TP.1-poc-sound.md`.
+`--set progression=0 --set mood=Bittersweet --set drive=0.3` sets any parameter by
+its real value. More options (UI from disk, `WorldtableUICheck`): `spec/tasks/T3.6-instrument.md`.
 
 ## Repository layout
 ```
@@ -57,7 +63,7 @@ source/
   sky/                    Sky Model (M2): reservoir, curtain, observer, astronomy
   dsp/                    real-time code: resonators, harmony, mod, fx/
   osc/                    OSC out to TouchDesigner (M7)
-  transform/              raw-field wavetable builder
+  transform/              raw-field wavetable builder (kept for T3.6b)
   params/                 generated from spec/parameters.yaml — never hand-edit
   ui/                     WebView UI (HTML/CSS/JS) + mock backend
 resources/                bundled data (factory world, storm days)

@@ -26,6 +26,17 @@ struct Chord
     bool has (int interval) const noexcept;
 };
 
+/** Same key, degree, tone count and intervals (not the unused tail of the array). */
+inline bool sameChord (const Chord& a, const Chord& b) noexcept
+{
+    if (a.key != b.key || a.degree != b.degree || a.count != b.count)
+        return false;
+    for (int i = 0; i < a.count; ++i)
+        if (a.intervals[static_cast<size_t> (i)] != b.intervals[static_cast<size_t> (i)])
+            return false;
+    return true;
+}
+
 /** The three resonator layers, by aurora emission colour (spec/05 §1). */
 enum class Layer : int { red = 0, green = 1, violet = 2 };
 inline constexpr int kNumLayers = 3;

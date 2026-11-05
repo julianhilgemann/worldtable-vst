@@ -331,9 +331,11 @@ TEST_CASE ("The plug-in plays the storm at 24×", "[sky][runtime][processor]")
     CHECK (p.getSkyFeed().dayId() == "2024-05-10");
     CHECK_THAT (s.speed, Catch::Matchers::WithinULP (24.0f, 0));
     CHECK (s.step == 201u);
-    // model time moves 0.24 s per tick from the start of the day
-    CHECK_THAT (s.modelTimeUtc, Catch::Matchers::WithinULP (kStormStart + 0.24 * 201.0, 0));
+    // The default Journey starts at the T3.6 storm window (17:20 UT), then 0.24 s per tick.
+    CHECK_THAT (s.modelTimeUtc, Catch::Matchers::WithinULP (
+                    kStormStart + sky::SkyFeed::kDefaultJourneyStart + 0.24 * 201.0, 0));
     CHECK (s.nodeCount == 64);
-    CHECK (s.onsetCount == 0u);   // the first onset is at 02:25 UT
+    CHECK (s.phase == sky::SkyPhase::growth);   // 17:20 UT is the growth phase (T1.1)
+    CHECK (s.onsetCount > 0u);                 // the storm window has already seen onsets
     CHECK (s.kp > 0.0f);
 }

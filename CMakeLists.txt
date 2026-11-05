@@ -61,7 +61,6 @@ target_sources(WorldtableShared INTERFACE
     source/params/Params.cpp
     source/data/WorldData.cpp
     source/data/WorldSources.cpp
-    source/data/WorldFeed.cpp
     source/data/TrackBuilder.cpp
     source/sky/Astronomy.cpp
     source/sky/Observer.cpp
@@ -72,8 +71,7 @@ target_sources(WorldtableShared INTERFACE
     source/sky/SkyFeed.cpp
     source/data/SkyDays.cpp
     source/transform/WavetableBuilder.cpp
-    source/dsp/Voice.cpp
-    source/dsp/Engine.cpp
+    source/dsp/Instrument.cpp
     source/dsp/Harmony.cpp
     source/dsp/Voicing.cpp
     source/dsp/ResonatorBank.cpp

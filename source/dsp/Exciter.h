@@ -31,6 +31,9 @@ public:
 
     void prepare (int voices, int voicesPerNode, const Settings&) noexcept;
 
+    /** Audio thread: new bed/rise/strike levels (the instrument slews them first). */
+    void setSettings (const Settings& s) noexcept { settings = s; }
+
     /** A substorm onset, centred on `voice` (the onset node × voices per node). */
     void onset (double realSeconds, double strength, int voice) noexcept;
 
