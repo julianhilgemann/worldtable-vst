@@ -28,7 +28,7 @@ void SkyRuntime::prepare (double sampleRate) noexcept
     clock.prepare (sampleRate);
 }
 
-void SkyRuntime::process (int numSamples) noexcept
+void SkyRuntime::process (int numSamples, TickListener* listener) noexcept
 {
     pickUpTrack();
     applyRequests();
@@ -37,11 +37,16 @@ void SkyRuntime::process (int numSamples) noexcept
     {
         if (clock.tickDue())
         {
-            publish (sky.step());
+            const auto tickEvents = sky.step();
+            publish (tickEvents);
             clock.ticked();
+            if (listener != nullptr)
+                listener->skyTicked (sky, tickEvents, clock.samplesToNextTick());
         }
 
         const int n = std::min (numSamples - pos, clock.samplesToNextTick());
+        if (listener != nullptr)
+            listener->renderSamples (pos, n);
         clock.advance (n);
         pos += n;
     }

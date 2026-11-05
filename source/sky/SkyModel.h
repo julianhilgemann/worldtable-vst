@@ -184,6 +184,9 @@ public:
     /** Slow steps the last seek() replayed (≤ kMaxSeekSlowSteps). Diagnostic. */
     int lastSeekSlowSteps() const noexcept { return seekSlowSteps; }
 
+    /** The station the sky is seen from (the dome projection): the sound pans the curtain with it. */
+    const Observer& observer() const noexcept { return obs; }
+
 private:
     // T2.3: private members may change without review (T2.1). The public surface above is reviewed.
     void layOutCurtain (bool keepMotion) noexcept;
@@ -194,7 +197,7 @@ private:
     const SkyTimeline* timeline = nullptr;
     SkyParams params {};
     uint32_t  seed = 1;
-    Observer  observer;
+    Observer  obs;
     SlowSkyState slow {};
 
     int64_t  modelMicros   = 0;   ///< model time in whole µs since the epoch: exact, like the sketch's ms
