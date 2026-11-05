@@ -16,8 +16,9 @@ plug-in renderer → OSC.
 | M3: T3.2 harmony (vocabulary, chord hold, scales, MIDI latch) | merged (#13) |
 | M3: T3.3 progression (the sky writes the chords) | merged (#14) |
 | M3: T3.5a FX I (AutoGain, DC, render chain) | merged (#15) |
-| M3: T3.5b FX II (Phaser, Chorus, shimmer fifth) | this branch |
-| M3: T3.4 sparkles/whistlers/Breath, T3.6 parameters | after (T3.4 needs the owner's design/ear) |
+| M3: T3.5b FX II (Phaser, Chorus, shimmer fifth) | merged (#16) |
+| M3: T3.6 retire POC + wire the plug-in + parameters | next |
+| M3: T3.4 sparkles/whistlers/Breath | after (needs the owner's design/ear) |
 
 **Reused from the POC:** CMake/CI, `gen_params.py`, `WorldtableRender`,
 `WorldtableUICheck`, WebView bridge and mock backend, Drive, SVF, LFO, ADSR,
