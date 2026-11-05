@@ -1,5 +1,4 @@
-#include "data/TrackBuilder.h"
-#include "sky/SkyModel.h"
+#include "SkyTestData.h"
 #include "sky/SlowSky.h"
 
 #include <juce_core/juce_core.h>
@@ -15,47 +14,11 @@
 #include <string>
 #include <vector>
 
-#ifndef WORLDTABLE_GOLDEN_DIR
- #error "WORLDTABLE_GOLDEN_DIR must be defined by tests/CMakeLists.txt"
-#endif
-#ifndef WORLDTABLE_RESOURCES_DIR
- #error "WORLDTABLE_RESOURCES_DIR must be defined by tests/CMakeLists.txt"
-#endif
-
 using namespace worldtable;
 
 namespace
 {
-struct Day
-{
-    std::unique_ptr<data::WorldSnapshot> track = std::make_unique<data::WorldSnapshot>();
-    sky::SkyTimeline timeline;
-    juce::var golden;
-    double buildMs = 0.0;
-};
-
-/** The 10 May 2024 storm, prepared and run through the slow sky once for all tests here. */
-const Day& stormDay()
-{
-    static const Day day = []
-    {
-        Day d;
-        const auto trackFile = juce::File (WORLDTABLE_RESOURCES_DIR).getChildFile ("sky/2024-05-10/track.json");
-        data::RawTrack raw;
-        const bool parsed = data::parseTrackJson (trackFile.loadFileAsString(), raw);
-        const bool prepared = parsed && data::prepareTrack (raw, *d.track);
-        jassert (prepared);
-        juce::ignoreUnused (prepared);
-
-        const auto t0 = juce::Time::getMillisecondCounterHiRes();
-        d.timeline.build (*d.track, 1, sky::SkyParams {});
-        d.buildMs = juce::Time::getMillisecondCounterHiRes() - t0;
-
-        d.golden = juce::JSON::parse (juce::File (WORLDTABLE_GOLDEN_DIR).getChildFile ("sky/2024-05-10.json").loadFileAsString());
-        return d;
-    }();
-    return day;
-}
+using testing::stormDay;
 
 const char* kindName (sky::OnsetKind k)
 {
