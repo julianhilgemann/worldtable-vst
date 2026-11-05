@@ -23,8 +23,8 @@ level, Kp, solar-wind speed, density, Bz, By. Gaps are filled by the data
 thread, and `valid` flags mark measured samples. It also carries the station,
 the quiet level and a sequence number; about 130 KB.
 Published by the data thread, picked up by the audio thread once per block
-(mechanism: ADR-0003, proposed: a slot exchange like the POC's
-`TableExchange`). Pre-allocated pool; a new track
+(mechanism: ADR-0003: a slot exchange, `SlotExchange<T, N>`, the POC's
+`TableExchange` pattern). Pre-allocated pool; a new track
 never allocates on the audio thread. The model interpolates the track at its
 current model time.
 

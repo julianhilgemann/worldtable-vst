@@ -58,7 +58,24 @@
       `${t.provider} ${t.station} · ${t.place} · ${t.frames} frames over ${span.toFixed(span < 10 ? 1 : 0)} h · ${origin}`;
   });
 
-  WT.on("telemetry", (tel) => { S.tel = tel; });
+  // ---------- the Sky Model (T2.4): model time, phase, Kp, onsets; read-only ----------
+  let skyShownAt = 0;
+  function showSky(sky) {
+    if (!sky) return;                       // the browser mock has no sky
+    const now = performance.now();
+    if (now - skyShownAt < 250) return;     // 4 Hz is plenty for text
+    skyShownAt = now;
+    const d = new Date(sky.utc * 1000);
+    const day = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+    const hm = d.toISOString().slice(11, 16);
+    const el = $("sky");
+    el.hidden = false;
+    el.classList.toggle("onset", sky.phase === "onset");
+    $("sky-text").textContent =
+      `${day} ${hm} UT · ${sky.phase} · Kp ${sky.kp.toFixed(1)} · ${sky.onsets} onsets · ${Math.round(sky.speed)}×`;
+  }
+
+  WT.on("telemetry", (tel) => { S.tel = tel; showSky(tel.sky); });
 
   function ago(sec) {
     if (sec < 90) return "just now";

@@ -4,6 +4,8 @@
 #include <juce_dsp/juce_dsp.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include "sky/SkySnapshot.h"
+
 #include <array>
 #include <memory>
 #include <vector>
@@ -35,6 +37,7 @@ private:
     void onPageReady();
     std::optional<juce::WebBrowserComponent::Resource> getResource (const juce::String& url) const;
     juce::var makeTelemetry();
+    juce::var makeSkyTelemetry();
     juce::var makeTableMessage() const;
     juce::var makeStatus() const;
     void updateAnalyzer();
@@ -59,6 +62,10 @@ private:
     int historyPos = 0;
     std::array<float, kBands> bands {};
     float meterL = 0.0f, meterR = 0.0f;
+
+    // the Sky Model's UI reader (message thread only)
+    sky::SkySnapshot skyFrame {};
+    bool haveSkyFrame = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

@@ -68,6 +68,9 @@ target_sources(WorldtableShared INTERFACE
     source/sky/SlowSky.cpp
     source/sky/SkyTimeline.cpp
     source/sky/SkyModel.cpp
+    source/sky/SkyRuntime.cpp
+    source/sky/SkyFeed.cpp
+    source/data/SkyDays.cpp
     source/transform/WavetableBuilder.cpp
     source/dsp/Voice.cpp
     source/dsp/Engine.cpp
@@ -98,15 +101,30 @@ file(GLOB WORLDTABLE_UI_FILES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/*.html
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/*.css
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/*.js)
+# The recorded sky days (resources/sky/<day>/track.json), bundled as "<day>.json" so the names are
+# unique (data/SkyDays.cpp looks them up by that name).
+set(WORLDTABLE_SKY_DAYS 2024-05-10 2025-01-19 2025-01-25)
+set(WORLDTABLE_SKY_FILES)
+foreach(day IN LISTS WORLDTABLE_SKY_DAYS)
+    configure_file(resources/sky/${day}/track.json ${CMAKE_CURRENT_BINARY_DIR}/skydata/${day}.json COPYONLY)
+    list(APPEND WORLDTABLE_SKY_FILES ${CMAKE_CURRENT_BINARY_DIR}/skydata/${day}.json)
+endforeach()
+
+juce_add_binary_data(WorldtableSkyData
+    HEADER_NAME WorldtableSkyData.h
+    NAMESPACE   WorldtableSkyData
+    SOURCES     ${WORLDTABLE_SKY_FILES})
+
 juce_add_binary_data(WorldtableUIData
     HEADER_NAME WorldtableUIData.h
     NAMESPACE   WorldtableUIData
     SOURCES     ${WORLDTABLE_UI_FILES})
 
-set_target_properties(WorldtableWorldData WorldtableUIData PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(WorldtableWorldData WorldtableSkyData WorldtableUIData PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_link_libraries(WorldtableShared INTERFACE
     WorldtableWorldData
+    WorldtableSkyData
     WorldtableUIData
     juce::juce_audio_utils
     juce::juce_dsp

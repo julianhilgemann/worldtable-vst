@@ -7,7 +7,8 @@
 //                                  processes can be sampled from outside (TP.2)
 //
 // Checks: backend attached (not the browser mock), the world table arrived,
-// telemetry is streaming, parameters sync C++ → JS and JS → C++.
+// telemetry is streaming, parameters sync C++ → JS and JS → C++, the Sky Model's
+// readout shows the replayed storm (T2.4).
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
@@ -122,8 +123,19 @@ int main (int argc, char* argv[])
     const auto ambientDrawn = evalSync (*browser, "__wtAmbient.smoothed.speed > 0");
     auto parsedAmbient = juce::JSON::parse (ambient);
 
+    // The Sky Model (T2.4): the readout is visible and shows the storm day being replayed.
+    pump (400);
+    const auto skyState = evalSync (*browser,
+        "JSON.stringify({ hidden: document.getElementById('sky').hidden,"
+        " text: document.getElementById('sky-text').textContent,"
+        " day: __wtState.tel.sky && __wtState.tel.sky.day })");
+    auto parsedSky = juce::JSON::parse (skyState);
+
     auto parsed = juce::JSON::parse (state);
     const bool ok = ready == "true"
+                 && ! static_cast<bool> (parsedSky["hidden"])
+                 && parsedSky["text"].toString().startsWith ("10 May")
+                 && parsedSky["day"].toString() == "2024-05-10"
                  && static_cast<int> (parsedAmbient["level"]) == 3
                  && static_cast<bool> (parsedAmbient["canvas"])
                  && ambientDrawn == "true"
@@ -139,6 +151,7 @@ int main (int argc, char* argv[])
               << "C++→JS cutoff 3210 → JS sees " << jsCutoff << "\n"
               << "JS→C++ rev_mix 0.77 → C++ sees " << cppMix << ", trig_mode → " << cppMode << "\n"
               << "ambient:    " << ambient << "\n"
+              << "sky:        " << skyState << "\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
 
     if (soak)

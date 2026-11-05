@@ -22,7 +22,7 @@
 
 ## ADR index
 - ADR-0002 v1 direction: magnetosphere drone played by a Sky Model — accepted
-- ADR-0003 Hand-offs between threads: tracks in, snapshots out — proposed
+- ADR-0003 Hand-offs between threads: tracks in, snapshots out — accepted
 - ADR-0004 UI technology (WebView vs native components) — to write, POC is the evidence
 - ADR-0005 Licence & distribution — open source accepted, AGPLv3 proposed
 - ADR-0006 Observer: all-sky dome above a magnetometer station — accepted
