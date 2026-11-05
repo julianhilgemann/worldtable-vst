@@ -32,7 +32,8 @@ struct CurtainNode
 {
     float displacementKm;   ///< fold, + poleward, within ± SkyParams::displacementLimitKm
     float velocityKmS;      ///< rate of change of the displacement
-    float brightness;       ///< 0 … 2.5 (≈ 1 is a bright arc); rises with τ 0.5 s, falls with τ 3 s
+    float brightness;       ///< ≥ 0, no upper limit: ≈ 1 is a bright arc, ≈ 7 at a great-storm onset
+                            ///< (only green/red/violet stop at 2.5); rises with τ 0.5 s, falls with τ 3 s
     float green;            ///< 557.7 nm emission 0 … 2.5, already × brightness: the arc's body
     float red;              ///< 630.0 nm, 0 … 2.5: high, soft glow (quiet, recovery, great storms)
     float violet;           ///< 427.8 nm, 0 … 2.5: energetic lower border, strongest at onset

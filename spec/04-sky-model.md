@@ -20,7 +20,8 @@ motion:
   track and drives astronomy and magnetic local time (MLT).
 - **Real time** drives the curtain waves, brightness, pulsations and
   whistlers: ticks at **100 Hz** of audio sample time (ADR-0007). One tick
-  advances model time by 10 ms × speed (Journey) or 0 (Freeze).
+  advances model time by 10 ms × speed (Journey, up to 1440×) or 0 (Freeze:
+  the curtain keeps breathing in place).
 Rule: anything with a period under about a minute lives on real time.
 
 ## 2. State

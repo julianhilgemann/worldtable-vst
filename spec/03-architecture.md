@@ -1,7 +1,7 @@
 # 03 — Architecture
 
 One Sky Model, three renderings (ADR-0002). The model is clocked by audio
-sample time (ADR-0007, proposed) and publishes an immutable `SkySnapshot`
+sample time (ADR-0007) and publishes an immutable `SkySnapshot`
 that the sound, the UI and OSC all read.
 
 ## Threads and ownership
@@ -23,7 +23,8 @@ level, Kp, solar-wind speed, density, Bz, By. Gaps are filled by the data
 thread, and `valid` flags mark measured samples. It also carries the station,
 the quiet level and a sequence number; about 130 KB.
 Published by the data thread, picked up by the audio thread once per block
-(mechanism: ADR-0003, triple buffer preferred). Pre-allocated pool; a new track
+(mechanism: ADR-0003, proposed: a slot exchange like the POC's
+`TableExchange`). Pre-allocated pool; a new track
 never allocates on the audio thread. The model interpolates the track at its
 current model time.
 
@@ -46,8 +47,8 @@ and contains:
 - sun and moon, and the observer (station, dipole pole, magnetic zenith);
 - per node: displacement, velocity, brightness, green/red/violet, geomagnetic
   latitude and longitude, pulse.
-Written by the audio thread into a triple buffer; the UI and OSC threads read
-the newest one. The sound runs on the audio thread and reads the model's own
+Written by the audio thread into a triple buffer per reader (ADR-0003); the UI
+and OSC threads read the newest one, and get each tick's events through a FIFO. The sound runs on the audio thread and reads the model's own
 copy (`SkyModel::current()`), together with the events each `step()` returns.
 
 ### C. Raw-field table swap — builder → audio (optional layer)
