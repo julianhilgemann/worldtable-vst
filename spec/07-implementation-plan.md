@@ -8,9 +8,13 @@ plug-in renderer → OSC.
 ## Where we are (2026-11-05)
 | Work | State |
 |---|---|
-| T0.1 skeleton: CMake + JUCE + Catch2, CI macOS + Windows | merged (#1) |
-| TP.1 + TP.2 POC: data → wavetable → synth → FX → WebView UI, ambient shader | PR #2; macOS CI green, Windows CI failing |
-| v1 direction (this spec) | branch `spec/v1-sky-model` |
+| T0.1 skeleton: CMake + JUCE + Catch2, CI macOS + Windows | merged (#1); Windows CI still red (T0.4), tests not in CI (T0.3) |
+| TP.1 + TP.2 POC: data → wavetable → synth → FX → WebView UI, ambient shader | merged |
+| M1: storm days, Sky Model sketch, sound sketch | merged |
+| M2: Sky Model in C++ (T2.1–T2.5) | merged (#7–#11); M2 complete |
+| M3: T3.1 resonator bank + exciter | merged (#12) |
+| M3: T3.2 harmony (vocabulary, chord hold, scales, MIDI latch) | this branch |
+| M3: T3.3 progression, T3.4 layers, T3.5 FX, T3.6 parameters | next |
 
 **Reused from the POC:** CMake/CI, `gen_params.py`, `WorldtableRender`,
 `WorldtableUICheck`, WebView bridge and mock backend, Drive, SVF, LFO, ADSR,
