@@ -53,7 +53,8 @@ Requested by the owner on 2026-11-04 ("let's see the POC work, then add features
 
 ## Allowed paths
 spec/parameters.yaml, spec/tasks/TP.1-*, tools/gen_params.py, tools/render/*,
-source/**, resources/world/**, tests/**, CMakeLists.txt, tests/CMakeLists.txt.
+source/**, resources/world/**, tests/**, CMakeLists.txt, tests/CMakeLists.txt,
+.github/workflows/build.yml (CI fix for this PR, 2026-11-05).
 
 ## Acceptance criteria
 - [x] Builds VST3 / AU / Standalone with 0 warnings (Debug + Release).
@@ -109,6 +110,19 @@ build/dev/WorldtableUICheck_artefacts/Debug/WorldtableUICheck.app/Contents/MacOS
   the browser with `index.html#status=offline` (new mock option).
   The Live instance was offline because Little Snitch had no rule for Live yet —
   the fallback to cache worked as intended.
+- CI on PR #2 (2026-11-05):
+  - **macOS** hung in Build until GitHub's 6 h cap. A bare `cmake --build --parallel`
+    is an unlimited `make -j` with the Makefile generator; TP.1 added two more targets
+    that each compile all of JUCE (4 × 22 units), which exhausts the 7 GB runner. The
+    log of the cancelled job was not kept, so this is inferred: T0.1 already took
+    20–54 min for half the units, while Windows (MSBuild, capped) takes 5–8 min.
+    Fixed with `--parallel 3` and `timeout-minutes: 60`.
+  - **Windows** failed to compile: JUCE only offers `withResourceProvider` on Windows
+    with the WebView2 backend (`JUCE_USE_WIN_WEBVIEW2`), which is not wired. The editor
+    now builds the web UI only where it is available (`WORLDTABLE_WEB_UI`, defaults to
+    `JUCE_WEB_BROWSER_RESOURCE_PROVIDER_AVAILABLE`) and otherwise paints a placeholder.
+    The placeholder path was compiled on macOS with `-DWORLDTABLE_WEB_UI=0` (0 warnings).
+  - MSVC warning C4458: local `playHead` in `processBlock` hid the JUCE member; renamed.
 
 ## Open questions (owner)
 1. **Sound check** — listen to `renders/tp1-*.wav` / the plug-in: is the ocean
@@ -121,4 +135,7 @@ build/dev/WorldtableUICheck_artefacts/Debug/WorldtableUICheck.app/Contents/MacOS
    (D1…D8, ≥ 2 s slew) is not in the POC yet.
 5. ADR-0004 (WebView) can now be written with evidence; `DataSource.h` contract needs a
    decision for vector-valued sources (spectra) before more adapters are added.
-6. Windows build not attempted (WebView2 backend is configured but untested).
+6. Windows: the plug-in compiles in CI, but shows a placeholder instead of the UI. The real
+   UI needs `NEEDS_WEBVIEW2 TRUE` + `JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1` and the
+   Microsoft.Web.WebView2 SDK (NuGet) in the build — a new dependency (owner approval),
+   best as its own task, tested on a Windows machine.

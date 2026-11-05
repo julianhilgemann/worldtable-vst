@@ -3,6 +3,15 @@
 
 #include <WorldtableUIData.h>
 
+// The web UI is served from memory through a resource provider. JUCE offers that on
+// macOS, and on Windows only with the WebView2 backend, which is not wired into the
+// build yet (it needs the WebView2 SDK). Without it the editor shows a placeholder;
+// the processor and the sound are unaffected. Define WORLDTABLE_WEB_UI=0 to compile
+// the placeholder path on macOS.
+#ifndef WORLDTABLE_WEB_UI
+ #define WORLDTABLE_WEB_UI JUCE_WEB_BROWSER_RESOURCE_PROVIDER_AVAILABLE
+#endif
+
 namespace worldtable
 {
 
@@ -48,6 +57,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         window[static_cast<size_t> (i)] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * static_cast<float> (i) / kFftSize);
     bands.fill (-100.0f);
 
+   #if WORLDTABLE_WEB_UI
     auto options = juce::WebBrowserComponent::Options {}
         .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
         .withWinWebView2Options (juce::WebBrowserComponent::Options::WinWebView2 {}
@@ -90,6 +100,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*browser);
 
     browser->goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
+   #endif
 
     setResizable (true, true);
     setResizeLimits (840, 560, 2400, 1600);
@@ -131,11 +142,21 @@ PluginEditor::~PluginEditor()
 void PluginEditor::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour (0xff0a1422));
+
+    if (browser == nullptr)   // no web UI on this platform yet (see WORLDTABLE_WEB_UI)
+    {
+        g.setColour (juce::Colour (0xffa9c4dd));
+        g.setFont (juce::FontOptions (18.0f));
+        g.drawFittedText ("Worldtable\n\nThe interface is not available on this platform yet.\n"
+                          "The synth runs normally; its parameters are in your host's generic editor.",
+                          getLocalBounds().reduced (40), juce::Justification::centred, 6);
+    }
 }
 
 void PluginEditor::resized()
 {
-    browser->setBounds (getLocalBounds());
+    if (browser != nullptr)
+        browser->setBounds (getLocalBounds());
 }
 
 std::optional<juce::WebBrowserComponent::Resource> PluginEditor::getResource (const juce::String& url) const

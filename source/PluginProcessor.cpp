@@ -68,9 +68,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     juce::ScopedNoDenormals noDenormals;
 
     dsp::HostTime host;
-    if (auto* playHead = getPlayHead())
+    if (auto* hostPlayHead = getPlayHead())
     {
-        if (const auto pos = playHead->getPosition())
+        if (const auto pos = hostPlayHead->getPosition())
         {
             if (const auto bpm = pos->getBpm())
                 host.bpm = *bpm;
