@@ -1,0 +1,76 @@
+{
+  "day": "2025-01-25",
+  "span": {
+    "start": "2025-01-25T00:00:00Z",
+    "end": "2025-01-27T00:00:00Z",
+    "step_s": 60,
+    "length": 2880
+  },
+  "why": "Quiet day (max Kp 1.0 over 48 h): the model must stay alive without data-driven activity; dark winter sky; waning crescent moon before dawn.",
+  "station": {
+    "code": "CMO",
+    "name": "College",
+    "lat": 64.874,
+    "lon": -147.86,
+    "elevation_m": 197.0,
+    "data_type": "quasi-definitive"
+  },
+  "sources": [
+    {
+      "id": "geomag",
+      "file": "geomag_CMO.json",
+      "provider": "USGS Geomagnetism Program",
+      "url": "https://geomag.usgs.gov/ws/data/?id=CMO&elements=H&sampling_period=60&format=json&type=quasi-definitive&starttime=2025-01-25T00:00:00Z&endtime=2025-01-26T23:59:00Z",
+      "licence": "US public domain",
+      "credit": "U.S. Geological Survey Geomagnetism Program"
+    },
+    {
+      "id": "kp",
+      "file": "kp.json",
+      "provider": "GFZ German Research Centre for Geosciences",
+      "url": "https://kp.gfz.de/app/json/?start=2025-01-25T00:00:00Z&end=2025-01-26T23:59:59Z&index=Kp",
+      "licence": "CC BY 4.0",
+      "credit": "Matzka, J. et al. (2021), Geomagnetic Kp index, GFZ Data Services, doi:10.5880/Kp.0001"
+    },
+    {
+      "id": "solarwind",
+      "file": "solarwind.json",
+      "provider": "NASA GSFC SPDF (OMNIWeb / CDAWeb)",
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=OMNI_HRO_1MIN&parameters=BY_GSM,BZ_GSM,flow_speed,proton_density&time.min=2025-01-25T00:00:00Z&time.max=2025-01-27T00:00:00Z&format=json&include=header",
+      "licence": "public (NASA open data), cite OMNI",
+      "credit": "NASA/GSFC's Space Physics Data Facility's OMNIWeb/CDAWeb service, and OMNI data"
+    }
+  ],
+  "track": {
+    "file": "track.json",
+    "units": {
+      "h": "nT",
+      "kp": "Kp",
+      "v": "km/s",
+      "n": "cm^-3",
+      "bz": "nT",
+      "by": "nT"
+    },
+    "notes": "1-min grid; null = gap; kp stepped per 3 h interval; h absolute (not baseline-removed); OMNI fill values mapped to null"
+  },
+  "summary": {
+    "max_kp": 1.0,
+    "min_bz_nT": -2.79,
+    "max_speed_km_s": 448.7,
+    "h_median_nT": 12700.12,
+    "max_abs_dh_nT": 43.8,
+    "negative_h_bays_utc": [],
+    "gaps_percent": {
+      "h": 0.0,
+      "kp": 0.0,
+      "by": 3.44,
+      "bz": 3.44,
+      "v": 18.85,
+      "n": 18.85
+    },
+    "kp_status": [
+      "def"
+    ]
+  },
+  "retrieved_at": "2026-11-05T10:36:29Z"
+}
