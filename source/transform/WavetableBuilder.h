@@ -46,7 +46,8 @@ struct TablePreview
     bool isSpectrum = true;
 };
 
-/** Turns world data into band-limited wavetables (spec/04-dsp-engine.md §2).
+/** Turns world data into band-limited wavetables (POC: spec/tasks/TP.1-poc-sound.md;
+    v1 keeps builder A as the raw-field layer, spec/05-sound-engine.md §5).
 
     Builder B (data-as-harmonics): each spectrum row → one frame; spectral energy
     is mapped onto harmonic partials. Builder A (series-as-cycle): successive windows

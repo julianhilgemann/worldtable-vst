@@ -1,7 +1,8 @@
 # Single source of truth for all plugin parameters.
 # tools/gen_params.py generates C++ (APVTS layout + ID constants) and JS (UI).
 # IDs are permanent once released. Rewritten for the POC (spec/tasks/TP.1-poc-sound.md);
-# nothing has been released yet.
+# nothing has been released yet. This is still the POC set: the v1 (Sky Model) set
+# replaces it in T3.6 (spec/07-implementation-plan.md).
 #
 # Field reference
 #   type:  float | int | choice | bool

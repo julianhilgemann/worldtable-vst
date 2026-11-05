@@ -1,89 +1,119 @@
-# 01 — Functional spec (Phase 1: what you have to define)
+# 01 — Functional spec (v1)
 
-Phase 1 is a **decision phase**, not a coding phase. Every `DECIDE:` line below
-is a question only you can answer. Fill them in (or let an agent interview you
-through them), then lock the answers into `parameters.yaml` and an ADR.
+What the instrument does, from the user's side. How it is built:
+`03-architecture.md`, `04-sky-model.md`, `05-sound-engine.md`, `06-ui.md`.
+`DECIDE:` lines are open owner questions.
 
-## 1. Signal flow (v1 proposal)
+## 1. Signal flow
 
 ```
-                 ┌──────────── WORLD (background threads) ────────────┐
- APIs ─► Adapters ─► Cache ─► Normaliser ─► WorldSnapshot (8–16 "channels")
-                                   │                         │
-                                   ▼                         ▼
-                          WavetableBuilder           Data mod sources
-                          (tables A & B)             (D1…Dn, 0..1, slewed)
-                 └──────────────────┼─────────────────────────┼─────────┘
-                                    ▼                         ▼
- ┌──────────────────────────── AUDIO THREAD ──────────────────────────────┐
- │ Note source (MIDI or Drone chord) ─► Voices ×N                          │
- │   Voice = WT Osc A + WT Osc B (morph) + Sub/Noise ─► SVF filter ─► VCA  │
- │ Slow LFO ×4 + Data D1…Dn + Envelopes ─► Mod Matrix ─► any target        │
- │ Mix ─► Chorus ─► Delay ─► Reverb (large, FDN) ─► Soft clip ─► Out      │
- └────────────────────────────────────────────────────────────────────────┘
+ USGS magnetometer ─┐
+ NOAA Kp ───────────┼─► Data layer ─► WorldSnapshot ─► SKY MODEL (stepped at 100 Hz of audio time)
+ NOAA solar wind ───┘   (cache, bundled       │          reservoir · curtain · pulsations · events
+                        storm days)            │                         │
+                                               │                  SkySnapshot
+                                               ▼          ┌──────────────┼───────────────┐
+                                    raw-field wavetable   ▼              ▼               ▼
+                                    layer (optional)   SOUND          DOME (UI)     OSC → TouchDesigner
+                                                       resonators,
+                                                       harmony, FX
 ```
 
-## 2. Modules and the decisions they need
+## 2. Observer and sky
+- **Station:** the observer stands at a magnetometer station (ADR-0006).
+  v1: CMO (College, Alaska). The header shows station code, coordinates, UT.
+- **The sky shows:** the aurora curtain projected onto an all-sky dome, plus
+  sun, moon (position and phase) and bright stars for the site.
+- **Sky toggles (UI state, not sound):** day/night tracking on/off, stars and
+  moon on/off, gradients only.
+- DECIDE: second station for v1 (candidate Tromsø; licence and data access to check).
 
-### 2.1 Note source
-- **Listen mode (default):** internal drone chord, no MIDI needed.
-- **Play mode:** MIDI notes; data still modulates.
-- DECIDE: drone chord — fixed root + scale picker, or root *driven by data*?
-- DECIDE: polyphony (proposal: 6 voices, drone uses 3–4).
-- DECIDE: does data ever trigger notes (e.g. each quake = a soft bell)? (Proposal: v1.1 "Events" layer.)
+## 3. Autopilot: press play, get a set
+| Mode | Model time | Data |
+|---|---|---|
+| **Live** (default when online) | UTC now | latest fetched data, cached |
+| **Journey** | a recorded day, compressed (e.g. 24 h → 60 min) | bundled or cached day; default: 10–11 May 2024 storm |
+| **Freeze** | stops | held |
 
-### 2.2 Wavetable oscillators (×2 per voice)
-- 2048-sample frames, up to 64 frames per table, band-limited mipmaps.
-- Table sources: (a) bundled factory tables, (b) **world tables** built live from data.
-- Position (frame) morph, smooth; A/B crossfade.
-- DECIDE: how is a world table built? Pick one or more for v1 (see `04-dsp-engine.md §2`):
-  - [ ] *Time-series-as-waveform* (last N readings resampled to one cycle)
-  - [ ] *Data-as-harmonics* (readings → partial amplitudes → inverse FFT)
-  - [ ] *Spectral morph* (each frame = one snapshot in time; position = history)
-- DECIDE: unison (proposal: up to 4, wide detune, slow spread drift).
+The substorm cycle (quiet → growth → onset → recovery) gives a Journey its
+long-form arc. With no network, Live falls back to the newest cached day.
+- DECIDE: Freeze = data and storm phase held while the curtain keeps breathing
+  in place (proposal), or a full stop of all motion?
+- DECIDE: Journey compression choices (proposal: 1×, 6×, 24×, 96×).
 
-### 2.3 Filter
-- State-variable LP/BP, 12 dB, gentle drive. Cutoff key-tracked and modulatable.
+## 4. Harmony: a slow progression engine
+- **Chord Hold:** root, scale and chord shape set in the UI, or latched from
+  MIDI. Held until changed. 12-TET only.
+- **Scales:** bright families by default (major, Lydian, major pentatonic);
+  minor and Dorian available.
+- **Voicing:** Voicing spread (octaves), Detune (cents, a few at most),
+  Drift (slow, independent pitch wander per voice), global Transpose and
+  Register (low and deep → high and airy).
+- **Progression amount:** from "hold one chord" to "follow the sky".
+- **Mood:** bright · bittersweet · nocturnal — selects the chord vocabulary:
+  colourful consonant chords (maj7, add9, sus2, 6/9), modal mixture (minor iv
+  in major) for bittersweetness, chromatic-mediant shifts (C → E or A♭) for awe.
+- **The sky writes the dramaturgy:** quiet → stable home chord; growth →
+  suspensions and rising tension; onset → a surprising chromatic-mediant shift;
+  recovery → a bittersweet borrowed chord resolving home.
+- **Voice-leading:** smallest steps; changes take minutes, with long crossfades.
+- **Nostalgia layer:** subtle tape-style pitch wobble and warm high-end
+  roll-off, both on the Drift macro.
 
-### 2.4 Slow LFOs (×4)
-- Rates 0.001 Hz (~17 min) to 2 Hz; optional tempo sync.
-- Shapes: sine, triangle, smooth-random (interpolated noise), "breath" (asymmetric sine).
-- Free-running and phase-continuous across play/stop; seeded so they're recallable.
-- DECIDE: should LFO *rates* themselves be modulated by data? (Proposal: yes, via matrix.)
+## 5. Sound
+Detail in `05-sound-engine.md`.
+- The curtain is heard: one resonator per curtain node, layered by emission
+  colour (red → low drone with long decay, green → body, violet → shimmering
+  upper partials).
+- Life in the detail: sparse, scale-quantised high sparkles on sky events;
+  whistler and chorus tones when activity is high.
+- Optional raw-field layer: audified magnetometer data (the POC wavetable).
+- Effects, fixed order, one tab each: Drive → Phaser → Chorus/Ensemble →
+  Delay (tape-style, long) → Reverb (large, shimmer at octave and fifth) →
+  Limiter.
 
-### 2.5 Data modulation sources
-- `D1…Dn` = normalised, slewed channels from `WorldSnapshot`, 0..1.
-- Each has: source binding, normalisation mode, slew time, curve, invert.
-- DECIDE: how many channels in v1 (proposal: 8).
+## 6. Macros
+Large top-level controls; everything else lives in tabs.
+- Proposal (Hero Concepts canvas): **Storm** (sensitivity to the sky),
+  **Breath** (slow cycle, 4–6 per minute, mirrored in the visuals), **Glow**,
+  **Space**, **Drift**.
+- DECIDE: confirm the macro set (brief: 4 to 6) and what each one moves.
 
-### 2.6 Mod matrix
-- 16 slots: source → target, amount (bipolar), optional via-source.
-- Sources: LFO1–4, D1–Dn, Env, Velocity, ModWheel, Random-per-voice.
-- Targets: any parameter flagged `modulatable` in `parameters.yaml`.
+## 7. Modulation: modular feel, fixed frame
+- **Sources:** sky channels (energy, onset, brightness, fold motion,
+  pulsation, Kp, Bz, wind), 4 LFOs (slow rates, smooth-random and drift
+  shapes), 2 random walkers, an output envelope follower (the patch hears
+  itself), event triggers (onset, whistler).
+- **Matrix:** 16 slots: source → destination, amount, curve, optional *via*
+  source that scales the amount. Modulators can target other modulators' rate
+  and depth.
+- **Triggers:** events fire actions (resonator strike, reverb swell, chord
+  step), each with a probability.
+- **Guardrails:** control rate only, everything slewed (≥ 2 s default for
+  data-driven targets), no audio-rate FM.
+- Every effect parameter is a matrix destination.
 
-### 2.7 Effects
-- Chorus/ensemble, stereo delay (long, filtered feedback), large reverb (FDN,
-  10–60 s tails, freeze). Reverb is part of the instrument, not optional garnish.
-- DECIDE: shimmer (pitch-shift in reverb loop) in v1?
+## 8. OSC out
+Sky state (nodes, phase, energy, events, astronomy), modulator values and the
+output envelope, for TouchDesigner. Address map in `03-architecture.md` §OSC.
+- DECIDE: default port and rate (proposal: UDP 127.0.0.1:9000, 60 Hz).
 
-### 2.8 World controls
-- **Region focus:** global / continent / lat-lon point (affects which quakes, weather, buoys).
-- **Time scale:** real-time, or "compress the last 24 h / 7 d / 1 y into a loop".
-- **Freeze world:** stop fetching; snapshot is stored in plugin state.
-- **Sensitivity:** how much data moves the sound overall (macro).
-- **Update interval** per source (respecting API limits).
+## 9. Presets
+Preset = sound and modulation parameters + station + autopilot mode
+(+ optional frozen sky). Small, flat list in v1.
+- DECIDE: factory set (proposal: ~10, named for sky states, e.g. "Quiet Arc",
+  "Substorm", "Corona", "Pulsating Dawn").
 
-### 2.9 Presets
-- Preset = synth params + mappings + (optional) frozen snapshot.
-- DECIDE: 10 factory presets themed by source ("Seismic Sleep", "Solar Wind", "North Atlantic Swell" …).
+## 10. Unattended safety (always on)
+Auto-gain, final limiter (ceiling −1 dBFS), slewing on all modulation, table
+and preset crossfades, no clicks on any change. Loudness target ≈ −18 LUFS.
 
-## 3. Musical guard-rails (always on)
-- Pitch-affecting data is quantised to the selected scale.
-- Output limiter + soft clip; loudness target ≈ −18 LUFS default.
-- Any discontinuity in data → slewed; any table swap → crossfade over ≥ 1 s.
+## 11. Out of v1
+Step sequencer, melodic MIDI beyond chord latch, per-voice editing, ocean
+source, complex preset browser, ambisonic/binaural output, fully adaptive
+environment-aware artworks (parked, see HyperAdapted).
 
-## 4. Phase-1 exit criteria
-- All `DECIDE:` lines answered.
-- `parameters.yaml` complete (IDs, ranges, defaults, units, modulatable flag).
-- Data sources chosen and verified (`02-data-sources.md` table filled with real tested URLs).
-- ADR-0001 (tech stack) and ADR-0002 (wavetable generation method) written.
+## 12. Open questions (owner)
+- Product and family name (Worldtable is the working title).
+- Final three sound references (`05-sound-engine.md` §References).
+- The `DECIDE:` lines above.

@@ -1,75 +1,71 @@
-# Worldtable — an ambient wavetable synth that listens to the planet
+# Worldtable — a drone that plays Earth's magnetic field
 
-> Working title. A JUCE/C++ VST3/AU/Standalone plugin that pulls live data from
-> public scientific APIs (seismics, space weather, oceans, atmosphere …),
-> transforms it into wavetables and slow modulation, and renders it as an
-> endless, comfortable ambient drone. "Hearing the world."
+> Working title. A JUCE/C++ VST3 / AU / Standalone instrument that plays
+> Earth's magnetic field as the sun shakes it: live, slow, never repeating,
+> with an interface that *is* the aurora. Open source, built for
+> TouchDesigner, DAWs and long listening.
 
-This folder is the **spec**. It is written to be read by you *and* by a coding
-agent. Nothing here is code yet; it is the contract the code must fulfil.
+**How it works.** Live magnetometer and solar-wind data (USGS, NOAA) nudge a
+generative **Sky Model**: an aurora curtain that loads energy from the solar
+wind and releases it in substorms. The same model state is *heard* (a modal
+resonator bank tuned to a slowly progressing chord), *seen* (an all-sky dome
+above a magnetometer station in Alaska) and *sent* (OSC to TouchDesigner).
 
-## The three production phases
+**Status (2026-11-05).** The proof of concept (wavetable synth fed by ocean
+and magnetometer data, WebView UI) works end to end on macOS (PR #2). The v1
+direction above is specified; next is the Sky Model prototype in the browser
+(`spec/tasks/T1.1-*`, `T1.2-*`).
 
-| Phase | Goal | Output | Spec file |
-|---|---|---|---|
-| 1. Define | Decide what the synth does, which data it hears, how data becomes sound | Filled-in functional spec + parameter contract | `spec/01-functional-spec.md`, `spec/02-data-sources.md`, `spec/parameters.yaml` |
-| 2. Mock | Make the UI visible before any DSP exists, so intent is unambiguous | Clickable HTML mock (later the real UI) | `spec/05-ui-mock.md` |
-| 3. Build | Implement modules behind fixed interfaces, assemble, test, ship | Working plugin, passing pluginval | `spec/03-architecture.md`, `spec/04-dsp-engine.md`, `spec/06-implementation-plan.md` |
+## Spec
+Read in this order: `spec/00-vision.md` → `spec/03-architecture.md` → the
+topic you work on → the task file.
 
-How to run all of this with agents: `spec/07-agentic-workflow.md`.
-Agent rules of the road: `CLAUDE.md`.
+| File | What |
+|---|---|
+| `spec/00-vision.md` | what it is, principles, non-goals, targets |
+| `spec/01-functional-spec.md` | what it does, open `DECIDE:` questions |
+| `spec/02-data-sources.md` | magnetosphere sources, adapter contract |
+| `spec/03-architecture.md` | threads, hand-offs, module map, OSC map |
+| `spec/04-sky-model.md` | the generative aurora model |
+| `spec/05-sound-engine.md` | resonators, harmony, modulation, FX |
+| `spec/06-ui.md` | visual identity, dome, layout |
+| `spec/07-implementation-plan.md` | milestones M0–M8 |
+| `spec/08-agentic-workflow.md` | how ideas become tasks and PRs |
+| `spec/decisions/` | ADRs |
+| `spec/parked/` | research for sister plug-ins |
 
-## Proposed repository layout
+Agent rules: `CLAUDE.md`.
 
+## Build and try (macOS)
+```sh
+cmake --preset dev && cmake --build --preset dev && ctest --preset dev
+cmake --preset release -DWORLDTABLE_COPY_PLUGINS=ON && cmake --build --preset release   # installs AU + VST3
+open build/release/Worldtable_artefacts/Release/Standalone/Worldtable.app
+build/release/WorldtableRender_artefacts/Release/WorldtableRender --out renders/x.wav --seconds 45
+open source/ui/index.html            # UI with mock data, no build needed
 ```
-worldtable/
-├── CLAUDE.md                     # rules every agent session reads first
-├── README.md                     # this file
-├── CMakeLists.txt                # JUCE via CPM/FetchContent, pinned tag
-├── cmake/
-├── spec/                         # ← THE SPEC (this folder)
-│   ├── 00-vision.md
-│   ├── 01-functional-spec.md
-│   ├── 02-data-sources.md
-│   ├── 03-architecture.md
-│   ├── 04-dsp-engine.md
-│   ├── 05-ui-mock.md
-│   ├── 06-implementation-plan.md
-│   ├── 07-agentic-workflow.md
-│   ├── parameters.yaml           # single source of truth for all parameters
-│   ├── decisions/                # ADRs: one file per irreversible choice
-│   └── tasks/                    # one file per agent task (generated in Phase 3)
-├── mock/                         # Phase 2: HTML/CSS/JS UI mock
-├── source/
-│   ├── PluginProcessor.{h,cpp}
-│   ├── PluginEditor.{h,cpp}
-│   ├── data/                     # network, parsing, caching — NEVER audio thread
-│   │   ├── DataSource.h          # interface
-│   │   ├── sources/              # one file per API adapter
-│   │   ├── DataScheduler.{h,cpp}
-│   │   ├── DataCache.{h,cpp}
-│   │   └── WorldSnapshot.h       # immutable, lock-free handoff to audio
-│   ├── transform/                # normalise, smooth, map → mod signals & tables
-│   │   ├── Normaliser.{h,cpp}
-│   │   ├── WavetableBuilder.{h,cpp}
-│   │   └── MappingMatrix.{h,cpp}
-│   ├── dsp/                      # real-time code only
-│   │   ├── WavetableOsc.{h,cpp}
-│   │   ├── Voice.{h,cpp}
-│   │   ├── DroneEngine.{h,cpp}
-│   │   ├── SlowLfo.{h,cpp}
-│   │   ├── ModMatrix.{h,cpp}
-│   │   ├── Filter.{h,cpp}
-│   │   └── fx/ (Chorus, Delay, Reverb)
-│   ├── params/                   # generated from spec/parameters.yaml
-│   └── ui/                       # WebView UI (grows out of mock/)
-├── tests/
-│   ├── unit/                     # Catch2: DSP + transforms, deterministic
-│   ├── fixtures/                 # recorded API responses (JSON/CSV)
-│   └── golden/                   # reference renders for regression
-├── tools/
-│   ├── gen_params.py             # parameters.yaml → C++ + JS
-│   ├── record_fixtures.py        # snapshot real API responses into fixtures
-│   └── render_offline.cpp        # headless render to WAV for tests/listening
-└── .github/workflows/            # build mac/win, unit tests, pluginval
+More options (live fetch, UI from disk, UI check): `spec/tasks/TP.1-poc-sound.md`.
+
+## Repository layout
 ```
+CLAUDE.md                 rules every agent session reads first
+spec/                     the spec (see above), parameters.yaml, tasks/
+prototype/sky/            browser sketch of the Sky Model (M1, plain JS)
+source/
+  PluginProcessor.*, PluginEditor.*
+  data/                   network, parsing, caching — never the audio thread
+  sky/                    Sky Model (M2): reservoir, curtain, observer, astronomy
+  dsp/                    real-time code: resonators, harmony, mod, fx/
+  osc/                    OSC out to TouchDesigner (M7)
+  transform/              raw-field wavetable builder
+  params/                 generated from spec/parameters.yaml — never hand-edit
+  ui/                     WebView UI (HTML/CSS/JS) + mock backend
+resources/                bundled data (factory world, storm days)
+tests/unit/, tests/fixtures/
+tools/                    gen_params.py, render/ (WorldtableRender), uicheck/, host/
+```
+`sky/`, `osc/` and `prototype/` arrive with their milestones.
+
+## Data credits
+USGS Geomagnetism Program; NOAA Space Weather Prediction Center; GFZ Potsdam
+(Kp, CC BY 4.0); NASA OMNI. Sources and licences: `spec/02-data-sources.md`.

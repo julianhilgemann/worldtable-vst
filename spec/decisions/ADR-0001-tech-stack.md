@@ -11,16 +11,19 @@
 - Networking: `juce::URL` / `WebInputStream` on a dedicated `juce::Thread`
   (no extra HTTP dependency in v1).
 - JSON: `juce::JSON` (no extra dependency in v1).
+- OSC: `juce_osc` (part of JUCE, no extra dependency).
 
 ## Consequences
-- Licence: JUCE requires either GPLv3 for the plugin or a JUCE commercial
-  licence (free tier has a revenue cap) — decide before any public release.
+- Licence: JUCE 8 is dual-licensed AGPLv3 / commercial; the project is open
+  source, so AGPLv3 is proposed (ADR-0005).
 - VST3 SDK is bundled with JUCE; distributing VST3 binaries requires accepting
   Steinberg's licence terms.
 - macOS distribution needs Developer ID signing + notarisation.
 
-## Open ADRs to write in Phase 1
-- ADR-0002 Wavetable generation method(s) for v1
-- ADR-0003 Snapshot hand-off mechanism (triple buffer vs atomic shared_ptr)
-- ADR-0004 UI technology (WebView vs native components)
-- ADR-0005 Licence & distribution (open source vs commercial)
+## ADR index
+- ADR-0002 v1 direction: magnetosphere drone played by a Sky Model — accepted
+- ADR-0003 Snapshot hand-off mechanism (triple buffer vs atomic shared_ptr) — to write
+- ADR-0004 UI technology (WebView vs native components) — to write, POC is the evidence
+- ADR-0005 Licence & distribution — open source accepted, AGPLv3 proposed
+- ADR-0006 Observer: all-sky dome above a magnetometer station — accepted
+- ADR-0007 Sky Model clock and determinism — proposed
