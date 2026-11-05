@@ -2,13 +2,13 @@
 // the page over evaluateJavascript whether the JUCE bridge works end to end.
 //
 //   WorldtableUICheck            → prints a JSON report, exit code 0 when all checks pass
-//   WorldtableUICheck --soak     → afterwards holds each ambient level (0–3) for 12 s with
-//                                  audio running and prints "soak level N", so the web view's
+//   WorldtableUICheck --soak     → afterwards holds ambient levels 0–2 for 12 s with audio
+//                                  running and prints "soak level N", so the web view's
 //                                  processes can be sampled from outside (TP.2)
 //
-// Checks: backend attached (not the browser mock), the world table arrived,
-// telemetry is streaming, parameters sync C++ → JS and JS → C++, the Sky Model's
-// readout shows the replayed storm (T2.4).
+// Checks: backend attached (not the browser mock), telemetry is streaming, parameters
+// sync C++ → JS and JS → C++, the Sky Model's readout shows the replayed storm (T2.4),
+// and the chord readout shows the sounding chord (T3.6).
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
@@ -60,7 +60,7 @@ int main (int argc, char* argv[])
     // Feed a little audio so telemetry and the analyzer have something to show.
     juce::AudioBuffer<float> buffer (2, 512);
     juce::MidiBuffer midi;
-    for (int i = 0; i < 200; ++i)
+    for (int i = 0; i < 400; ++i)
         processor.processBlock (buffer, midi);
 
     std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
@@ -83,7 +83,7 @@ int main (int argc, char* argv[])
         return 1;
     }
 
-    // Wait for the page to load and the first table/telemetry to arrive.
+    // Wait for the page to load and the first telemetry to arrive.
     juce::String ready;
     for (int i = 0; i < 60; ++i)
     {
@@ -92,43 +92,49 @@ int main (int argc, char* argv[])
             processor.processBlock (buffer, midi);
             pump (25);
         }
-        ready = evalSync (*browser, "!!(window.__wtState && window.__wtState.table && window.__wtState.tel.spectrum)");
+        ready = evalSync (*browser, "!!(window.__wtState && window.__wtState.tel.spectrum"
+                                    " && window.__wtState.tel.chord)");
         if (ready == "true")
             break;
     }
 
     const auto state = evalSync (*browser,
-        "JSON.stringify({ mock: WT.isMock, frames: __wtState.table && __wtState.table.frames,"
-        " station: __wtState.table && __wtState.table.station, origin: __wtState.table && __wtState.table.origin,"
-        " bands: (__wtState.tel.spectrum || []).length, voices: __wtState.tel.voices,"
-        " cutoff: WT.get('flt_cutoff'), mode: WT.get('trig_mode'), knobs: document.querySelectorAll('.knob').length })");
+        "JSON.stringify({ mock: WT.isMock, bands: (__wtState.tel.spectrum || []).length,"
+        " chord: __wtState.tel.chord && __wtState.tel.chord.label,"
+        " roman: __wtState.tel.chord && __wtState.tel.chord.roman,"
+        " voices: __wtState.tel.chord && __wtState.tel.chord.voices,"
+        " readout: document.getElementById('chord-text').textContent,"
+        " progression: WT.get('progression'), knobs: document.querySelectorAll('.knob').length,"
+        " selects: document.querySelectorAll('.select').length })");
 
     // C++ → JS
-    auto* cutoff = dynamic_cast<juce::RangedAudioParameter*> (processor.getValueTreeState().getParameter ("flt_cutoff"));
-    cutoff->setValueNotifyingHost (cutoff->convertTo0to1 (3210.0f));
+    auto* revMix = dynamic_cast<juce::RangedAudioParameter*> (processor.getValueTreeState().getParameter ("rev_mix"));
+    revMix->setValueNotifyingHost (revMix->convertTo0to1 (0.77f));
     pump (300);
-    const auto jsCutoff = evalSync (*browser, "WT.get('flt_cutoff')");
+    const auto jsRevMix = evalSync (*browser, "WT.get('rev_mix')");
 
     // JS → C++
-    evalSync (*browser, "WT.begin('rev_mix'); WT.set('rev_mix', 0.77); WT.end('rev_mix'); WT.commit('trig_mode', 1); true");
+    evalSync (*browser, "WT.begin('master'); WT.set('master', -12); WT.end('master');"
+                        " WT.commit('mood', 2); true");
     pump (300);
-    const float cppMix = processor.getValueTreeState().getRawParameterValue ("rev_mix")->load();
-    const float cppMode = processor.getValueTreeState().getRawParameterValue ("trig_mode")->load();
+    const float cppMaster = processor.getValueTreeState().getRawParameterValue ("master")->load();
+    const float cppMood = processor.getValueTreeState().getRawParameterValue ("mood")->load();
 
-    // Ambient background (TP.2): level 3 needs WebGL; without it the page falls back to level 1.
+    // Ambient background (TP.2): the free-running shader, no level switcher since T3.6.
     const auto ambient = evalSync (*browser,
-        "__wtAmbient.setLevel(3); JSON.stringify({ level: __wtAmbient.level,"
+        "JSON.stringify({ level: __wtAmbient.level,"
         " canvas: !!document.querySelector('#ambient canvas'), body: document.body.className })");
     pump (500);
     const auto ambientDrawn = evalSync (*browser, "__wtAmbient.smoothed.speed > 0");
     auto parsedAmbient = juce::JSON::parse (ambient);
 
-    // The Sky Model (T2.4): the readout is visible and shows the storm day being replayed.
-    pump (400);
+    // The Sky Model (T2.4) and the chord readout (T3.6).
+    pump (600);
     const auto skyState = evalSync (*browser,
         "JSON.stringify({ hidden: document.getElementById('sky').hidden,"
         " text: document.getElementById('sky-text').textContent,"
-        " day: __wtState.tel.sky && __wtState.tel.sky.day })");
+        " day: __wtState.tel.sky && __wtState.tel.sky.day,"
+        " chord: document.getElementById('chord-text').textContent })");
     auto parsedSky = juce::JSON::parse (skyState);
 
     auto parsed = juce::JSON::parse (state);
@@ -136,27 +142,32 @@ int main (int argc, char* argv[])
                  && ! static_cast<bool> (parsedSky["hidden"])
                  && parsedSky["text"].toString().startsWith ("10 May")
                  && parsedSky["day"].toString() == "2024-05-10"
-                 && static_cast<int> (parsedAmbient["level"]) == 3
+                 && parsedSky["chord"].toString().isNotEmpty()
+                 && parsedSky["chord"].toString() != "-"
+                 && static_cast<int> (parsedAmbient["level"]) == 2
                  && static_cast<bool> (parsedAmbient["canvas"])
                  && ambientDrawn == "true"
                  && ! static_cast<bool> (parsed["mock"])
-                 && static_cast<int> (parsed["frames"]) == 64
                  && static_cast<int> (parsed["bands"]) > 0
-                 && std::abs (jsCutoff.getFloatValue() - 3210.0f) < 1.0f
-                 && std::abs (cppMix - 0.77f) < 0.001f
-                 && std::abs (cppMode - 1.0f) < 0.001f;
+                 && parsed["chord"].toString().isNotEmpty()
+                 && static_cast<int> (parsed["voices"]) > 0
+                 && static_cast<int> (parsed["knobs"]) > 20
+                 && static_cast<int> (parsed["selects"]) >= 4
+                 && std::abs (jsRevMix.getFloatValue() - 0.77f) < 0.001f
+                 && std::abs (cppMaster - (-12.0f)) < 0.001f
+                 && std::abs (cppMood - 2.0f) < 0.001f;
 
     std::cout << "ready:      " << ready << "\n"
               << "page state: " << state << "\n"
-              << "C++→JS cutoff 3210 → JS sees " << jsCutoff << "\n"
-              << "JS→C++ rev_mix 0.77 → C++ sees " << cppMix << ", trig_mode → " << cppMode << "\n"
+              << "C++→JS rev_mix 0.77 → JS sees " << jsRevMix << "\n"
+              << "JS→C++ master −12 → C++ sees " << cppMaster << ", mood → " << cppMood << "\n"
               << "ambient:    " << ambient << "\n"
-              << "sky:        " << skyState << "\n"
+              << "sky/chord:  " << skyState << "\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
 
     if (soak)
     {
-        for (int level = 0; level <= 3; ++level)
+        for (int level = 0; level <= 2; ++level)
         {
             evalSync (*browser, "__wtAmbient.setLevel(" + juce::String (level) + "); true");
             std::cout << "soak level " << level << std::endl;

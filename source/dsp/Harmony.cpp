@@ -169,16 +169,6 @@ void append (char*& p, const char* s, char* end) noexcept
         *p++ = *s++;
 }
 
-bool sameChord (const Chord& a, const Chord& b) noexcept
-{
-    if (a.key != b.key || a.degree != b.degree || a.count != b.count)
-        return false;
-    for (int i = 0; i < a.count; ++i)
-        if (a.intervals[static_cast<size_t> (i)] != b.intervals[static_cast<size_t> (i)])
-            return false;
-    return true;
-}
-
 template <typename Enum>
 int indexOf (Enum e, int count) noexcept
 {
@@ -353,12 +343,26 @@ void Harmony::noteOff (int midiNote) noexcept
     if ((held[word].fetch_and (~bit, std::memory_order_relaxed) & bit) == 0)
         return;   // wasn't held
     if ((held[0].load (std::memory_order_relaxed) | held[1].load (std::memory_order_relaxed)) != 0)
-        relatch (true);   // all notes off: the last chord stays
+        relatch (true);   // still holding notes: the chord shrinks
+    else
+        latched.store (false, std::memory_order_release);   // T3.6: the sky resumes (see the header)
+}
+
+void Harmony::allNotesOff() noexcept
+{
+    held[0].store (0, std::memory_order_relaxed);
+    held[1].store (0, std::memory_order_relaxed);
+    latched.store (false, std::memory_order_release);
 }
 
 bool Harmony::midiHeld() const noexcept
 {
     return (held[0].load (std::memory_order_relaxed) | held[1].load (std::memory_order_relaxed)) != 0;
+}
+
+bool Harmony::isLatched() const noexcept
+{
+    return latched.load (std::memory_order_acquire);
 }
 
 int Harmony::heldCount() const noexcept
@@ -541,6 +545,16 @@ void Harmony::request (int function, int index, const char* reason) noexcept
 {
     targetFunction = std::clamp (function, 0, kNumFunctions - 1);
     targetIndex = std::clamp (index, 0, 2);
+    // The sky's target is the sounding chord once it lands, so chord() follows the progression
+    // (the editor's chord readout and the MIDI release rely on it).
+    functionIndex.store (targetFunction, std::memory_order_relaxed);
+    shapeIndex.store (targetIndex, std::memory_order_relaxed);
+
+    // T3.6: while MIDI holds notes the latched chord is authoritative. The sky keeps sensing —
+    // the target above still advances — but it must not ask the sound for a chord.
+    if (latched.load (std::memory_order_acquire))
+        return;
+
     pendingFn = targetFunction;
     pendingIdx = targetIndex;
     pendingWhy = reason != nullptr ? reason : "sky";

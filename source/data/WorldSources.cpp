@@ -1,5 +1,4 @@
 #include "WorldSources.h"
-#include "params/Params.h"
 
 #include <WorldtableWorldData.h>
 
@@ -13,7 +12,7 @@ namespace
 {
 using K = SourceDef::Kind;
 
-// Order must match params::WtSource (spec/parameters.yaml → wt_source).
+// The POC source catalogue (retired from the plug-in in T3.6; the raw-field layer reuses it).
 constexpr std::array<SourceDef, 6> kSources { {
     { K::ndbcSpectral, "46026", "San Francisco", "NOAA NDBC", "46026.data_spec", 20 },
     { K::ndbcSpectral, "51201", "Waimea Bay, Hawaii", "NOAA NDBC / CDIP", "51201.data_spec", 20 },
@@ -23,8 +22,6 @@ constexpr std::array<SourceDef, 6> kSources { {
     { K::usgsGeomag,   "CMO",   "College, Alaska", "USGS Geomagnetism", "CMO.json", 10 },
 } };
 
-static_assert (kSources.size() == static_cast<size_t> (params::WtSource::kCount),
-               "Source catalogue out of sync with parameters.yaml");
 
 juce::String isoUtc (double seconds)
 {

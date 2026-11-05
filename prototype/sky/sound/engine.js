@@ -214,8 +214,11 @@ export class SoundEngine {
     const level = [s.red, s.green, s.violet];
     const colour = [nd.red, nd.green, nd.violet];
     const w = [0, 0];
+    // `other` was computed before applyChord(): when a chord was taken this tick it names the
+    // new bank, so use the fresh counterpart or both weights land on the new bank and it gets
+    // the whole bed for 10 ms out of a silent start (T3.1 quirk, fixed in T3.6).
     w[this.cur] = Math.sin(0.5 * Math.PI * this.xf);
-    w[other] = Math.cos(0.5 * Math.PI * this.xf);
+    w[1 - this.cur] = Math.cos(0.5 * Math.PI * this.xf);
     const strikeWidth = 12 * this.vpn;
 
     for (let v = 0; v < V; v++) {

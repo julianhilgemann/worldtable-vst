@@ -1,17 +1,16 @@
 // Headless offline render: Worldtable processor → stereo WAV, plus signal statistics.
 //
-//   WorldtableRender --out renders/drone.wav --seconds 45 [--rate 48000] [--live]
-//                    [--set trig_mode=Euclid --set wt_source=4 --set flt_cutoff=900 ...]
+//   WorldtableRender --out renders/instrument.wav --seconds 45 [--rate 48000]
+//                    [--set progression=0 --set mood=Bittersweet --set drive=0.3 ...]
 //
-// Values for --set are real parameter values (Hz, s, dB …); choices accept the
-// index or the choice name. Without --live only the bundled factory world is used
-// (deterministic, no network).
+// The default path renders the plug-in as it plays: the Sky Model's bundled Journey (10–11 May
+// 2024, 24×), SkySound, the full FX chain, the chord hold and the MIDI latch (T3.6). Values for
+// --set are real parameter values (Hz, s, dB …); choices accept the index or the choice name.
 //
-// The sky's sound (T3.1–T3.3, not in the plug-in yet): the Sky Model playing a bundled day through
-// SkySound and the spec's chain (T3.5a): Drive → tape delay → shimmer reverb → AutoGain → DC →
-// limiter. Phaser/Chorus and the shimmer's fifth are T3.5b. A held-chord run keeps the sketch's
-// 20 s pre-roll so the resonators already ring; a progression run starts at `from`. 2 s fade-in,
-// 3 s fade-out.
+// The `--sky` path is the T3.1–T3.5b validation renderer: it drives SkySound and the chain
+// directly from a chosen day, time and speed, without the plug-in's parameters. A held-chord run
+// keeps the sketch's 20 s pre-roll so the resonators already ring; a progression run starts at
+// `from`. 2 s fade-in, 3 s fade-out.
 //
 //   WorldtableRender --sky --out renders/T3.1-storm.wav [--day 2024-05-10] [--from 17:20]
 //                    [--speed 24] [--seconds 300] [--voices 64|128] [--seed 1] [--gain 0] [--dry]
@@ -356,7 +355,7 @@ int main (int argc, char* argv[])
 
     juce::File out = juce::File::getCurrentWorkingDirectory().getChildFile ("renders/render.wav");
     double seconds = 30.0, rate = 48000.0;
-    bool live = false, skyMode = false, secondsGiven = false;
+    bool skyMode = false, secondsGiven = false;
     juce::StringArray sets;
     SkyRenderOptions sky;
 
@@ -368,7 +367,6 @@ int main (int argc, char* argv[])
         else if (a == "--seconds") { seconds = next().getDoubleValue(); secondsGiven = true; }
         else if (a == "--rate")    rate = next().getDoubleValue();
         else if (a == "--set")     sets.add (next());
-        else if (a == "--live")    live = true;
         else if (a == "--sky")     skyMode = true;
         else if (a == "--day")     sky.day = next();
         else if (a == "--from")    sky.from = next();
@@ -404,7 +402,7 @@ int main (int argc, char* argv[])
         return renderSky (out, sky);
     }
 
-    worldtable::PluginProcessor processor (live);
+    worldtable::PluginProcessor processor (false);
     for (const auto& s : sets)
         if (! setParameter (processor.getValueTreeState(), s))
             return fail ("unknown parameter in --set " + s);
@@ -412,17 +410,6 @@ int main (int argc, char* argv[])
     constexpr int block = 512;
     processor.setPlayConfigDetails (0, 2, rate, block);
     processor.prepareToPlay (rate, block);
-
-    if (live)
-    {
-        // give the data thread time to fetch and build
-        for (int i = 0; i < 100 && processor.getWorldFeed().getStatus().state != "live"
-                                && processor.getWorldFeed().getStatus().state != "offline"; ++i)
-            juce::Thread::sleep (100);
-        juce::Thread::sleep (300);
-        std::cout << "feed: " << processor.getWorldFeed().getStatus().state << " - "
-                  << processor.getWorldFeed().getStatus().message << "\n";
-    }
 
     const auto total = static_cast<int> (seconds * rate);
     juce::AudioBuffer<float> result (2, total);
@@ -458,10 +445,11 @@ int main (int argc, char* argv[])
         }
     }
     const auto rms = std::sqrt (sumSq / (2.0 * total));
-    const auto info = processor.getWorldFeed().getTableInfo();
+    const auto name = processor.getInstrument().currentChordName();
 
-    std::cout << "table:   " << (info ? info->station + " " + info->place + " (" + info->origin + ", "
-                                        + juce::String (info->preview.numFrames) + " frames)" : juce::String ("none")) << "\n"
+    std::cout << "journey: " << processor.getSkyFeed().dayId() << ", " << processor.getInstrument().voices()
+              << " voices per layer, chord " << juce::String::fromUTF8 (name.label.data())
+              << " (" << juce::String::fromUTF8 (name.roman.data()) << ")\n"
               << "length:  " << seconds << " s @ " << rate << " Hz\n"
               << "peak:    " << juce::Decibels::gainToDecibels (peak, -200.0f) << " dBFS\n"
               << "rms:     " << juce::Decibels::gainToDecibels (static_cast<float> (rms), -200.0f) << " dBFS\n"

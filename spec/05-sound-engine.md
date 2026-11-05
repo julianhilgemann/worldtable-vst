@@ -4,15 +4,14 @@ The curtain, heard. Each Sky Model node drives one resonator in a modal bank
 tuned to the held chord (12-TET). Mood: positive, shimmering, uplifting,
 awe-inspiring; emotion comes from harmony plus slight pitch instability.
 
-Status: **sketched** (T1.3, `prototype/sky/sound/`, 2026-11-05): §1–3 run in
-the browser on the T1.2 sky; mapping and constants in §12; the owner signed off
-the direction. **§1–2 ported to C++** (T3.1: `dsp/SkySound`, `ResonatorBank`,
-`Exciter`, `Voicing`): the dry sound matches the sketch (null test −135 dB) and
-plays through `WorldtableRender --sky`; the plug-in keeps the POC voice until
-the effects and parameters arrive (T3.5, T3.6). **§3 is ported** (T3.2: `dsp/Harmony` —
-vocabulary, naming, chord hold, scales, MIDI latch; T3.3: the progression engine
-and the sky's phase/onset dramaturgy). `SkySound` feeds it each tick's events and
-applies its requests; the plug-in still plays the POC voice until T3.5/T3.6.
+Status: **in the plug-in** (T3.6, 2026-11-06). §1–2 were ported from the T1.3 sketch
+in T3.1 (`dsp/SkySound`, `ResonatorBank`, `Exciter`, `Voicing`; null test vs the sketch
+−135 dB), §3 in T3.2/T3.3 (`dsp/Harmony`: vocabulary, naming, chord hold, scales, MIDI
+latch, progression), and §7's chain in T3.5a/b. `dsp::Instrument` now runs `SkySound`,
+the chain and the MIDI latch inside `PluginProcessor`, driven by the v1 parameters.
+Sparkles, whistlers and the full Breath cycle are T3.4; the raw-field layer (§5) is
+T3.6b and stays off. The default Journey opens at 17:20 UT on the storm day (the M3
+render window) rather than at 00:00.
 
 ```
 SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet layers) ─┐
@@ -50,7 +49,11 @@ SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet 
 
 ## 3. Harmony
 - **Chord Hold:** root, scale, chord shape from the UI or latched from MIDI
-  (notes held → chord; the last chord stays). 12-TET only.
+  (notes held → chord). 12-TET only. **MIDI vs progression** (T3.6, owner decision): while
+  notes are latched the held chord is authoritative; the sky keeps sensing (its target
+  function and shape advance) but writes nothing. The last note-off clears the latch and the
+  sky's current chord returns, so the progression resumes where the sky is then. With
+  Progression 0 that is the UI's held chord.
 - **Scales:** major, Lydian, major pentatonic (bright defaults); minor,
   Dorian, minor pentatonic.
 - **Chord vocabulary by Mood:**
@@ -78,7 +81,7 @@ SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet 
 - **Breath:** a slow cycle (4–6 per minute) gently moving level, brightness
   and filter, mirrored in the visuals.
 
-## 5. Raw-field layer (optional, off by default)
+## 5. Raw-field layer (optional, off by default; T3.6b)
 The POC wavetable oscillator playing audified CMO H data (builder A,
 series-as-cycle; 64 × 2048, mipmapped, table crossfade ≥ 1.5 s). One level
 control, tuned to the chord root.
@@ -113,8 +116,11 @@ Every effect parameter is a matrix destination.
 **Status (T3.5a/b):** the whole chain runs in `WorldtableRender --sky`: Drive → **Phaser** →
 **Chorus** → tape delay → ShimmerReverb (**octave and fifth**) → AutoGain → DC → limiter.
 Drive, the delay, the reverb and the limiter are the POC units; Phaser, Chorus, AutoGain, the
-DC blocker and the shimmer's fifth are new. The plug-in swaps to this chain in T3.6. Phaser and
-chorus carry a loudness make-up so engaging them does not duck the mix.
+DC blocker and the shimmer's fifth are new. **The plug-in runs this chain since T3.6**
+(`dsp::Instrument`), in the same order. Phaser and chorus carry a loudness make-up so engaging
+them does not duck the mix. The reverb's size and pre-delay glide per sample and its line
+coefficients update on an absolute 64-sample grid, so a parameter move never clicks and the
+sound does not depend on the host's block size.
 
 ## 8. Unattended safety
 - AutoGain: slow loudness normaliser toward ≈ −18 LUFS short-term, ±12 dB,
@@ -198,3 +204,10 @@ on 2026-11-05 ("sounds fine … run with it"), constants unchanged. N = 64 per l
 - **Levels:** storm and moderate bounces sit at −17 to −19 dBFS RMS. The quiet
   day sits at −26 dBFS RMS: the auto-gain's +12 dB isn't enough. Calm and sparse
   is intended, but it may be too quiet.
+- **Plug-in (T3.6):** the default Journey is the storm from 17:20 UT at 24×; the macros are
+  neutral at 0.5 (Breath 0.35), the render constants above are the defaults. Breath is a
+  5-per-minute cycle on the layer gains, evaluated on the tick grid (first pass; T3.4 deepens
+  it). Register and Voicing spread take effect at the next voicing (chord change), so a move
+  is heard on the next chord, not immediately. Scale is stored for the sparkles (T3.4) and does
+  not change the chords today. A 120 s plug-in render from 17:20: peak −1.0 dBFS, RMS −17.3,
+  max step 0.063, 3.3 % of a core in Release (sky + sound 2.0 %, FX 1.3 %).

@@ -32,7 +32,7 @@ std::string intervalsOf (const dsp::Chord& chord)
     return s;
 }
 
-bool sameChord (const dsp::Chord& a, const dsp::Chord& b)
+bool chordsEqual (const dsp::Chord& a, const dsp::Chord& b)
 {
     if (a.key != b.key || a.degree != b.degree || a.count != b.count)
         return false;
@@ -90,20 +90,20 @@ TEST_CASE ("chordOf clamps and wraps", "[harmony]")
     using dsp::ChordFunction;
     using dsp::Mood;
 
-    REQUIRE (sameChord (dsp::chordOf (Mood::bright, ChordFunction::awe, 99, 2),
+    REQUIRE (chordsEqual (dsp::chordOf (Mood::bright, ChordFunction::awe, 99, 2),
                         dsp::chordOf (Mood::bright, ChordFunction::awe, 2, 2)));
-    REQUIRE (sameChord (dsp::chordOf (Mood::bright, ChordFunction::home, -3, 2),
+    REQUIRE (chordsEqual (dsp::chordOf (Mood::bright, ChordFunction::home, -3, 2),
                         dsp::chordOf (Mood::bright, ChordFunction::home, 0, 2)));
 
     const auto a = dsp::chordOf (Mood::bright, ChordFunction::home, 0, -1);
     const auto b = dsp::chordOf (Mood::bright, ChordFunction::home, 0, 11);
-    REQUIRE (sameChord (a, b));
+    REQUIRE (chordsEqual (a, b));
     REQUIRE (a.key == 11);
     REQUIRE (dsp::chordOf (Mood::bright, ChordFunction::home, 0, 14).key == 2);
 
     // The default start chord is the sketch's D maj7.
     const auto d = dsp::chordOf (Mood::bright, ChordFunction::home, 0, 2);
-    REQUIRE (sameChord (d, dsp::Chord::dMaj7()));
+    REQUIRE (chordsEqual (d, dsp::Chord::dMaj7()));
     REQUIRE (intervalsOf (d) == "0,4,7,11");
 }
 
@@ -253,7 +253,7 @@ TEST_CASE ("chord hold follows the controls", "[harmony]")
     REQUIRE (labelOf (h.chord()) == "Dmaj7");
 }
 
-TEST_CASE ("MIDI latch: held notes become the chord, the last one stays", "[harmony]")
+TEST_CASE ("MIDI latch: held notes become the chord; release returns to the sky", "[harmony]")
 {
     dsp::Harmony h;
     h.noteOn (60);        // C4
@@ -277,7 +277,8 @@ TEST_CASE ("MIDI latch: held notes become the chord, the last one stays", "[harm
     // A first inversion still reads as C major: the root is the lowest note that spells a shape.
     releaseAll (h);
     REQUIRE_FALSE (h.midiHeld());
-    REQUIRE (labelOf (h.chord()) == "Cmaj");      // the last chord stays
+    REQUIRE_FALSE (h.isLatched());
+    REQUIRE (labelOf (h.chord()) == "Dmaj7");     // T3.6: the sky's held chord resumes (D, home)
     h.noteOn (64); h.noteOn (67); h.noteOn (72);
     REQUIRE (h.chord().key == 0);
     REQUIRE (labelOf (h.chord()) == "Cmaj");
@@ -289,11 +290,11 @@ TEST_CASE ("MIDI latch: held notes become the chord, the last one stays", "[harm
     h.noteOn (62);
     REQUIRE (labelOf (h.chord()) == "C9");        // C E G B♭ D
 
-    // Removing a tone re-latches; all notes off keeps the last chord.
+    // Removing a tone re-latches; all notes off hands back to the sky.
     h.noteOff (70);
     REQUIRE (labelOf (h.chord()) == "Cadd9");     // C E G D
     releaseAll (h);
-    REQUIRE (labelOf (h.chord()) == "Cadd9");
+    REQUIRE (labelOf (h.chord()) == "Dmaj7");
 
     // More than five distinct pitch classes keep the five lowest.
     releaseAll (h);
@@ -400,7 +401,7 @@ TEST_CASE ("progression: the sky writes the chord", "[harmony][progression]")
     same.setProgression (1.0);
     same.start (Phase::growth);
     same.onOnset (0.9f, 1000);
-    REQUIRE (sameChord (same.pendingChord(), awe));
+    REQUIRE (chordsEqual (same.pendingChord(), awe));
     REQUIRE (same.pendingIndex() == h.pendingIndex());
 
     // A newer request replaces a pending one; take clears it.
@@ -501,4 +502,55 @@ TEST_CASE ("progression: a control change re-voices at progression 0", "[harmony
     REQUIRE (labelOf (h.pendingChord()) == "Cmaj7");
     h.take (0.01);
     REQUIRE_FALSE (h.hasPending());
+}
+
+TEST_CASE ("MIDI vs progression: the held chord wins, the sky keeps sensing, release resumes", "[harmony][progression]")
+{
+    // The T3.6 owner decision (2026-11-05): while notes are latched the sky may advance its target
+    // but must not ask the sound for a chord; the last note-off hands the sky's current chord back.
+    dsp::Harmony h;
+    h.setProgression (1.0);
+    h.start (dsp::Phase::quiet);
+    REQUIRE (labelOf (h.chord()) == "Dmaj7");
+
+    h.noteOn (60); h.noteOn (64); h.noteOn (67);
+    REQUIRE (labelOf (h.chord()) == "Cmaj");
+
+    // An onset during the hold: the sky moves to its awe chord internally...
+    h.onOnset (0.9f, 100);
+    REQUIRE (labelOf (h.chord()) == "Cmaj");      // ...but the latched chord still sounds
+    REQUIRE_FALSE (h.hasPending());
+
+    h.update (1.0);
+    REQUIRE_FALSE (h.hasPending());
+
+    // A chord control clears the latch too (T3.2), and the next poll sees the sky's chord.
+    releaseAll (h);
+    REQUIRE_FALSE (h.isLatched());
+    REQUIRE_FALSE (h.midiHeld());
+    REQUIRE (labelOf (h.chord()) != "Cmaj");
+    dsp::Chord out;
+    REQUIRE (h.poll (out));
+    REQUIRE (labelOf (out) == labelOf (h.chord()));
+
+    // Progression 0: release returns to the UI's held chord, not the last latched one.
+    dsp::Harmony held;
+    held.setProgression (0.0);
+    held.setMood (dsp::Mood::bright);
+    held.setFunction (dsp::ChordFunction::home);
+    held.setChordIndex (0);
+    held.setKey (2);
+    held.start (dsp::Phase::quiet);
+    REQUIRE (labelOf (held.chord()) == "Dmaj7");
+    held.noteOn (67); held.noteOn (71); held.noteOn (74);   // G B D → Gmaj
+    REQUIRE (labelOf (held.chord()) == "Gmaj");
+    releaseAll (held);
+    REQUIRE (labelOf (held.chord()) == "Dmaj7");
+
+    // allNotesOff drops every hold at once.
+    held.noteOn (60);
+    REQUIRE (held.midiHeld());
+    held.allNotesOff();
+    REQUIRE_FALSE (held.midiHeld());
+    REQUIRE_FALSE (held.isLatched());
 }

@@ -34,7 +34,7 @@ bool SkyFeed::startDefaultJourney()
     if (! load (data::kDefaultSkyDay, 1, SkyParams {}))
         return false;
 
-    runtime.seek (loadedStartUtc);
+    runtime.seek (loadedStartUtc + kDefaultJourneyStart);
     runtime.setSpeed (kJourneySpeed);
     return true;
 }

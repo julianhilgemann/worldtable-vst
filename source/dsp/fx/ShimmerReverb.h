@@ -32,7 +32,8 @@ public:
     void prepare (double sampleRate);
     void reset() noexcept;
 
-    /** Call once per chunk. */
+    /** Call once per chunk. Size glides per sample, so the length change never clicks and the
+        result does not depend on how often this is called (T3.6 determinism). */
     void setSettings (const Settings&) noexcept;
 
     void process (float* left, float* right, int numSamples) noexcept;
@@ -133,13 +134,17 @@ private:
     std::array<DelayLine, kLines> lines;
     std::array<float, kLines> lineDelay {}, lineGain {}, lineLp {};
     std::array<double, kLines> modPhase {}, modInc {};
-    float lpCoef = 0.5f, modDepth = 0.0f, predelaySamples = 0.0f;
+    float lpCoef = 0.5f, modDepth = 0.0f;
 
     PitchShifter shifter, shifterFifth;
     float shimmerGain = 0.0f, shimmerHp = 0.0f, shimmerLp = 0.0f, shimmerHpCoef = 0.0f, shimmerLpCoef = 0.0f;
     float shimmerFeedback = 0.0f;
 
-    Smoother sizeSmoother;
+    void updateLineCoefficients() noexcept;
+
+    float targetSize = 0.75f, currentSize = 0.75f, sizeCoef = 0.0f;
+    float predelayTarget = 0.0f, predelayCurrent = 0.0f, predelayCoef = 0.0f;   // glides: the index never jumps
+    int coefCount = 0;
     float wetLevel = 0.0f;
 };
 

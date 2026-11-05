@@ -1,8 +1,6 @@
 #pragma once
 
-#include "data/WorldFeed.h"
-#include "dsp/Engine.h"
-#include "dsp/TableExchange.h"
+#include "dsp/Instrument.h"
 #include "params/Params.h"
 #include "sky/SkyFeed.h"
 #include "sky/SkyRuntime.h"
@@ -12,13 +10,13 @@
 namespace worldtable
 {
 
-/** Worldtable: world data → wavetable → voices → delay → shimmer reverb → limiter (the POC sound),
-    with the Sky Model running alongside on the audio clock (T2.4; it drives the sound from M3). */
+/** Worldtable: the Sky Model playing a magnetosphere drone (spec/05), with the chord hold, the
+    spec's FX chain and the MIDI latch (T3.6). The model runs on the audio clock (T2.4). */
 class PluginProcessor final : public juce::AudioProcessor
 {
 public:
     /** Bump when the saved-state layout changes; add a step to migrateState(). */
-    static constexpr int kStateVersion = 1;
+    static constexpr int kStateVersion = 2;
 
     static inline const juce::Identifier kStateType      { "Worldtable" };
     static inline const juce::Identifier kStateVersionId { "stateVersion" };
@@ -28,7 +26,7 @@ public:
         or newer than this build) — callers must then keep their current state. */
     static juce::ValueTree migrateState (juce::ValueTree state);
 
-    /** networkEnabled = false plays only the bundled factory world (tests, offline renders). */
+    /** networkEnabled is unused until M5 (live data); the bundled Journey is the only source now. */
     explicit PluginProcessor (bool networkEnabled = true);
     ~PluginProcessor() override;
 
@@ -47,7 +45,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 12.0; }
+    double getTailLengthSeconds() const override { return 30.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -60,19 +58,16 @@ public:
 
     //==========================================================================
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept { return apvts; }
-    data::WorldFeed& getWorldFeed() noexcept                         { return feed; }
-    dsp::Engine& getEngine() noexcept                                { return engine; }
+    dsp::Instrument& getInstrument() noexcept                        { return instrument; }
     sky::SkyRuntime& getSky() noexcept                               { return skyRuntime; }
     const sky::SkyFeed& getSkyFeed() const noexcept                  { return skyFeed; }
 
 private:
     juce::AudioProcessorValueTreeState apvts;
     params::ParamPointers paramPointers;
-    dsp::TableExchange tables;
-    data::WorldFeed feed;
-    dsp::Engine engine;
     sky::SkyRuntime skyRuntime;
     sky::SkyFeed skyFeed { skyRuntime };
+    dsp::Instrument instrument;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

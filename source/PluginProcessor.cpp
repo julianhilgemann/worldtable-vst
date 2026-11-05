@@ -6,7 +6,7 @@ namespace worldtable
 
 namespace
 {
-const params::ParamPointers& bound (params::ParamPointers& pp, juce::AudioProcessorValueTreeState& apvts)
+params::ParamPointers& bound (params::ParamPointers& pp, juce::AudioProcessorValueTreeState& apvts)
 {
     pp.bind (apvts);
     return pp;
@@ -16,15 +16,14 @@ const params::ParamPointers& bound (params::ParamPointers& pp, juce::AudioProces
 PluginProcessor::PluginProcessor (bool networkEnabled)
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, kStateType, params::createLayout()),
-      feed (tables, bound (paramPointers, apvts), networkEnabled),
-      engine (paramPointers, tables)
+      instrument (bound (paramPointers, apvts), skyRuntime)
 {
+    juce::ignoreUnused (networkEnabled);   // live data arrives in M5; the bundled Journey plays now
+
     apvts.state.setProperty (kStateVersionId, kStateVersion, nullptr);
 
-    // A table exists before the first block: built synchronously from cache/factory data.
-    feed.prime();
-
-    // The sky's default Journey (M2): the 10–11 May 2024 storm at 24×, built here like the table.
+    // The sky's default Journey (M2): the 10–11 May 2024 storm at 24×, built here like the table
+    // was in the POC. The instrument picks the track up on prepareToPlay.
     skyFeed.startDefaultJourney();
 }
 
@@ -40,9 +39,8 @@ juce::ValueTree PluginProcessor::migrateState (juce::ValueTree state)
     if (version < 1 || version > kStateVersion)
         return {};
 
-    // Future upgrades go here, one step per version, e.g.
-    //   if (version == 1) { ...rewrite tree to v2...; version = 2; }
-
+    // v1 → v2 (T3.6): the POC parameters are gone. Their properties are ignored by the new APVTS,
+    // so nothing has to be rewritten; unknown IDs simply don't bind. Future upgrades go here.
     state.setProperty (kStateVersionId, kStateVersion, nullptr);
     return state;
 }
@@ -50,13 +48,9 @@ juce::ValueTree PluginProcessor::migrateState (juce::ValueTree state)
 //==============================================================================
 void PluginProcessor::prepareToPlay (double sampleRate, int maximumExpectedSamplesPerBlock)
 {
-    // Rebuilds synchronously if restored state changed the source or transform,
-    // then lets the data thread run (fetching, live rebuilds).
-    feed.start();
-
-    engine.prepare (sampleRate, maximumExpectedSamplesPerBlock);
     skyRuntime.prepare (sampleRate);
-    setLatencySamples (engine.getLatencySamples());
+    instrument.prepare (sampleRate, maximumExpectedSamplesPerBlock);
+    setLatencySamples (instrument.getLatencySamples());
 }
 
 void PluginProcessor::releaseResources() {}
@@ -70,25 +64,7 @@ bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
-
-    dsp::HostTime host;
-    if (auto* hostPlayHead = getPlayHead())
-    {
-        if (const auto pos = hostPlayHead->getPosition())
-        {
-            if (const auto bpm = pos->getBpm())
-                host.bpm = *bpm;
-            host.isPlaying = pos->getIsPlaying();
-            if (const auto ppq = pos->getPpqPosition())
-            {
-                host.hasPpq = true;
-                host.ppq = *ppq;
-            }
-        }
-    }
-
-    skyRuntime.process (buffer.getNumSamples());   // 100 Hz ticks on the sample clock (ADR-0007)
-    engine.process (buffer, midi, host);
+    instrument.process (buffer, midi);
 }
 
 //==============================================================================

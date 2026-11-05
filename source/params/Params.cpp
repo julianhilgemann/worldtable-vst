@@ -7,100 +7,68 @@ namespace worldtable::params
 
 void ParamPointers::bind (juce::AudioProcessorValueTreeState& apvts)
 {
-    trig_mode = apvts.getRawParameterValue (id::trig_mode);
-    jassert (trig_mode != nullptr);
-    root = apvts.getRawParameterValue (id::root);
-    jassert (root != nullptr);
-    octave = apvts.getRawParameterValue (id::octave);
-    jassert (octave != nullptr);
+    key = apvts.getRawParameterValue (id::key);
+    jassert (key != nullptr);
+    mood = apvts.getRawParameterValue (id::mood);
+    jassert (mood != nullptr);
     scale = apvts.getRawParameterValue (id::scale);
     jassert (scale != nullptr);
-    chord = apvts.getRawParameterValue (id::chord);
-    jassert (chord != nullptr);
-    bpm = apvts.getRawParameterValue (id::bpm);
-    jassert (bpm != nullptr);
-    eu_steps = apvts.getRawParameterValue (id::eu_steps);
-    jassert (eu_steps != nullptr);
-    eu_pulses = apvts.getRawParameterValue (id::eu_pulses);
-    jassert (eu_pulses != nullptr);
-    eu_rotate = apvts.getRawParameterValue (id::eu_rotate);
-    jassert (eu_rotate != nullptr);
-    eu_rate = apvts.getRawParameterValue (id::eu_rate);
-    jassert (eu_rate != nullptr);
-    eu_gate = apvts.getRawParameterValue (id::eu_gate);
-    jassert (eu_gate != nullptr);
-    eu_range = apvts.getRawParameterValue (id::eu_range);
-    jassert (eu_range != nullptr);
-    eu_notes = apvts.getRawParameterValue (id::eu_notes);
-    jassert (eu_notes != nullptr);
-    eu_mutate = apvts.getRawParameterValue (id::eu_mutate);
-    jassert (eu_mutate != nullptr);
-    wt_source = apvts.getRawParameterValue (id::wt_source);
-    jassert (wt_source != nullptr);
-    wt_spread = apvts.getRawParameterValue (id::wt_spread);
-    jassert (wt_spread != nullptr);
-    wt_tilt = apvts.getRawParameterValue (id::wt_tilt);
-    jassert (wt_tilt != nullptr);
-    wt_contrast = apvts.getRawParameterValue (id::wt_contrast);
-    jassert (wt_contrast != nullptr);
-    wt_phase = apvts.getRawParameterValue (id::wt_phase);
-    jassert (wt_phase != nullptr);
-    osc_pos = apvts.getRawParameterValue (id::osc_pos);
-    jassert (osc_pos != nullptr);
-    osc_octave = apvts.getRawParameterValue (id::osc_octave);
-    jassert (osc_octave != nullptr);
-    osc_unison = apvts.getRawParameterValue (id::osc_unison);
-    jassert (osc_unison != nullptr);
-    osc_detune = apvts.getRawParameterValue (id::osc_detune);
-    jassert (osc_detune != nullptr);
-    osc_width = apvts.getRawParameterValue (id::osc_width);
-    jassert (osc_width != nullptr);
-    osc_drive = apvts.getRawParameterValue (id::osc_drive);
-    jassert (osc_drive != nullptr);
-    osc_level = apvts.getRawParameterValue (id::osc_level);
-    jassert (osc_level != nullptr);
-    flt_type = apvts.getRawParameterValue (id::flt_type);
-    jassert (flt_type != nullptr);
-    flt_cutoff = apvts.getRawParameterValue (id::flt_cutoff);
-    jassert (flt_cutoff != nullptr);
-    flt_reso = apvts.getRawParameterValue (id::flt_reso);
-    jassert (flt_reso != nullptr);
-    flt_env = apvts.getRawParameterValue (id::flt_env);
-    jassert (flt_env != nullptr);
-    flt_key = apvts.getRawParameterValue (id::flt_key);
-    jassert (flt_key != nullptr);
-    amp_a = apvts.getRawParameterValue (id::amp_a);
-    jassert (amp_a != nullptr);
-    amp_d = apvts.getRawParameterValue (id::amp_d);
-    jassert (amp_d != nullptr);
-    amp_s = apvts.getRawParameterValue (id::amp_s);
-    jassert (amp_s != nullptr);
-    amp_r = apvts.getRawParameterValue (id::amp_r);
-    jassert (amp_r != nullptr);
-    fenv_a = apvts.getRawParameterValue (id::fenv_a);
-    jassert (fenv_a != nullptr);
-    fenv_d = apvts.getRawParameterValue (id::fenv_d);
-    jassert (fenv_d != nullptr);
-    fenv_s = apvts.getRawParameterValue (id::fenv_s);
-    jassert (fenv_s != nullptr);
-    fenv_r = apvts.getRawParameterValue (id::fenv_r);
-    jassert (fenv_r != nullptr);
-    lfo1_rate = apvts.getRawParameterValue (id::lfo1_rate);
-    jassert (lfo1_rate != nullptr);
-    lfo1_shape = apvts.getRawParameterValue (id::lfo1_shape);
-    jassert (lfo1_shape != nullptr);
-    lfo1_dest = apvts.getRawParameterValue (id::lfo1_dest);
-    jassert (lfo1_dest != nullptr);
-    lfo1_amt = apvts.getRawParameterValue (id::lfo1_amt);
-    jassert (lfo1_amt != nullptr);
-    lfo2_rate = apvts.getRawParameterValue (id::lfo2_rate);
-    jassert (lfo2_rate != nullptr);
-    lfo2_shape = apvts.getRawParameterValue (id::lfo2_shape);
-    jassert (lfo2_shape != nullptr);
-    lfo2_dest = apvts.getRawParameterValue (id::lfo2_dest);
-    jassert (lfo2_dest != nullptr);
-    lfo2_amt = apvts.getRawParameterValue (id::lfo2_amt);
-    jassert (lfo2_amt != nullptr);
+    chord_shape = apvts.getRawParameterValue (id::chord_shape);
+    jassert (chord_shape != nullptr);
+    progression = apvts.getRawParameterValue (id::progression);
+    jassert (progression != nullptr);
+    transpose = apvts.getRawParameterValue (id::transpose);
+    jassert (transpose != nullptr);
+    register_semis = apvts.getRawParameterValue (id::register_semis);
+    jassert (register_semis != nullptr);
+    spread = apvts.getRawParameterValue (id::spread);
+    jassert (spread != nullptr);
+    detune = apvts.getRawParameterValue (id::detune);
+    jassert (detune != nullptr);
+    drift = apvts.getRawParameterValue (id::drift);
+    jassert (drift != nullptr);
+    red_level = apvts.getRawParameterValue (id::red_level);
+    jassert (red_level != nullptr);
+    green_level = apvts.getRawParameterValue (id::green_level);
+    jassert (green_level != nullptr);
+    violet_level = apvts.getRawParameterValue (id::violet_level);
+    jassert (violet_level != nullptr);
+    red_decay = apvts.getRawParameterValue (id::red_decay);
+    jassert (red_decay != nullptr);
+    green_decay = apvts.getRawParameterValue (id::green_decay);
+    jassert (green_decay != nullptr);
+    violet_decay = apvts.getRawParameterValue (id::violet_decay);
+    jassert (violet_decay != nullptr);
+    width = apvts.getRawParameterValue (id::width);
+    jassert (width != nullptr);
+    macro_storm = apvts.getRawParameterValue (id::macro_storm);
+    jassert (macro_storm != nullptr);
+    macro_breath = apvts.getRawParameterValue (id::macro_breath);
+    jassert (macro_breath != nullptr);
+    macro_glow = apvts.getRawParameterValue (id::macro_glow);
+    jassert (macro_glow != nullptr);
+    macro_space = apvts.getRawParameterValue (id::macro_space);
+    jassert (macro_space != nullptr);
+    macro_drift = apvts.getRawParameterValue (id::macro_drift);
+    jassert (macro_drift != nullptr);
+    drive = apvts.getRawParameterValue (id::drive);
+    jassert (drive != nullptr);
+    ph_rate = apvts.getRawParameterValue (id::ph_rate);
+    jassert (ph_rate != nullptr);
+    ph_depth = apvts.getRawParameterValue (id::ph_depth);
+    jassert (ph_depth != nullptr);
+    ph_feedback = apvts.getRawParameterValue (id::ph_feedback);
+    jassert (ph_feedback != nullptr);
+    ph_mix = apvts.getRawParameterValue (id::ph_mix);
+    jassert (ph_mix != nullptr);
+    ph_stages = apvts.getRawParameterValue (id::ph_stages);
+    jassert (ph_stages != nullptr);
+    ch_rate = apvts.getRawParameterValue (id::ch_rate);
+    jassert (ch_rate != nullptr);
+    ch_depth = apvts.getRawParameterValue (id::ch_depth);
+    jassert (ch_depth != nullptr);
+    ch_mix = apvts.getRawParameterValue (id::ch_mix);
+    jassert (ch_mix != nullptr);
     dly_time = apvts.getRawParameterValue (id::dly_time);
     jassert (dly_time != nullptr);
     dly_fb = apvts.getRawParameterValue (id::dly_fb);
@@ -125,8 +93,6 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& apvts)
     jassert (rev_mod != nullptr);
     rev_mix = apvts.getRawParameterValue (id::rev_mix);
     jassert (rev_mix != nullptr);
-    lim_gain = apvts.getRawParameterValue (id::lim_gain);
-    jassert (lim_gain != nullptr);
     lim_ceiling = apvts.getRawParameterValue (id::lim_ceiling);
     jassert (lim_ceiling != nullptr);
     lim_release = apvts.getRawParameterValue (id::lim_release);
@@ -140,122 +106,92 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     using namespace juce;
     AudioProcessorValueTreeState::ParameterLayout layout;
 
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::trig_mode, 1 }, "Trigger Mode",
-        StringArray { "Drone", "Euclid", "MIDI" }, 0));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::root, 1 }, "Root",
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::key, 1 }, "Key",
         StringArray { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 2));
-    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::octave, 1 }, "Octave", 1, 5, 3, AudioParameterIntAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::mood, 1 }, "Mood",
+        StringArray { "Bright", "Bittersweet", "Nocturnal" }, 0));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::scale, 1 }, "Scale",
-        StringArray { "Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Penta Major", "Penta Minor", "Harmonic Minor" }, 2));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::chord, 1 }, "Chord",
-        StringArray { "Root", "Fifth", "Triad", "Seventh", "Ninth", "Open" }, 5));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::bpm, 1 }, "Tempo",
-        NormalisableRange<float> (40.0f, 200.0f, 0.1f, 1.0f), 90.0f, AudioParameterFloatAttributes().withLabel ("BPM")));
-    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::eu_steps, 1 }, "Euclid Steps", 2, 32, 16, AudioParameterIntAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::eu_pulses, 1 }, "Euclid Pulses", 1, 32, 5, AudioParameterIntAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::eu_rotate, 1 }, "Euclid Rotate", 0, 31, 0, AudioParameterIntAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::eu_rate, 1 }, "Euclid Rate",
-        StringArray { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/4T", "1/8T", "1/16T" }, 4));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eu_gate, 1 }, "Euclid Gate",
-        NormalisableRange<float> (0.05f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::eu_range, 1 }, "Euclid Range", 1, 3, 2, AudioParameterIntAttributes().withLabel ("oct")));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::eu_notes, 1 }, "Euclid Notes",
-        StringArray { "Root", "Chord", "Scale" }, 2));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eu_mutate, 1 }, "Euclid Mutate",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.15f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::wt_source, 1 }, "World Source",
-        StringArray { String::fromUTF8 ("Swell \302\267 San Francisco"), String::fromUTF8 ("Swell \302\267 Waimea Bay"), String::fromUTF8 ("Swell \302\267 Gulf of Maine"), String::fromUTF8 ("Swell \302\267 Cape Canaveral"), String::fromUTF8 ("Magnetosphere \302\267 Boulder"), String::fromUTF8 ("Magnetosphere \302\267 Alaska") }, 0));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::wt_spread, 1 }, "Table Spread",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.45f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::wt_tilt, 1 }, "Table Tilt",
-        NormalisableRange<float> (-12.0f, 6.0f, 0.0f, 1.0f), -3.0f, AudioParameterFloatAttributes().withLabel ("dB/oct")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::wt_contrast, 1 }, "Table Contrast",
-        NormalisableRange<float> (0.25f, 3.0f, 0.0f, 0.5334843825603839f), 1.0f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::wt_phase, 1 }, "Table Phase",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.6f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::osc_pos, 1 }, "Position",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.75f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::osc_octave, 1 }, "Osc Octave", -2, 2, 0, AudioParameterIntAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::osc_unison, 1 }, "Unison", 1, 6, 3, AudioParameterIntAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::osc_detune, 1 }, "Detune",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.25f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::osc_width, 1 }, "Width",
+        StringArray { "Major", "Lydian", "Penta Major", "Minor", "Dorian", "Penta Minor" }, 0));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::chord_shape, 1 }, "Chord Shape",
+        StringArray { "Shape 1", "Shape 2", "Shape 3" }, 0));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::progression, 1 }, "Progression",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 1.0f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::transpose, 1 }, "Transpose", -24, 24, 0, AudioParameterIntAttributes().withLabel ("st")));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::register_semis, 1 }, "Register", -24, 24, 0, AudioParameterIntAttributes().withLabel ("st")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::spread, 1 }, "Voicing Spread",
+        NormalisableRange<float> (0.5f, 4.0f, 0.0f, 1.0f), 2.0f, AudioParameterFloatAttributes().withLabel ("oct")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::detune, 1 }, "Detune",
+        NormalisableRange<float> (0.0f, 12.0f, 0.0f, 1.0f), 3.0f, AudioParameterFloatAttributes().withLabel ("ct")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::drift, 1 }, "Drift",
+        NormalisableRange<float> (0.0f, 20.0f, 0.0f, 1.0f), 4.0f, AudioParameterFloatAttributes().withLabel ("ct")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::red_level, 1 }, "Red Level",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 1.0f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::green_level, 1 }, "Green Level",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.7f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::osc_drive, 1 }, "Drive",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.2f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::osc_level, 1 }, "Osc Level",
-        NormalisableRange<float> (-36.0f, 6.0f, 0.0f, 1.0f), -6.0f, AudioParameterFloatAttributes().withLabel ("dB")));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::flt_type, 1 }, "Filter Type",
-        StringArray { "LP12", "LP24", "BP", "HP" }, 0));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::flt_cutoff, 1 }, "Cutoff",
-        NormalisableRange<float> (20.0f, 20000.0f, 0.0f, 0.22990455846863825f), 1400.0f, AudioParameterFloatAttributes().withLabel ("Hz")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::flt_reso, 1 }, "Resonance",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.2f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::flt_env, 1 }, "Filter Env Amount",
-        NormalisableRange<float> (-1.0f, 1.0f, 0.0f, 1.0f), 0.3f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::flt_key, 1 }, "Key Track",
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::violet_level, 1 }, "Violet Level",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.4f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::red_decay, 1 }, "Red Decay",
+        NormalisableRange<float> (5.0f, 60.0f, 0.0f, 0.5334843825603839f), 20.0f, AudioParameterFloatAttributes().withLabel ("s")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::green_decay, 1 }, "Green Decay",
+        NormalisableRange<float> (2.0f, 30.0f, 0.0f, 0.44996553731885225f), 6.0f, AudioParameterFloatAttributes().withLabel ("s")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::violet_decay, 1 }, "Violet Decay",
+        NormalisableRange<float> (1.0f, 15.0f, 0.0f, 0.3562071871080221f), 2.5f, AudioParameterFloatAttributes().withLabel ("s")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::width, 1 }, "Width",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.9f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::macro_storm, 1 }, "Storm",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::amp_a, 1 }, "Amp Attack",
-        NormalisableRange<float> (0.001f, 20.0f, 0.0f, 0.1975805061697345f), 1.5f, AudioParameterFloatAttributes().withLabel ("s")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::amp_d, 1 }, "Amp Decay",
-        NormalisableRange<float> (0.001f, 20.0f, 0.0f, 0.21525797845050076f), 2.5f, AudioParameterFloatAttributes().withLabel ("s")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::amp_s, 1 }, "Amp Sustain",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.75f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::amp_r, 1 }, "Amp Release",
-        NormalisableRange<float> (0.005f, 30.0f, 0.0f, 0.23113346286488787f), 5.0f, AudioParameterFloatAttributes().withLabel ("s")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::fenv_a, 1 }, "Filter Env Attack",
-        NormalisableRange<float> (0.001f, 20.0f, 0.0f, 0.1975805061697345f), 2.5f, AudioParameterFloatAttributes().withLabel ("s")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::fenv_d, 1 }, "Filter Env Decay",
-        NormalisableRange<float> (0.001f, 20.0f, 0.0f, 0.21525797845050076f), 4.0f, AudioParameterFloatAttributes().withLabel ("s")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::fenv_s, 1 }, "Filter Env Sustain",
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::macro_breath, 1 }, "Breath",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.35f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::fenv_r, 1 }, "Filter Env Release",
-        NormalisableRange<float> (0.005f, 30.0f, 0.0f, 0.23113346286488787f), 6.0f, AudioParameterFloatAttributes().withLabel ("s")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::lfo1_rate, 1 }, "LFO 1 Rate",
-        NormalisableRange<float> (0.01f, 20.0f, 0.0f, 0.18690355876142611f), 0.05f, AudioParameterFloatAttributes().withLabel ("Hz")));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::lfo1_shape, 1 }, "LFO 1 Shape",
-        StringArray { "Sine", "Triangle", "Saw", "Square", "S&H", "Drift" }, 0));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::lfo1_dest, 1 }, "LFO 1 Destination",
-        StringArray { "Position", "Cutoff", "Pitch", "Drive", "Amp", "Pan" }, 0));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::lfo1_amt, 1 }, "LFO 1 Amount",
-        NormalisableRange<float> (-1.0f, 1.0f, 0.0f, 1.0f), 0.4f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::lfo2_rate, 1 }, "LFO 2 Rate",
-        NormalisableRange<float> (0.01f, 20.0f, 0.0f, 0.18690355876142611f), 0.13f, AudioParameterFloatAttributes().withLabel ("Hz")));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::lfo2_shape, 1 }, "LFO 2 Shape",
-        StringArray { "Sine", "Triangle", "Saw", "Square", "S&H", "Drift" }, 5));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::lfo2_dest, 1 }, "LFO 2 Destination",
-        StringArray { "Position", "Cutoff", "Pitch", "Drive", "Amp", "Pan" }, 1));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::lfo2_amt, 1 }, "LFO 2 Amount",
-        NormalisableRange<float> (-1.0f, 1.0f, 0.0f, 1.0f), 0.25f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::dly_time, 1 }, "Delay Time",
-        StringArray { "1/16", "1/8T", "1/8", "1/8D", "1/4T", "1/4", "1/4D", "1/2", "1/1" }, 6));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::macro_glow, 1 }, "Glow",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::macro_space, 1 }, "Space",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::macro_drift, 1 }, "Drift",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::drive, 1 }, "Drive",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.15f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ph_rate, 1 }, "Phaser Rate",
+        NormalisableRange<float> (0.005f, 0.5f, 0.0f, 0.2890648263178879f), 0.05f, AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ph_depth, 1 }, "Phaser Depth",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.6f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ph_feedback, 1 }, "Phaser Feedback",
+        NormalisableRange<float> (0.0f, 0.8f, 0.0f, 1.0f), 0.3f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ph_mix, 1 }, "Phaser Mix",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.4f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::ph_stages, 1 }, "Phaser Stages", 2, 8, 6, AudioParameterIntAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ch_rate, 1 }, "Chorus Rate",
+        NormalisableRange<float> (0.01f, 1.0f, 0.0f, 0.2890648263178879f), 0.1f, AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ch_depth, 1 }, "Chorus Depth",
+        NormalisableRange<float> (0.0f, 10.0f, 0.0f, 1.0f), 3.0f, AudioParameterFloatAttributes().withLabel ("ms")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ch_mix, 1 }, "Chorus Mix",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.25f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::dly_time, 1 }, "Delay Time",
+        NormalisableRange<float> (0.05f, 4.0f, 0.0f, 0.48641604522397786f), 1.8f, AudioParameterFloatAttributes().withLabel ("s")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::dly_fb, 1 }, "Delay Feedback",
-        NormalisableRange<float> (0.0f, 0.95f, 0.0f, 1.0f), 0.45f, AudioParameterFloatAttributes().withLabel ("")));
+        NormalisableRange<float> (0.0f, 0.95f, 0.0f, 1.0f), 0.35f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::dly_tone, 1 }, "Delay Tone",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.45f, AudioParameterFloatAttributes().withLabel ("")));
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { id::dly_pingpong, 1 }, "Delay Ping-Pong", true));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::dly_mix, 1 }, "Delay Mix",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.2f, AudioParameterFloatAttributes().withLabel ("")));
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.25f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::rev_size, 1 }, "Reverb Size",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.75f, AudioParameterFloatAttributes().withLabel ("")));
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.85f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::rev_decay, 1 }, "Reverb Decay",
-        NormalisableRange<float> (0.3f, 30.0f, 0.0f, 0.3327935693229732f), 8.0f, AudioParameterFloatAttributes().withLabel ("s")));
+        NormalisableRange<float> (0.3f, 60.0f, 0.0f, 0.3384323147138161f), 9.0f, AudioParameterFloatAttributes().withLabel ("s")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::rev_damp, 1 }, "Reverb Damping",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.4f, AudioParameterFloatAttributes().withLabel ("")));
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.35f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::rev_predelay, 1 }, "Reverb Pre-Delay",
         NormalisableRange<float> (0.0f, 250.0f, 0.0f, 1.0f), 20.0f, AudioParameterFloatAttributes().withLabel ("ms")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::rev_shimmer, 1 }, "Reverb Shimmer",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.3f, AudioParameterFloatAttributes().withLabel ("")));
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.2f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::rev_mod, 1 }, "Reverb Modulation",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.4f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::rev_mix, 1 }, "Reverb Mix",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.4f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::lim_gain, 1 }, "Limiter Gain",
-        NormalisableRange<float> (0.0f, 18.0f, 0.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("dB")));
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.35f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::lim_ceiling, 1 }, "Limiter Ceiling",
         NormalisableRange<float> (-12.0f, 0.0f, 0.0f, 1.0f), -1.0f, AudioParameterFloatAttributes().withLabel ("dB")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::lim_release, 1 }, "Limiter Release",
-        NormalisableRange<float> (10.0f, 1000.0f, 0.0f, 0.3154648767857287f), 150.0f, AudioParameterFloatAttributes().withLabel ("ms")));
+        NormalisableRange<float> (10.0f, 1000.0f, 0.0f, 0.3543583976937076f), 200.0f, AudioParameterFloatAttributes().withLabel ("ms")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::master, 1 }, "Output",
         NormalisableRange<float> (-60.0f, 0.0f, 0.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("dB")));
 
