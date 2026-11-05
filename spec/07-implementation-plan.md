@@ -40,9 +40,14 @@ Exit: owner signs off the look and the sound direction; mapping recorded in
 
 ## M2 — Sky Model in C++
 - T2.1 `SkySnapshot.h` + `SkyModel` interface, header-first review.
-- T2.2 Reservoir and substorm phases; T2.3 curtain + pulsations + events.
-- T2.4 Assimilation, track reading, seeded RNG; determinism and block-size tests.
-- T2.5 Observer projection + astronomy.
+- T2.2 The slow sky: track preparation, seeded RNG, sun and MLT, reservoir,
+  phases, oval, assimilation; `SkyTimeline` matches the slow goldens. (Re-cut
+  in T2.2: the slow step needs all of these at once.)
+- T2.3 `SkyModel`: step, seek, speed and snapshot; curtain, pulsations,
+  whistlers, events.
+- T2.4 Determinism and block-size tests; hand-offs (ADR-0003); the model runs
+  in `processBlock`.
+- T2.5 Moon, observer projection (az/el, magnetic zenith), snapshot astronomy.
 - Matches the T1.2 goldens within tolerance.
 **See:** telemetry in the existing UI shows the replayed storm.
 
