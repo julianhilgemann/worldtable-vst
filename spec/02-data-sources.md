@@ -16,21 +16,23 @@ in `spec/parked/sister-data-sources.md`.
 
 | ID | Quantity → Sky Model role | Live source | Cadence | Licence | Status |
 |---|---|---|---|---|---|
-| `geomag` | H-component deviation at the observer's station (nT) → **assimilation target** for local disturbance | USGS Geomagnetism `geomag.usgs.gov/ws/data/?id=CMO&elements=H&sampling_period=60` (1 s available) | 1 min | US public domain | in POC (BOU, CMO); factory data in `resources/world/geomag/` |
-| `kp` | Planetary Kp (0–9) → **activity level**, storm "weather" | NOAA SWPC `services.swpc.noaa.gov/products/noaa-planetary-k-index.json` (3 h) and `json/planetary_k_index_1m.json` (1-min estimate) | 1 min / 3 h | US public domain | to verify (T1.1) |
-| `solarwind` | Speed v (km/s), density n (cm⁻³), IMF Bz (nT, GSM) → **reservoir loading** (southward Bz × v) | NOAA SWPC `products/solar-wind/plasma-1-day.json`, `products/solar-wind/mag-1-day.json` (DSCOVR / ACE at L1) | 1 min | US public domain | to verify (T1.1) |
+| `geomag` | H-component deviation at the observer's station (nT) → **assimilation target** for local disturbance | USGS Geomagnetism `https://geomag.usgs.gov/ws/data/?id=CMO&elements=H&sampling_period=60&format=json&starttime=…&endtime=…` (endtime inclusive; 1 s available) | 1 min | US public domain | verified 2026-11-05; in POC (BOU, CMO) |
+| `kp` | Planetary Kp (0–9) → **activity level**, storm "weather" | NOAA SWPC `https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json` (3 h, ~8 days, list of objects `{time_tag, Kp, a_running, station_count}`) and `https://services.swpc.noaa.gov/json/planetary_k_index_1m.json` (1-min estimate, `{time_tag, kp_index, estimated_kp, kp}`) | 1 min / 3 h | US public domain | verified 2026-11-05; fixtures in `tests/fixtures/kp/` |
+| `solarwind` | Speed v (km/s), density n (cm⁻³), IMF Bz (nT, GSM) → **reservoir loading** (southward Bz × v) | NOAA SWPC real-time solar wind `https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json` and `…/rtsw_mag_1m.json` (~24 h, newest first, several spacecraft interleaved — SOLAR1, IMAP, ACE — keep entries with `active: true`; 1.4 and 2.4 MB) | 1 min | US public domain | verified 2026-11-05; fixtures (newest 120 entries) in `tests/fixtures/solarwind/`. The old `products/solar-wind/*-1-day.json` URLs return 404 |
 
 Historical sources for Journey days (same quantities):
 
 | ID | Historical source | Licence | Status |
 |---|---|---|---|
-| `geomag` | same USGS service with `starttime`/`endtime` for past dates | public domain | to verify (T1.1) |
-| `kp` | GFZ Potsdam Kp (`kp.gfz-potsdam.de`, definitive Kp, JSON API) | CC BY 4.0 (credit GFZ) | to verify (T1.1) |
-| `solarwind` | NASA OMNI 1-min, time-shifted to the bow shock (OMNIWeb / CDAWeb HAPI, dataset `OMNI_HRO_1MIN`) | public, cite OMNI | to verify (T1.1) |
+| `geomag` | same USGS service, `type=quasi-definitive` (gap-free; published ~1–3 months after the fact; the default `adjusted` type had a 7 h gap on 2024-05-11) | public domain | verified 2026-11-05 |
+| `kp` | GFZ Kp API `https://kp.gfz.de/app/json/?start=…&end=…&index=Kp` (the old `kp.gfz-potsdam.de` host redirects); response `{Kp:[…], datetime:[…], status:[def…], meta:{license:"CC BY 4.0"}}` | CC BY 4.0, cite doi:10.5880/Kp.0001 | verified 2026-11-05 |
+| `solarwind` | NASA OMNI 1-min, time-shifted to the bow shock: CDAWeb HAPI 2.0 `https://cdaweb.gsfc.nasa.gov/hapi/data?id=OMNI_HRO_1MIN&parameters=BY_GSM,BZ_GSM,flow_speed,proton_density&time.min=…&time.max=…&format=json&include=header` (parameters in dataset order; `time.max` exclusive; fill values 9999.99 / 99999.9 / 999.99) | public (NASA open data), acknowledge OMNI | verified 2026-11-05; data through ~mid-Oct 2026 |
 
-**Bundled storm days** (factory sky, Journey presets, test fixtures):
-- 10–11 May 2024 ("Gannon" storm, Kp 9): the reference day.
-- One quiet day and one moderate substorm day (to pick in T1.1).
+**Bundled sky days** (`resources/sky/`, recorded by `tools/record_sky_day.py`; factory sky, Journey presets, test fixtures):
+- `2024-05-10`: the "Gannon" storm (Kp 9), the reference day. OMNI plasma is
+  missing before 08:04 UT and has 15–30 min gaps during the storm.
+- `2025-01-19`: moderate (Kp 4.33), two substorm nights over CMO.
+- `2025-01-25`: quiet (Kp ≤ 1.0).
 
 **Additional stations** (each adds a point of view, ADR-0006): candidate
 Tromsø (TRO). Check data access and terms first; some INTERMAGNET observatories

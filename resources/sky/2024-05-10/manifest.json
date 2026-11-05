@@ -1,0 +1,81 @@
+{
+  "day": "2024-05-10",
+  "span": {
+    "start": "2024-05-10T00:00:00Z",
+    "end": "2024-05-12T00:00:00Z",
+    "step_s": 60,
+    "length": 2880
+  },
+  "why": "Reference day: the 'Gannon' storm of 10-11 May 2024 (G5, Kp 9). CME arrival ~17 UT on 10 May, strongly southward Bz; the main phase falls in Alaskan daytime, the 11 May night over CMO is still at Kp 8-9.",
+  "station": {
+    "code": "CMO",
+    "name": "College",
+    "lat": 64.874,
+    "lon": -147.86,
+    "elevation_m": 197.0,
+    "data_type": "quasi-definitive"
+  },
+  "sources": [
+    {
+      "id": "geomag",
+      "file": "geomag_CMO.json",
+      "provider": "USGS Geomagnetism Program",
+      "url": "https://geomag.usgs.gov/ws/data/?id=CMO&elements=H&sampling_period=60&format=json&type=quasi-definitive&starttime=2024-05-10T00:00:00Z&endtime=2024-05-11T23:59:00Z",
+      "licence": "US public domain",
+      "credit": "U.S. Geological Survey Geomagnetism Program"
+    },
+    {
+      "id": "kp",
+      "file": "kp.json",
+      "provider": "GFZ German Research Centre for Geosciences",
+      "url": "https://kp.gfz.de/app/json/?start=2024-05-10T00:00:00Z&end=2024-05-11T23:59:59Z&index=Kp",
+      "licence": "CC BY 4.0",
+      "credit": "Matzka, J. et al. (2021), Geomagnetic Kp index, GFZ Data Services, doi:10.5880/Kp.0001"
+    },
+    {
+      "id": "solarwind",
+      "file": "solarwind.json",
+      "provider": "NASA GSFC SPDF (OMNIWeb / CDAWeb)",
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=OMNI_HRO_1MIN&parameters=BY_GSM,BZ_GSM,flow_speed,proton_density&time.min=2024-05-10T00:00:00Z&time.max=2024-05-12T00:00:00Z&format=json&include=header",
+      "licence": "public (NASA open data), cite OMNI",
+      "credit": "NASA/GSFC's Space Physics Data Facility's OMNIWeb/CDAWeb service, and OMNI data"
+    }
+  ],
+  "track": {
+    "file": "track.json",
+    "units": {
+      "h": "nT",
+      "kp": "Kp",
+      "v": "km/s",
+      "n": "cm^-3",
+      "bz": "nT",
+      "by": "nT"
+    },
+    "notes": "1-min grid; null = gap; kp stepped per 3 h interval; h absolute (not baseline-removed); OMNI fill values mapped to null"
+  },
+  "summary": {
+    "max_kp": 9.0,
+    "min_bz_nT": -47.85,
+    "max_speed_km_s": 955.0,
+    "h_median_nT": 12632.98,
+    "max_abs_dh_nT": 3342.5,
+    "negative_h_bays_utc": [
+      "2024-05-10T08:21:00Z",
+      "2024-05-10T11:49:00Z",
+      "2024-05-10T17:23:00Z",
+      "2024-05-11T00:57:00Z"
+    ],
+    "gaps_percent": {
+      "h": 0.0,
+      "kp": 0.0,
+      "by": 22.47,
+      "bz": 22.47,
+      "v": 39.69,
+      "n": 39.69
+    },
+    "kp_status": [
+      "def"
+    ]
+  },
+  "retrieved_at": "2026-11-05T10:34:29Z"
+}
