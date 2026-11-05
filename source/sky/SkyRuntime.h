@@ -35,6 +35,19 @@ public:
     enum class Reader : int { ui = 0, osc = 1 };
     static constexpr int kNumReaders = 2;
 
+    /** What runs on the sky's ticks inside a block: the sound (M3). Audio thread, real-time safe. */
+    class TickListener
+    {
+    public:
+        virtual ~TickListener() = default;
+
+        /** After each model step: the model, the tick's events and the tick's length in samples. */
+        virtual void skyTicked (const SkyModel&, std::span<const SkyEvent>, int tickSamples) noexcept = 0;
+
+        /** Samples [offset, offset + numSamples) of the block, all inside the latest tick. */
+        virtual void renderSamples (int offset, int numSamples) noexcept = 0;
+    };
+
     /** Message thread: allocates the track pool. */
     SkyRuntime();
 
@@ -47,7 +60,10 @@ public:
 
     //== Audio thread =================================================================================
     void prepare (double sampleRate) noexcept;
-    void process (int numSamples) noexcept;
+
+    /** Steps the sky through one block. A listener hears every tick at its sample: skyTicked()
+        after each step, renderSamples() for the samples up to the next tick. */
+    void process (int numSamples, TickListener* listener = nullptr) noexcept;
 
     /** The model's own view, for the sound on the audio thread (M3). */
     const SkyModel& model() const noexcept { return sky; }

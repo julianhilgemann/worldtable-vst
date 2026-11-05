@@ -39,7 +39,7 @@ namespace
 } // namespace
 
 SkyModel::SkyModel() noexcept
-    : observer (data::stationInfo (data::StationId::CMO), SkyParams {}.poleLatDeg, SkyParams {}.poleLonDeg)
+    : obs (data::stationInfo (data::StationId::CMO), SkyParams {}.poleLatDeg, SkyParams {}.poleLonDeg)
 {
     slow = initialSlowState (params, 0.0, 2.0);   // quiet: climatology Kp, no track
     layOutCurtain (false);
@@ -61,10 +61,10 @@ void SkyModel::setTimeline (const SkyTimeline* next) noexcept
     const bool reseek = previous == nullptr || timeline->seed != seed || ! (timeline->params == params);
     params = timeline->params;
     seed = timeline->seed;
-    observer = Observer (data::stationInfo (timeline->track->station), params.poleLatDeg, params.poleLonDeg);
+    obs = Observer (data::stationInfo (timeline->track->station), params.poleLatDeg, params.poleLonDeg);
 
     if (curtain.nodes != nodesFor (params) || ! same (curtain.spanDeg, params.spanDeg)
-        || ! same (curtain.stationMlonDeg, observer.mlonDeg()) || curtain.seed != seed)
+        || ! same (curtain.stationMlonDeg, obs.mlonDeg()) || curtain.seed != seed)
         layOutCurtain (true);
 
     if (reseek)
@@ -97,7 +97,7 @@ void SkyModel::seek (double modelTimeUtc) noexcept
     seekSlowSteps = 0;
     while (slow.timeUtc <= target && seekSlowSteps <= kMaxSeekSlowSteps)
     {
-        slowStep (slow, track, params, observer, seed, discarded);
+        slowStep (slow, track, params, obs, seed, discarded);
         ++seekSlowSteps;
     }
 
@@ -136,7 +136,7 @@ std::span<const SkyEvent> SkyModel::step() noexcept
                 if (t > modelMicros || t >= endMicros)
                     break;
 
-                const int n = slowStep (slow, track, params, observer, seed, stepEvents);
+                const int n = slowStep (slow, track, params, obs, seed, stepEvents);
                 for (int e = 0; e < n; ++e)
                     pushEvent (stepEvents[static_cast<size_t> (e)]);
                 slowStepped = true;
@@ -167,7 +167,7 @@ void SkyModel::layOutCurtain (bool keepMotion) noexcept
     }
 
     for (int i = 0; i < n; ++i)
-        curtain.mlonDeg[static_cast<size_t> (i)] = observer.mlonDeg() + lerp (-params.spanDeg, params.spanDeg, i / static_cast<double> (n - 1));
+        curtain.mlonDeg[static_cast<size_t> (i)] = obs.mlonDeg() + lerp (-params.spanDeg, params.spanDeg, i / static_cast<double> (n - 1));
 
     // pulsating patches of 6 nodes: seeded period and phase, constant per seed
     const int patches = (n + 5) / 6;
@@ -180,7 +180,7 @@ void SkyModel::layOutCurtain (bool keepMotion) noexcept
 
     curtain.nodes = n;
     curtain.spanDeg = params.spanDeg;
-    curtain.stationMlonDeg = observer.mlonDeg();
+    curtain.stationMlonDeg = obs.mlonDeg();
     curtain.seed = seed;
 }
 
@@ -233,7 +233,7 @@ void SkyModel::stepCurtain() noexcept
         if (y[u] > p.displacementLimitKm)  { y[u] = p.displacementLimitKm;  vy[u] *= -0.3; }
         if (y[u] < -p.displacementLimitKm) { y[u] = -p.displacementLimitKm; vy[u] *= -0.3; }
 
-        const double mltI = s.mltHours + (curtain.mlonDeg[u] - observer.mlonDeg()) / 15.0;
+        const double mltI = s.mltHours + (curtain.mlonDeg[u] - obs.mlonDeg()) / 15.0;
         const double night = nightFactor (mltI);
         const double patch = 0.5 + 0.5 * rng::fbm2 (seed, 31, di / 10.0, tr / 25.0);
         double envelope = 0.0;
@@ -325,7 +325,7 @@ void SkyModel::writeSnapshot (bool refreshSun) noexcept
                     s.lastOnsetKind };
     o.lastWhistler = curtain.lastWhistler;
 
-    const auto& station = observer.station();
+    const auto& station = obs.station();
     if (refreshSun)
     {
         const auto sun = astro::sun (o.modelTimeUtc, station.latDeg, station.lonDeg);
@@ -341,12 +341,12 @@ void SkyModel::writeSnapshot (bool refreshSun) noexcept
     o.observer.latDeg = static_cast<float> (station.latDeg);
     o.observer.lonDeg = static_cast<float> (station.lonDeg);
     o.observer.elevKm = static_cast<float> (station.elevKm);
-    o.observer.mlatDeg = static_cast<float> (observer.mlatDeg());
-    o.observer.mlonDeg = static_cast<float> (observer.mlonDeg());
+    o.observer.mlatDeg = static_cast<float> (obs.mlatDeg());
+    o.observer.mlonDeg = static_cast<float> (obs.mlonDeg());
     o.observer.poleLatDeg = static_cast<float> (p.poleLatDeg);
     o.observer.poleLonDeg = static_cast<float> (p.poleLonDeg);
-    o.observer.magZenithAzDeg = static_cast<float> (observer.magneticZenith().azDeg);
-    o.observer.magZenithElDeg = static_cast<float> (observer.magneticZenith().elDeg);
+    o.observer.magZenithAzDeg = static_cast<float> (obs.magneticZenith().azDeg);
+    o.observer.magZenithElDeg = static_cast<float> (obs.magneticZenith().elDeg);
 
     o.nodeCount = curtain.nodes;
 }
