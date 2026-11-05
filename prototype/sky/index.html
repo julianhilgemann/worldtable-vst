@@ -10,7 +10,7 @@
 </head>
 <body>
 <header>
-  <div class="brand"><span class="word">WORLDTABLE</span><span class="tag">sky model sketch · T1.2 · <span id="r-perf">-</span></span></div>
+  <div class="brand"><span class="word">WORLDTABLE</span><span class="tag">sky + sound sketch · T1.3 · <span id="r-perf">-</span> <span id="r-load"></span></span></div>
   <div class="readouts" aria-live="off">
     <span id="r-station">CMO 64.87N 147.86W</span>
     <span id="r-ut">--:-- UT</span>
@@ -58,6 +58,31 @@
       </div>
     </div>
 
+    <div class="block sound">
+      <div class="transport">
+        <button id="sound" type="button" aria-pressed="false">sound on</button>
+        <label class="field inline"><span class="label">VOL</span><input id="volume" type="range" min="0" max="1" step="0.01" value="0.8"></label>
+      </div>
+      <div class="chord-row">
+        <span class="label">CHORD</span>
+        <b id="r-chord">-</b>
+      </div>
+      <span id="r-chord-why" class="why"></span>
+      <div class="transport">
+        <label class="field inline left"><span class="label">MOOD</span><select id="mood"></select></label>
+        <label class="field inline"><span class="label">ROOT</span><select id="root"></select></label>
+      </div>
+      <div class="transport">
+        <span class="label">VOICES</span>
+        <div class="voices" role="group" aria-label="Resonators per layer">
+          <button type="button" data-vpn="1">64</button><button type="button" data-vpn="2">128</button>
+        </div>
+        <button id="bounce" type="button" class="push">bounce 5 min</button>
+      </div>
+      <span id="bounce-status" class="why"></span>
+      <a id="bounce-link" hidden></a>
+    </div>
+
     <div class="block toggles">
       <label><input type="checkbox" id="t-stars" checked> stars and moon</label>
       <label><input type="checkbox" id="t-day" checked> day/night tracking</label>
@@ -77,6 +102,13 @@
         <button id="defaults" type="button">defaults</button>
       </div>
       <pre id="constants"></pre>
+    </details>
+
+    <details class="block">
+      <summary class="label">SOUND TUNING</summary>
+      <div id="sound-tuning" class="tuning"></div>
+      <div class="transport"><button id="sound-copy" type="button">copy sound constants</button></div>
+      <pre id="sound-constants"></pre>
     </details>
   </aside>
 </main>

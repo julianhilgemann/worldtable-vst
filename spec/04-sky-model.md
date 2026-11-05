@@ -166,3 +166,9 @@ goldens).
   per-node geomagnetic latitude and longitude, the oval edges (`eqLat`,
   `poleLat`), gain, unloading, coupling, MLT, the last whistler. Fold these
   into `SkySnapshot.h` in T2.1.
+- **What the sound reads** (T1.3): per-node brightness, displacement, r/g/v and
+  geomagnetic position (for the dome azimuth → pan); activity; onset events
+  with strength and the **onset node** (the strike is centred there; the sketch
+  reads it from the model's slow state); phase changes with the model time.
+  The sound runs in the same audio callback, so in C++ it can read the model
+  directly; the UI and OSC still get only the published snapshot.

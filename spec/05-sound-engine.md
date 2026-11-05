@@ -4,6 +4,10 @@ The curtain, heard. Each Sky Model node drives one resonator in a modal bank
 tuned to the held chord (12-TET). Mood: positive, shimmering, uplifting,
 awe-inspiring; emotion comes from harmony plus slight pitch instability.
 
+Status: **sketched** (T1.3, `prototype/sky/sound/`, 2026-11-05): §1–3 run in
+the browser on the T1.2 sky; mapping and constants in §12. Owner's listening
+pending.
+
 ```
 SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet layers) ─┐
      │                                ▲ tuning                              │
@@ -129,6 +133,8 @@ Journey bounces and A/B them against the references.
   FM layer (e.g. on sparkles) after all, or does "FM" mean slow
   cross-modulation only?
 - N = 64 or 128 resonators (CPU vs density), decided with the T1.3 sketch.
+  Data so far (§12): in JS, 64 per layer costs 9 % of a core, 128 costs 16 %.
+  Owner to compare the `-n64` and `-n128` bounces by ear.
 
 ## 11. Real-time checklist (copy into every DSP task)
 - [ ] `prepareToPlay` allocates everything (max block size, max nodes).
@@ -137,3 +143,41 @@ Journey bounces and A/B them against the references.
 - [ ] All parameters smoothed; chord changes crossfade.
 - [ ] Sample-rate independent (44.1/48/96 kHz) and block-size independent.
 - [ ] No MIDI, default settings → sound (drone); MIDI only latches the chord.
+
+## 12. Sketch mapping and constants (T1.3, 2026-11-05)
+Source of truth: `prototype/sky/sound/engine.js` `SOUND_DEFAULTS` and
+`sound/harmony.js` `VOCABULARY`. First pass, before the owner's listening.
+
+| Sky | Sound |
+|---|---|
+| node colour r / g / v (already × brightness) | gain of the node's red, green, violet resonator: level × √colour × presence, slewed 2 s |
+| brightness rising | excitation (0.4 per unit/s, smoothed 0.3 s) |
+| activity | excitation bed 0.3 × (0.5 + activity) |
+| onset | strike: 0.3 + 0.35 × strength (≤ 1.5), attack 80 ms, tail τ 6 s, 0.5 + 0.5 × Gaussian around the onset node (σ 12 nodes); always on the newest chord |
+| phase | chord function: quiet → home, growth → tension, onset → awe, recovery → borrowed; onset strength < 0.3 → tension only |
+| displacement y | ± 3 cents at ± 160 km; drift ± 4 cents (seeded noise, 20 s knots) |
+| dome azimuth / elevation | equal-power pan, −sin(az) × 0.9 (east left), slewed 0.5 s / presence 0.45 … 1 (0° … 50° elevation) |
+
+- **Layers:** red = root + fifth, MIDI 31–49 (T60 20 s); green = the chord,
+  50–74 (6 s); violet = chord tones above root and fifth, 72–90 (2.5 s). Register
+  shifts them; Voicing spread scales their width. Default key D, Mood bright.
+- **Resonators:** complex one-pole, input × √(1−r²); double-banked. A change
+  moves the bed excitation to the retuned bank over 12 s (equal power) while the
+  old bank rings out. A sky or user change that finds the old bank still ringing
+  damps it to T60 3 s instead of waiting (wanders wait).
+- **Progression:** amount 1 (follow the sky). Each move is a seeded roll from
+  the model minute, so the same sky always picks the same chords. Wander inside a
+  function every (150–360 s) / (0.5 + amount) of real time.
+- **Chords** (degrees from the key; first pass): bright home Imaj7 · Iadd9 ·
+  I6/9; tension Imaj7sus2 · IVadd9 · Vsus4add9; awe ♭VImaj7 · IIIadd9 · VIadd9;
+  borrowed iv(add9) · ♭VIIadd9 · ♭VIadd9. Bittersweet and nocturnal in `VOCABULARY`.
+- **Stand-in FX:** 8-line FDN reverb (T60 9 s, mix 0.35), auto-gain toward
+  −18 dBFS RMS (±12 dB, τ 10 s, no K-weighting), DC blocker, 5 ms lookahead
+  limiter at −1 dBFS.
+- **Cost (JS, this Mac):** 64 per layer 11.5× real time in Node (9 % of a
+  core), 10.5× in Chrome's AudioWorklet; 128 per layer 6.4× (16 %), 5.7×. C++
+  should be several times cheaper; 128 with double-banking may not fit the 5 %
+  budget without SIMD.
+- **Levels:** storm and moderate bounces sit at −17 to −19 dBFS RMS. The quiet
+  day sits at −26 dBFS RMS: the auto-gain's +12 dB isn't enough. Calm and sparse
+  is intended, but it may be too quiet.
