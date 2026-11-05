@@ -3,9 +3,17 @@
 namespace worldtable::sky
 {
 
+// The defaulted comparisons below are meant to be exact: setTimeline() re-seeks on any change.
+#if defined(__clang__) || defined(__GNUC__)
+ #pragma GCC diagnostic push
+ #pragma GCC diagnostic ignored "-Wfloat-equal"
+#endif
+
 struct Range
 {
     double lo, hi;
+
+    bool operator== (const Range&) const = default;
 };
 
 /** Sky Model tuning constants (spec/04-sky-model.md §7, §9). Internal: not plug-in parameters.
@@ -71,6 +79,13 @@ struct SkyParams
     //== Observer frame (not in the sketch's DEFAULTS) =================================================
     double poleLatDeg       = 80.8;   ///< centred-dipole north pole, IGRF epoch 2025 (approximate)
     double poleLonDeg       = -72.7;
+
+    /** SkyModel::setTimeline re-seeks the slow sky when the params change. */
+    bool operator== (const SkyParams&) const = default;
 };
+
+#if defined(__clang__) || defined(__GNUC__)
+ #pragma GCC diagnostic pop
+#endif
 
 } // namespace worldtable::sky

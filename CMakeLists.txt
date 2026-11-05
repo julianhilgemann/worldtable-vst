@@ -67,6 +67,7 @@ target_sources(WorldtableShared INTERFACE
     source/sky/Observer.cpp
     source/sky/SlowSky.cpp
     source/sky/SkyTimeline.cpp
+    source/sky/SkyModel.cpp
     source/transform/WavetableBuilder.cpp
     source/dsp/Voice.cpp
     source/dsp/Engine.cpp

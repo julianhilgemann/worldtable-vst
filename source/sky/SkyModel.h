@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Observer.h"
 #include "SkyParams.h"
 #include "SkySnapshot.h"
 #include "data/WorldSnapshot.h"
@@ -173,17 +174,34 @@ public:
     /** The sky after the last step() or seek(). */
     const SkySnapshot& current() const noexcept { return snapshot; }
 
-    double modelTimeUtc() const noexcept { return modelTime; }
+    double modelTimeUtc() const noexcept { return static_cast<double> (modelMicros) / 1e6; }
     double speed() const noexcept        { return speedFactor; }
 
+    /** The slow sky as of the last step() or seek(): for tests, and for saving a frozen sky with the
+        session (M6). Readers use current(). */
+    const SlowSkyState& slowState() const noexcept { return slow; }
+
+    /** Slow steps the last seek() replayed (≤ kMaxSeekSlowSteps). Diagnostic. */
+    int lastSeekSlowSteps() const noexcept { return seekSlowSteps; }
+
 private:
-    // Indicative: T2.2–T2.5 may change private members without review. The public surface above is
-    // what is under review.
+    // T2.3: private members may change without review (T2.1). The public surface above is reviewed.
+    void layOutCurtain (bool keepMotion) noexcept;
+    void stepCurtain() noexcept;
+    void writeSnapshot (bool refreshSun) noexcept;
+    bool pushEvent (const SkyEvent& event) noexcept;
+
     const SkyTimeline* timeline = nullptr;
+    SkyParams params {};
+    uint32_t  seed = 1;
+    Observer  observer;
     SlowSkyState slow {};
-    double   modelTime   = 0.0;
-    double   speedFactor = 0.0;
-    uint64_t ticks       = 0;
+
+    int64_t  modelMicros   = 0;   ///< model time in whole µs since the epoch: exact, like the sketch's ms
+    int64_t  microsPerTick = 0;   ///< round(10 000 µs × speed)
+    double   speedFactor   = 0.0;
+    uint64_t ticks         = 0;
+    int      seekSlowSteps = 0;
 
     struct Curtain   // fast state, double like the sketch's Float64Arrays
     {
@@ -192,6 +210,10 @@ private:
         std::array<double, kMaxPatches> pulsePeriodS {}, pulsePhase {};
         uint32_t    whistlers = 0;
         SkyWhistler lastWhistler {};
+        double      recoveryPulse = 0.0;
+        int         nodes = 0;   ///< laid out for this many nodes …
+        double      spanDeg = 0.0, stationMlonDeg = 0.0;   ///< … this span and station
+        uint32_t    seed = 0;    ///< … and these pulse patches
     } curtain;
 
     std::array<SkyEvent, kMaxEventsPerStep> events {};

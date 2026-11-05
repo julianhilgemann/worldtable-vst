@@ -22,16 +22,15 @@ namespace
     {
         return x + (target - x) * (1.0 - std::exp (-dt / tau));
     }
-    double nightFactor (double mlt) noexcept
-    {
-        return 0.25 + 0.75 * (0.5 + 0.5 * std::cos ((2.0 * std::numbers::pi * mlt) / 24.0));
-    }
 } // namespace
 
 SlowSkyState initialSlowState (const data::WorldSnapshot& track, const SkyParams& p, double startUtc) noexcept
 {
-    const double kp0 = track.sample (WorldChannel::kp, startUtc);
+    return initialSlowState (p, startUtc, track.sample (WorldChannel::kp, startUtc));
+}
 
+SlowSkyState initialSlowState (const SkyParams& p, double startUtc, double kp0) noexcept
+{
     SlowSkyState s {};
     s.timeUtc = startUtc;
     s.windSpeedKmS = 400.0;
