@@ -110,9 +110,16 @@ control, tuned to the chord root.
 
 Every effect parameter is a matrix destination.
 
+**Status (T3.5a):** Drive, the tape-style `StereoDelay`, the `ShimmerReverb` (octave) and the
+`Limiter` are the POC units; `AutoGain` and the DC blocker are new, and the chain
+Drive → delay → shimmer → AutoGain → DC → limiter now runs in `WorldtableRender --sky`.
+Phaser, Chorus/Ensemble and the shimmer's fifth are T3.5b; the plug-in swaps to this chain in
+T3.6.
+
 ## 8. Unattended safety
 - AutoGain: slow loudness normaliser toward ≈ −18 LUFS short-term, ±12 dB,
-  time constant ≥ 10 s, before the limiter.
+  time constant ≥ 10 s, before the limiter. (T3.5a: −18 dBFS RMS, no K-weighting yet —
+  `fx/AutoGain`, 3 s measure / 10 s slew.)
 - Final limiter ceiling −1 dBFS; DC blocker; NaN/inf guard that resets a
   resonator rather than propagating.
 - Every parameter, preset and table change is smoothed or crossfaded.

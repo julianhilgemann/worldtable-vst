@@ -7,10 +7,11 @@
 // index or the choice name. Without --live only the bundled factory world is used
 // (deterministic, no network).
 //
-// The sky's sound (T3.1, not in the plug-in yet): the Sky Model playing a bundled day through
-// SkySound, one held chord (D maj7), then the POC ShimmerReverb (shimmer off) and Limiter as
-// stand-ins until the real effects (T3.5). Like the sketch's bounce.mjs: a 20 s pre-roll so the
-// resonators already ring, a 2 s fade-in and a 3 s fade-out.
+// The sky's sound (T3.1–T3.3, not in the plug-in yet): the Sky Model playing a bundled day through
+// SkySound and the spec's chain (T3.5a): Drive → tape delay → shimmer reverb → AutoGain → DC →
+// limiter. Phaser/Chorus and the shimmer's fifth are T3.5b. A held-chord run keeps the sketch's
+// 20 s pre-roll so the resonators already ring; a progression run starts at `from`. 2 s fade-in,
+// 3 s fade-out.
 //
 //   WorldtableRender --sky --out renders/T3.1-storm.wav [--day 2024-05-10] [--from 17:20]
 //                    [--speed 24] [--seconds 300] [--voices 64|128] [--seed 1] [--gain 0] [--dry]
@@ -21,7 +22,10 @@
 #include "data/SkyDays.h"
 #include "dsp/Harmony.h"
 #include "dsp/SkySound.h"
+#include "dsp/Drive.h"
+#include "dsp/fx/AutoGain.h"
 #include "dsp/fx/Limiter.h"
+#include "dsp/fx/StereoDelay.h"
 #include "dsp/fx/ShimmerReverb.h"
 #include "sky/SkyFeed.h"
 
@@ -167,13 +171,38 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
     const dsp::ChordName startName = dsp::nameOf (startChord);
     sound.prepare (o.rate, params.nodes, o.seed, settings, startChord);
 
+    dsp::Drive drive;
+    drive.prepare (o.rate);
+    drive.setDrive (0.15f);
+
+    dsp::StereoDelay delay;
+    delay.prepare (o.rate);
+    dsp::StereoDelay::Settings ds;
+    ds.timeSeconds = 1.8f;
+    ds.feedback = 0.35f;
+    ds.tone = 0.5f;
+    ds.mix = 0.25f;
+    delay.setSettings (ds);
+
     dsp::ShimmerReverb reverb;
     reverb.prepare (o.rate);
     dsp::ShimmerReverb::Settings rs;
-    rs.shimmer = 0.0f;
+    rs.size = 0.85f;
     rs.decaySeconds = 9.0f;
+    rs.damping = 0.35f;
+    rs.predelayMs = 20.0f;
+    rs.shimmer = 0.2f;
+    rs.modulation = 0.4f;
     rs.mix = 0.35f;
     reverb.setSettings (rs);
+
+    dsp::AutoGain autoGain;
+    autoGain.prepare (o.rate);
+
+    dsp::DcBlocker dcL, dcR;
+    dcL.prepare (o.rate);
+    dcR.prepare (o.rate);
+
     dsp::Limiter limiter;
     limiter.prepare (o.rate);
     limiter.setSettings (0.0f, -1.0f, 200.0f);
@@ -196,9 +225,21 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
             return;
         timed (fxSeconds, [&]
         {
+            for (int k = 0; k < n; ++k)
+            {
+                l[k] = drive.process (l[k]);
+                r[k] = drive.process (r[k]);
+            }
+            delay.process (l, r, n);
+            reverb.process (l, r, n);
+            autoGain.process (l, r, n);
+            for (int k = 0; k < n; ++k)
+            {
+                l[k] = dcL.process (l[k]);
+                r[k] = dcR.process (r[k]);
+            }
             juce::FloatVectorOperations::multiply (l, gain, n);
             juce::FloatVectorOperations::multiply (r, gain, n);
-            reverb.process (l, r, n);
             limiter.process (l, r, n);
         });
     };
@@ -272,14 +313,15 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
               << (sound.chordChanges() - chordsBefore) << " changes -> "
               << dsp::nameOf (sound.chord()).label.data() << ", "
               << (runtime.model().current().onsetCount - onsetsBefore) << " onsets in the file\n"
-              << "length:  " << o.seconds << " s @ " << o.rate << " Hz" << (o.dry ? " (dry)" : "") << "\n"
+              << "length:  " << o.seconds << " s @ " << o.rate << " Hz" << (o.dry ? " (dry)"
+                                                                               : " (drive -> delay -> shimmer -> autogain -> dc -> limiter)") << "\n"
               << "peak:    " << juce::Decibels::gainToDecibels (peak, -200.0f) << " dBFS\n"
               << "rms:     " << juce::Decibels::gainToDecibels (static_cast<float> (rms), -200.0f) << " dBFS\n"
               << "maxStep: " << maxDelta << "\n"
               << "nonFinite samples: " << nonFinite << "\n"
               << "resets:  " << sound.resets() << "\n"
               << "cpu:     sky + sound " << juce::String (100.0 * soundSeconds / o.seconds, 2) << " % of real time"
-              << (o.dry ? juce::String() : ", stand-in effects " + juce::String (100.0 * fxSeconds / o.seconds, 2) + " %")
+              << (o.dry ? juce::String() : ", fx chain " + juce::String (100.0 * fxSeconds / o.seconds, 2) + " %")
               << " (pre-roll " << juce::String (preRollSeconds, 2) << " s)\n"
               << "wrote:   " << out.getFullPathName() << "\n";
     return nonFinite == 0 ? 0 : 2;
