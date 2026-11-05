@@ -1,7 +1,8 @@
 # ADR-0007 — Sky Model clock and determinism
 
-**Status:** Proposed (Claude Code, 2026-11-05) — owner to confirm. Deviates
-from the brief's "own thread" wording.
+**Status:** Accepted (owner, T2.1 review, 2026-11-05). Proposed by Claude Code
+the same day. Deviates from the brief's "own thread" wording; the owner
+accepted the deviation.
 
 ## Context
 The brief places the Sky Model at ~100 Hz control rate "on its own thread".
@@ -13,7 +14,7 @@ Two other brief requirements pull against a free-running thread:
 - **Sound and image must agree.** If the audio thread reads a model that
   advances on its own clock, the two drift apart under load.
 
-## Decision (proposed)
+## Decision
 - **The model is clocked by audio sample time.** `processBlock` steps it every
   `sampleRate / 100` samples (an exact integer at 44.1, 48, 88.2, 96 and
   192 kHz), counted by a running sample counter so the step grid is
@@ -26,7 +27,8 @@ Two other brief requirements pull against a free-running thread:
   thread read the newest one. They never touch model state.
 - **Model time is separate from sample time.** Live: model time = UTC now.
   Journey: model time advances by the compression factor (e.g. 24 h → 60 min).
-  Freeze: data time stops; see `spec/01-functional-spec.md` for what keeps moving.
+  Freeze: model time stops; the curtain keeps breathing on real time
+  (`spec/01-functional-spec.md` §3). Journey speeds go up to 1440×.
 - **Same seed + same data + same sample rate → bit-identical snapshot
   sequence**, whatever the block size. This is a unit test.
 
@@ -39,4 +41,4 @@ expensive for the audio thread.
 ## Consequences
 - `source/sky/**` follows the audio-thread rules (`CLAUDE.md` rule 1).
 - Offline render (`WorldtableRender`) and the DAW play the same sky.
-- Snapshot hand-off mechanism (triple buffer vs atomic pointer) is ADR-0003.
+- Snapshot and track hand-off mechanism: ADR-0003.

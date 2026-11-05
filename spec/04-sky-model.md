@@ -20,7 +20,8 @@ motion:
   track and drives astronomy and magnetic local time (MLT).
 - **Real time** drives the curtain waves, brightness, pulsations and
   whistlers: ticks at **100 Hz** of audio sample time (ADR-0007). One tick
-  advances model time by 10 ms × speed (Journey) or 0 (Freeze).
+  advances model time by 10 ms × speed (Journey, up to 1440×) or 0 (Freeze:
+  the curtain keeps breathing in place).
 Rule: anything with a period under about a minute lives on real time.
 
 ## 2. State
@@ -164,8 +165,8 @@ goldens).
   converge there), but the folds are too small for a radiating corona.
 - **Snapshot fields the renderer needs** beyond `03-architecture.md` §B:
   per-node geomagnetic latitude and longitude, the oval edges (`eqLat`,
-  `poleLat`), gain, unloading, coupling, MLT, the last whistler. Fold these
-  into `SkySnapshot.h` in T2.1.
+  `poleLat`), gain, unloading, coupling, MLT, the last whistler. Folded
+  into `source/sky/SkySnapshot.h` (T2.1), with the onset node.
 - **What the sound reads** (T1.3): per-node brightness, displacement, r/g/v and
   geomagnetic position (for the dome azimuth → pan); activity; onset events
   with strength and the **onset node** (the strike is centred there; the sketch

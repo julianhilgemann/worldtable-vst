@@ -33,13 +33,17 @@ What the instrument does, from the user's side. How it is built:
 |---|---|---|
 | **Live** (default when online) | UTC now | latest fetched data, cached |
 | **Journey** | a recorded day, compressed (e.g. 24 h → 60 min) | bundled or cached day; default: 10–11 May 2024 storm |
-| **Freeze** | stops | held |
+| **Freeze** | stops (speed 0); the curtain keeps breathing in place | held |
 
 The substorm cycle (quiet → growth → onset → recovery) gives a Journey its
 long-form arc. With no network, Live falls back to the newest cached day.
-- DECIDE: Freeze = data and storm phase held while the curtain keeps breathing
-  in place (proposal), or a full stop of all motion?
-- DECIDE: Journey compression choices (proposal: 1×, 6×, 24×, 96×).
+- Freeze holds the data and the storm phase while the curtain keeps
+  breathing in place; the sound keeps its detail on the held chord (owner,
+  T2.1 review, 2026-11-05). Freeze is speed 0: model time stops, real time
+  goes on.
+- Journey speeds go up to **1440×** (24 h per real minute; owner, T2.1
+  review, 2026-11-05).
+- DECIDE (with the UI): which speeds get buttons (proposal: 1×, 6×, 24×, 96×).
 
 ## 4. Harmony: a slow progression engine
 - **Chord Hold:** root, scale and chord shape set in the UI, or latched from
