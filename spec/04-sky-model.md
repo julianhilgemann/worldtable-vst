@@ -164,8 +164,8 @@ goldens).
   converge there), but the folds are too small for a radiating corona.
 - **Snapshot fields the renderer needs** beyond `03-architecture.md` §B:
   per-node geomagnetic latitude and longitude, the oval edges (`eqLat`,
-  `poleLat`), gain, unloading, coupling, MLT, the last whistler. Fold these
-  into `SkySnapshot.h` in T2.1.
+  `poleLat`), gain, unloading, coupling, MLT, the last whistler. Folded
+  into `source/sky/SkySnapshot.h` (T2.1), with the onset node.
 - **What the sound reads** (T1.3): per-node brightness, displacement, r/g/v and
   geomagnetic position (for the dome azimuth → pan); activity; onset events
   with strength and the **onset node** (the strike is centred there; the sketch

@@ -17,40 +17,38 @@ that the sound, the UI and OSC all read.
 ## The hand-offs (the core of the design)
 
 ### A. WorldSnapshot — data → Sky Model
-```cpp
-struct WorldSnapshot {                       // immutable once published
-    static constexpr int kChannels = 6;      // geomag.h_dev, kp, sw.speed, sw.density, sw.bz, sw.by
-    static constexpr int kCapacity = 4320;   // 72 h at 1 min
-    double startUtc, stepSeconds;            // track grid
-    int    length;
-    std::array<std::array<float, kCapacity>, kChannels> value;   // physical units
-    std::array<std::array<uint8_t, kCapacity>, kChannels> valid;
-    StationId station;
-    uint64_t sequence;
-};
-```
+Defined in `source/data/WorldSnapshot.h` (T2.1, protected). Six channels on a
+1-minute grid, 72 h capacity, `float`: H deviation from the station's quiet
+level, Kp, solar-wind speed, density, Bz, By. Gaps are filled by the data
+thread, and `valid` flags mark measured samples. It also carries the station,
+the quiet level and a sequence number; about 130 KB.
 Published by the data thread, picked up by the audio thread once per block
 (mechanism: ADR-0003, triple buffer preferred). Pre-allocated pool; a new track
 never allocates on the audio thread. The model interpolates the track at its
 current model time.
 
+With each track (or seed or tuning change) the data thread also builds a
+`SkyTimeline` (`source/sky/SkyModel.h`): the slow sky's state at every model
+minute. A seek copies one checkpoint and replays at most 59 slow steps, so it
+stays bounded on the audio thread.
+
 ### B. SkySnapshot — Sky Model → sound, UI, OSC
-```cpp
-struct SkySnapshot {                         // fixed-size POD, written after each model step
-    double   modelTimeUtc;
-    uint64_t step;                           // model step counter
-    SkyPhase phase;  float phaseProgress;    // quiet / growth / onset / recovery
-    float    energy, activity, kp, bz, speed, density;
-    int      nodeCount;                      // 64…128
-    std::array<CurtainNode, kMaxNodes> nodes;// displacement, velocity, brightness, red, green, violet
-    float    ovalLatitude;                   // curtain's geomagnetic latitude (equatorward drift)
-    std::array<float, 2> pulsation;          // slow brightness pulse, field-line ringing (Pc)
-    uint32_t onsetCount, whistlerCount;      // event counters (readers detect edges)
-    Astronomy sky;                           // sun alt/az, moon alt/az/phase (low rate)
-};
-```
+Defined in `source/sky/SkySnapshot.h` (T2.1, protected; `CLAUDE.md` rule 6).
+It is a fixed-size POD of 4.8 KB at 128 nodes, written after each model step,
+and contains:
+- model time, tick and speed;
+- phase and progress, plus energy, activity, unloading, gain and coupling;
+- Kp, Bz, wind speed and density, and ΔH measured and modelled;
+- MLT, the oval (arc, equatorward and poleward edges, day shift), storm red,
+  the Pc phase and the recovery pulse;
+- event counters with the last onset (time, strength, node, kind, ΔH/5 min)
+  and the last whistler;
+- sun and moon, and the observer (station, dipole pole, magnetic zenith);
+- per node: displacement, velocity, brightness, green/red/violet, geomagnetic
+  latitude and longitude, pulse.
 Written by the audio thread into a triple buffer; the UI and OSC threads read
-the newest one. `SkySnapshot.h` is a protected interface (`CLAUDE.md` rule 6).
+the newest one. The sound runs on the audio thread and reads the model's own
+copy (`SkyModel::current()`), together with the events each `step()` returns.
 
 ### C. Raw-field table swap — builder → audio (optional layer)
 The POC's `TableExchange`: builder fills a pending `WavetableSet` from a pool,
