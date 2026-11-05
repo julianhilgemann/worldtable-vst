@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Worklet check</title>
+<style>
+  :root { --night: #05070D; --ink: #C9D3E6; --ok: #5CF2A0; --bad: #FF6B6B; }
+  body { margin: 0; padding: 24px; background: var(--night); color: var(--ink); font: 18px/1.5 ui-monospace, monospace; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<h1>Worklet check (T1.3)</h1>
+<p>Renders the sound engine through the real AudioWorklet in an OfflineAudioContext (no audio device needed),
+for 64 and 128 voices, and checks what the page relies on: snapshots arrive, the sky advances with audio time,
+output is finite and ≤ −1 dBFS.</p>
+<pre id="out">running…</pre>
+<script type="module">
+import { loadDay } from '../data.js';
+
+const out = document.getElementById('out');
+const lines = [];
+const say = (text, cls = '') => { lines.push(cls ? `<span class="${cls}">${text}</span>` : text); out.innerHTML = lines.join('\n'); };
+
+window.addEventListener('unhandledrejection', (e) => say(`unhandled: ${e.reason?.message ?? e.reason}`, 'bad'));
+window.addEventListener('error', (e) => say(`error: ${e.message}`, 'bad'));
+const track = await loadDay('2024-05-10');
+const query = new URLSearchParams(location.search);
+const startMs = Date.parse('2024-05-10T17:37:00Z'), speed = 24, sr = 48000;
+const seconds = Number(query.get('seconds') ?? 20);
+if (query.get('mode') === 'main') {                                    // same engine, page thread, no worklet
+  const { SoundEngine } = await import('../sound/engine.js');
+  let t0 = performance.now();
+  const e = new SoundEngine({ track, seed: 1, startMs, speed, sampleRate: sr });
+  say(`main thread: constructed in ${(performance.now() - t0).toFixed(0)} ms`);
+  const L = new Float32Array(128), R = new Float32Array(128);
+  t0 = performance.now();
+  for (let i = 0; i < (seconds * sr) / 128; i++) e.process(L, R, 128);
+  say(`main thread: ${seconds} s in ${(performance.now() - t0).toFixed(0)} ms · ${e.ticks} ticks`);
+  throw new Error('main-thread mode done');
+}
+if (query.get('mode') === 'trivial') {                                 // does this browser render a worklet offline at all?
+  const src = `registerProcessor('zero', class extends AudioWorkletProcessor {
+    constructor() { super(); this.n = 0; }
+    process(i, o) { if (++this.n % 375 === 0) this.port.postMessage(this.n); return true; } });`;
+  const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: seconds * sr, sampleRate: sr });
+  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+  const node = new AudioWorkletNode(ctx, 'zero', { numberOfInputs: 0, outputChannelCount: [2] });
+  let msgs = 0;
+  node.port.onmessage = () => { msgs++; };
+  node.connect(ctx.destination);
+  const t0 = performance.now();
+  await ctx.startRendering();
+  await new Promise((r) => setTimeout(r, 300));
+  say(`trivial worklet: ${seconds} s in ${(performance.now() - t0).toFixed(0)} ms · ${msgs} messages`);
+  throw new Error('trivial mode done');
+}
+for (const voicesPerNode of [1, 2]) {
+  const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: seconds * sr, sampleRate: sr });
+  const step = (text) => { out.innerHTML = [...lines, `… ${text}`].join('\n'); };
+  step('loading the worklet module');
+  await ctx.audioWorklet.addModule(new URL('../sound/worklet.js', import.meta.url));
+  step('constructing the processor');
+  const node = new AudioWorkletNode(ctx, 'worldtable-sky', {
+    numberOfInputs: 0, outputChannelCount: [2],
+    processorOptions: { track, seed: 1, params: {}, sound: { voicesPerNode }, startMs, speed },
+  });
+  const snaps = [], events = [];
+  let error = null;
+  node.port.onmessage = ({ data }) => {
+    if (data.error) error = data.error;
+    else if (data.ready) step(`processor ready in ${data.ms.toFixed(0)} ms, rendering ${seconds} s`);
+    else { snaps.push(data.snap); events.push(...data.events); }
+  };
+  node.onprocessorerror = () => { error ??= 'processorerror (no message)'; };
+  node.connect(ctx.destination);
+  step(`rendering ${seconds} s`);
+  const t0 = performance.now();
+  const buffer = await ctx.startRendering();
+  const ms = performance.now() - t0;
+  await new Promise((r) => setTimeout(r, 300));                       // let the last port messages land
+  let peak = 0, bad = 0;
+  for (let c = 0; c < 2; c++) for (const x of buffer.getChannelData(c)) { if (!Number.isFinite(x)) bad++; peak = Math.max(peak, Math.abs(x)); }
+  const last = snaps.at(-1);
+  const modelMin = last ? (last.modelTimeUtc - startMs) / 60000 : 0;
+  const chords = events.filter((e) => e.type === 'chord').map((e) => `${e.label} (${e.reason})`);
+  const ok = !error && snaps.length > 0 && bad === 0 && peak <= 0.8913 && Math.abs(modelMin - (seconds * speed) / 60) < 0.2;
+  say(`${64 * voicesPerNode} voices/layer: ${ok ? 'OK' : 'FAIL'}`, ok ? 'ok' : 'bad');
+  if (error) say(`  error: ${error}`, 'bad');
+  say(`  ${snaps.length} snapshots · sky advanced ${modelMin.toFixed(2)} model min (expect ${(seconds * speed / 60).toFixed(2)})`);
+  say(`  peak ${(20 * Math.log10(peak + 1e-20)).toFixed(2)} dBFS · non-finite ${bad} · ${(seconds * 1000 / ms).toFixed(1)}× real time in this browser's worklet`);
+  say(`  chords: ${chords.join(' → ') || '-'}`);
+}
+document.title = 'Worklet check: done';
+</script>
+</body>
+</html>

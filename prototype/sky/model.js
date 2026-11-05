@@ -72,7 +72,10 @@ export const DEFAULTS = {
   whistlerPerS: 0.08,        // at activity 1
 };
 
-/** Slow (model-time) state. Plain object so it can be checkpointed with structuredClone. */
+/**
+ * Slow (model-time) state. A flat object of numbers, so a spread copy checkpoints it
+ * (structuredClone doesn't exist in AudioWorklet scope, where T1.3 runs the model).
+ */
 function initialSlow(track, p, startMs, seed) {
   return {
     t: startMs,
@@ -230,7 +233,7 @@ export class SkyModel {
     const target = clamp(Math.floor(ms / SLOW_MS) * SLOW_MS, this.track.startMs, this.track.endMs - SLOW_MS);
     let cp = null;
     for (const c of this.checkpoints) if (c.t <= target && (!cp || c.t > cp.t)) cp = c;
-    if (cp && (cp.t > this.slow.t || this.slow.t > target)) this.slow = structuredClone(cp);
+    if (cp && (cp.t > this.slow.t || this.slow.t > target)) this.slow = { ...cp };
     if (this.slow.t > target) this.slow = initialSlow(this.track, this.p, this.track.startMs, this.seed);
     const sink = [];
     while (this.slow.t <= target) this.stepSlow(sink);
@@ -239,7 +242,7 @@ export class SkyModel {
 
   stepSlow(events) {
     if (this.slow.t % (10 * MIN_MS) === 0 && !this.checkpoints.some((c) => c.t === this.slow.t)) {
-      this.checkpoints.push(structuredClone(this.slow));
+      this.checkpoints.push({ ...this.slow });
     }
     slowStep(this.slow, this.track, this.p, this.obs, events);
   }

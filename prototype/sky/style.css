@@ -64,6 +64,16 @@ input[type=checkbox] { accent-color: var(--o-green); width: 16px; height: 16px; 
 #ticker li { color: var(--muted); }
 #ticker li.onset { color: var(--o-green); }
 #ticker li.forced { color: var(--o-red); }
+#ticker li.chord { color: var(--n-violet); }
+.chord-row { display: flex; align-items: baseline; gap: 12px; }
+.chord-row b { font-weight: 500; font-size: 15px; font-family: var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.why { font-family: var(--mono); font-size: 10px; color: var(--muted); min-height: 12px; }
+.field.inline.left { margin-left: 0; }
+.voices { display: flex; gap: 4px; }
+.push { margin-left: auto; }
+#volume { accent-color: var(--o-green); width: 110px; }
+#bounce-link { font-family: var(--mono); font-size: 10px; color: var(--o-green); word-break: break-all; }
+#sound-tuning { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 summary { cursor: pointer; min-height: 24px; }
 #tuning { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .slider { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-family: var(--mono); font-size: 10px; color: var(--muted); }

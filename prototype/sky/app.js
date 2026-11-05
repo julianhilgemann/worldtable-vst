@@ -1,11 +1,15 @@
 // Sky Model sketch — wiring: data → model (100 Hz ticks) → dome + chart + readouts.
 // URL hash keeps the review state: #day=2024-05-10&t=2024-05-11T08:00&speed=24&seed=1
+// Sound on (T1.3): the model runs in the AudioWorklet, clocked by audio (ADR-0007), and the page
+// draws its posted snapshots; sound off: the page steps its own model, as in T1.2.
 
 import { DAYS, loadDay } from './data.js';
 import { SkyModel, runSlow, DEFAULTS, PHASE_NAMES, TICK_S } from './model.js';
 import { Observer } from './observer.js';
 import { DomeRenderer } from './dome.js';
 import { StripChart } from './charts.js';
+import { SoundPanel } from './sound/panel.js';
+import { SOUND_DEFAULTS } from './sound/engine.js';
 
 const SPEEDS = [1, 6, 24, 96, 360, 1440];
 const START = { '2024-05-10': '2024-05-10T17:00', '2025-01-19': '2025-01-19T09:30', '2025-01-25': '2025-01-25T08:00' };
@@ -26,21 +30,50 @@ const state = {
   playing: true,
   params: Object.fromEntries([...hash].filter(([k]) => k.startsWith('p.') && k.slice(2) in DEFAULTS)
     .map(([k, v]) => [k.slice(2), Number(v)])),
+  sound: Object.fromEntries([...hash].filter(([k]) => k.startsWith('s.') && k.slice(2) in SOUND_DEFAULTS)
+    .map(([k, v]) => [k.slice(2), Number.isNaN(Number(v)) ? v : Number(v)])),
   exposure: 1.6,
 };
 const observer = new Observer();
 const dome = new DomeRenderer($('dome'), $('overlay'), observer, state.seed);
-const chart = new StripChart($('chart'), (ms) => { model.seek(ms); writeHash(); });
+const chart = new StripChart($('chart'), (ms) => seekTo(ms));
 let track, model, trace;
+
+const sound = new SoundPanel({
+  $, state,
+  getStart: () => ({ track, startMs: model.modelMs, fast: { node: model.node, tick: model.tick } }),
+  currentMs: () => currentMs(),
+  onStop: (snap) => {                                // the page's model continues where the worklet's was
+    model.seek(snap.modelTimeUtc);
+    for (const key of Object.keys(model.node)) if (snap.nodes[key]) model.node[key].set(snap.nodes[key]);
+    model.tick = snap.step;
+  },
+  writeHash: () => writeHash(),
+});
+const audioSnap = () => sound.audio?.snap ?? null;
+const currentMs = () => audioSnap()?.modelTimeUtc ?? model.modelMs;
+function seekTo(ms) {
+  model.seek(ms);
+  sound.audio?.post({ type: 'seek', ms });
+  writeHash();
+}
 
 // ------------------------------------------------------------------ controls
 for (const d of DAYS) $('day').append(new Option(d.label, d.id, false, d.id === state.day));
-$('day').addEventListener('change', async (e) => { state.day = e.target.value; await loadAndStart(START[state.day]); });
+$('day').addEventListener('change', async (e) => {
+  const wasOn = Boolean(sound.audio);
+  if (wasOn) await sound.stop();                     // the worklet holds the old day's track
+  state.day = e.target.value;
+  await loadAndStart(START[state.day]);
+  if (wasOn) await sound.start();
+});
 
 for (const s of SPEEDS) {
   const b = document.createElement('button');
   b.type = 'button'; b.textContent = `${s}×`; b.dataset.speed = s;
-  b.addEventListener('click', () => { state.speed = s; model.setSpeed(s); markSpeed(); writeHash(); });
+  b.addEventListener('click', () => {
+    state.speed = s; model.setSpeed(s); sound.audio?.post({ type: 'speed', speed: s }); markSpeed(); writeHash();
+  });
   document.querySelector('.speeds').append(b);
 }
 const markSpeed = () => document.querySelectorAll('.speeds button')
@@ -50,12 +83,13 @@ $('play').addEventListener('click', () => {
   state.playing = !state.playing;
   $('play').textContent = state.playing ? '❚❚' : '▶';
   $('play').setAttribute('aria-label', state.playing ? 'Pause' : 'Play');
+  sound.audio?.setPlaying(state.playing);
 });
 $('seed').value = state.seed;
 $('seed').addEventListener('change', (e) => { state.seed = Math.max(1, Number(e.target.value) | 0); rebuild(); });
 $('next-onset').addEventListener('click', () => {
-  const next = trace.events.find((e) => e.type === 'onset' && e.t > model.modelMs + 60000);
-  if (next) { model.seek(next.t - 4 * 60000); writeHash(); }
+  const next = trace.events.find((e) => e.type === 'onset' && e.t > currentMs() + 60000);
+  if (next) seekTo(next.t - 4 * 60000);
 });
 $('t-stars').addEventListener('change', (e) => { dome.options.stars = dome.options.moon = e.target.checked; });
 $('t-day').addEventListener('change', (e) => { dome.options.dayNight = e.target.checked; });
@@ -106,10 +140,11 @@ async function loadAndStart(startIso) {
 }
 
 function rebuild(atMs) {
-  const at = atMs ?? (model ? model.modelMs : track.startMs);
+  const at = atMs ?? (model ? currentMs() : track.startMs);
   const old = model;
   model = new SkyModel(track, { seed: state.seed, params: state.params, startMs: at, speed: state.speed, observer });
   if (old) { model.node = old.node; model.tick = old.tick; }       // keep the curtain moving: nothing jumps
+  sound.audio?.post({ type: 'sky', seed: state.seed, params: state.params });
   dome.seed = state.seed;
   trace = runSlow(track, { seed: state.seed, params: state.params, observer });
   chart.setData(track, trace);
@@ -121,9 +156,10 @@ function rebuild(atMs) {
 
 function writeHash() {
   if (!model) return;
-  const t = new Date(model.modelMs).toISOString().slice(0, 16);
+  const t = new Date(currentMs()).toISOString().slice(0, 16);
   const params = Object.entries(state.params).map(([k, v]) => `&p.${k}=${v}`).join('');
-  history.replaceState(null, '', `#day=${state.day}&t=${t}&speed=${state.speed}&seed=${state.seed}${params}`);
+  const snd = Object.entries(state.sound).map(([k, v]) => `&s.${k}=${encodeURIComponent(v)}`).join('');
+  history.replaceState(null, '', `#day=${state.day}&t=${t}&speed=${state.speed}&seed=${state.seed}${params}${snd}`);
 }
 
 // ------------------------------------------------------------------ readouts and ticker
@@ -159,6 +195,9 @@ function pushEvents(events, realS) {
         : e.kind === 'pseudo' ? 'pseudo-breakup' : `substorm onset · energy ${fmt(e.strength, 1)}`;
     } else if (e.type === 'phase' && e.phase !== 2) {
       text = `${PHASE_NAMES[e.phase]} phase`;
+    } else if (e.type === 'chord') {
+      cls = 'chord';
+      text = `chord → ${e.label} (${e.roman}) · ${e.reason}`;
     } else if (e.type === 'whistler' && realS - lastWhistlerShown > 20) {
       lastWhistlerShown = realS;
       text = `whistler (${e.falling ? 'falling' : 'rising'})`;
@@ -179,26 +218,39 @@ function frame(now) {
   last = now;
   const work0 = performance.now();
   if (model) {
-    if (state.playing) {
-      acc += dt;
-      let n = 0;
-      while (acc >= TICK_S && n < 40) { model.step(); acc -= TICK_S; n++; }
-      if (n === 40) acc = 0;
+    let snap, events;
+    if (sound.audio) {                                // the audio thread steps the sky; we only draw it
+      snap = audioSnap();
+      events = sound.audio.takeEvents();
+      sound.noteEvents(events);
+    } else {
+      if (state.playing) {
+        acc += dt;
+        let n = 0;
+        while (acc >= TICK_S && n < 40) { model.step(); acc -= TICK_S; n++; }
+        if (n === 40) acc = 0;
+      }
+      snap = model.snapshot();
+      events = model.takeEvents();
     }
-    const snap = model.snapshot();
-    dome.render(snap, model.tick * TICK_S);
-    readoutClock += dt;
-    if (readoutClock > 0.1) {
-      readoutClock = 0; updateReadouts(snap); chart.draw(snap.modelTimeUtc);
-      $('r-perf').textContent = `${costMs.toFixed(1)} ms/frame (JS)`;
+    if (!snap) sound.readout();                       // says why the worklet is silent
+    if (snap) {
+      dome.render(snap, snap.step * TICK_S);
+      readoutClock += dt;
+      if (readoutClock > 0.1) {
+        readoutClock = 0; updateReadouts(snap); chart.draw(snap.modelTimeUtc); sound.readout();
+        $('r-perf').textContent = `${costMs.toFixed(1)} ms/frame (JS)`;
+      }
+      pushEvents(events, snap.step * TICK_S);
     }
-    pushEvents(model.takeEvents(), model.tick * TICK_S);
     costMs += (performance.now() - work0 - costMs) * 0.05;
   }
   requestAnimationFrame(frame);
 }
 
-window.addEventListener('resize', () => chart.drawBase());
-window.sky = { get model() { return model; }, dome, state };          // console access for tuning
+window.addEventListener('resize', () => { if (trace) chart.drawBase(); });
+window.sky = { get model() { return model; }, dome, state, sound };   // console access for tuning
 await loadAndStart(hash.get('t') || START[state.day]);
 requestAnimationFrame(frame);
+// Checks without a click (headless Chrome with --autoplay-policy=no-user-gesture-required).
+if (hash.get('autosound') === '1') sound.start();
