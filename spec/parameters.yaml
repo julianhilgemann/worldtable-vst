@@ -1,42 +1,102 @@
 # Single source of truth for all plugin parameters.
 # tools/gen_params.py generates C++ (APVTS layout + ID constants) and JS (UI).
-# IDs are permanent once released. Draft — finish in Phase 1.
+# IDs are permanent once released. Rewritten for the POC (spec/tasks/TP.1-poc-sound.md);
+# nothing has been released yet.
+#
+# Field reference
+#   type:  float | int | choice | bool
+#   float: min, max, default, unit, and either `mid` (value shown at the knob's
+#          centre → log-like skew) or `skew` (JUCE skew factor). Optional `step`.
+#   int:   min, max, default
+#   choice: choices, default (must be one of choices)
+#   modulatable: may become a mod-matrix target later (informational for now)
+#   rebuild: changing it rebuilds the wavetable on the builder thread
+#   Template groups (`count` + `template`) expand {n}; a list default gives one value per copy.
 
 version: 1
 groups:
-  global:
-    - { id: mode,        name: "Mode",        type: choice, choices: [Listen, Play], default: Listen }
-    - { id: root,        name: "Root",        type: choice, choices: [C, C#, D, D#, E, F, F#, G, G#, A, A#, B], default: C }
-    - { id: scale,       name: "Scale",       type: choice, choices: [Major, Minor, Dorian, Lydian, PentaMinor, Just], default: Dorian }
-    - { id: sensitivity, name: "World Sensitivity", type: float, min: 0, max: 1, default: 0.5, modulatable: false }
-    - { id: master,      name: "Master",      type: float, min: -60, max: 6, default: -6, unit: dB }
+  trigger:
+    - { id: trig_mode,  name: "Trigger Mode", type: choice, choices: [Drone, Euclid, MIDI], default: Drone }
+    - { id: root,       name: "Root",   type: choice, choices: [C, C#, D, D#, E, F, F#, G, G#, A, A#, B], default: D }
+    - { id: octave,     name: "Octave", type: int, min: 1, max: 5, default: 3 }
+    - { id: scale,      name: "Scale",  type: choice, choices: [Major, Minor, Dorian, Phrygian, Lydian, Mixolydian, Penta Major, Penta Minor, Harmonic Minor], default: Dorian }
+    - { id: chord,      name: "Chord",  type: choice, choices: [Root, Fifth, Triad, Seventh, Ninth, Open], default: Open }
+    - { id: bpm,        name: "Tempo",  type: float, min: 40, max: 200, default: 90, unit: BPM, step: 0.1 }
 
-  oscA:
-    - { id: oscA_table,  name: "Osc A Table", type: choice, choices: [Factory, WorldSeries, WorldHarmonics], default: WorldHarmonics }
-    - { id: oscA_pos,    name: "Osc A Position", type: float, min: 0, max: 1, default: 0.3, modulatable: true }
-    - { id: oscA_level,  name: "Osc A Level", type: float, min: 0, max: 1, default: 0.8, modulatable: true }
-  oscB:
-    - { id: oscB_pos,    name: "Osc B Position", type: float, min: 0, max: 1, default: 0.6, modulatable: true }
-    - { id: oscB_level,  name: "Osc B Level", type: float, min: 0, max: 1, default: 0.5, modulatable: true }
-  voice:
-    - { id: unison,      name: "Unison", type: int, min: 1, max: 4, default: 2 }
-    - { id: detune,      name: "Detune", type: float, min: 0, max: 1, default: 0.2, modulatable: true }
-    - { id: noise,       name: "Noise",  type: float, min: 0, max: 1, default: 0.05, modulatable: true }
-    - { id: attack,      name: "Attack", type: float, min: 0.01, max: 30, default: 4, unit: s, skew: 0.3 }
-    - { id: release,     name: "Release", type: float, min: 0.05, max: 60, default: 12, unit: s, skew: 0.3 }
+  euclid:
+    - { id: eu_steps,   name: "Euclid Steps",  type: int, min: 2, max: 32, default: 16 }
+    - { id: eu_pulses,  name: "Euclid Pulses", type: int, min: 1, max: 32, default: 5 }
+    - { id: eu_rotate,  name: "Euclid Rotate", type: int, min: 0, max: 31, default: 0 }
+    - { id: eu_rate,    name: "Euclid Rate",   type: choice, choices: ["1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/4T", "1/8T", "1/16T"], default: "1/16" }
+    - { id: eu_gate,    name: "Euclid Gate",   type: float, min: 0.05, max: 1, default: 0.5, modulatable: true }
+    - { id: eu_range,   name: "Euclid Range",  type: int, min: 1, max: 3, default: 2, unit: oct }
+    - { id: eu_notes,   name: "Euclid Notes",  type: choice, choices: [Root, Chord, Scale], default: Scale }
+    - { id: eu_mutate,  name: "Euclid Mutate", type: float, min: 0, max: 1, default: 0.15 }
+
+  world:
+    - { id: wt_source,   name: "World Source", type: choice, choices: ["Swell · San Francisco", "Swell · Waimea Bay", "Swell · Gulf of Maine", "Swell · Cape Canaveral", "Magnetosphere · Boulder", "Magnetosphere · Alaska"], default: "Swell · San Francisco" }
+    - { id: wt_spread,   name: "Table Spread",   type: float, min: 0, max: 1, default: 0.45, rebuild: true }
+    - { id: wt_tilt,     name: "Table Tilt",     type: float, min: -12, max: 6, default: -3, unit: dB/oct, rebuild: true }
+    - { id: wt_contrast, name: "Table Contrast", type: float, min: 0.25, max: 3, default: 1, mid: 1, rebuild: true }
+    - { id: wt_phase,    name: "Table Phase",    type: float, min: 0, max: 1, default: 0.6, rebuild: true }
+
+  osc:
+    - { id: osc_pos,     name: "Position", type: float, min: 0, max: 1, default: 0.75, modulatable: true }
+    - { id: osc_octave,  name: "Osc Octave", type: int, min: -2, max: 2, default: 0 }
+    - { id: osc_unison,  name: "Unison", type: int, min: 1, max: 6, default: 3 }
+    - { id: osc_detune,  name: "Detune", type: float, min: 0, max: 1, default: 0.25, modulatable: true }
+    - { id: osc_width,   name: "Width",  type: float, min: 0, max: 1, default: 0.7 }
+    - { id: osc_drive,   name: "Drive",  type: float, min: 0, max: 1, default: 0.2, modulatable: true }
+    - { id: osc_level,   name: "Osc Level", type: float, min: -36, max: 6, default: -6, unit: dB }
+
   filter:
-    - { id: cutoff,      name: "Cutoff", type: float, min: 20, max: 20000, default: 1800, unit: Hz, skew: 0.25, modulatable: true }
-    - { id: reso,        name: "Resonance", type: float, min: 0, max: 1, default: 0.15, modulatable: true }
-  lfo:   # repeated ×4 by the generator: lfo1_rate … lfo4_shape
+    - { id: flt_type,    name: "Filter Type", type: choice, choices: [LP12, LP24, BP, HP], default: LP12 }
+    - { id: flt_cutoff,  name: "Cutoff", type: float, min: 20, max: 20000, default: 1400, mid: 1000, unit: Hz, modulatable: true }
+    - { id: flt_reso,    name: "Resonance", type: float, min: 0, max: 1, default: 0.2, modulatable: true }
+    - { id: flt_env,     name: "Filter Env Amount", type: float, min: -1, max: 1, default: 0.3, modulatable: true }
+    - { id: flt_key,     name: "Key Track", type: float, min: 0, max: 1, default: 0.5 }
+
+  amp_env:
+    - { id: amp_a, name: "Amp Attack",  type: float, min: 0.001, max: 20, default: 1.5, mid: 0.6, unit: s }
+    - { id: amp_d, name: "Amp Decay",   type: float, min: 0.001, max: 20, default: 2.5, mid: 0.8, unit: s }
+    - { id: amp_s, name: "Amp Sustain", type: float, min: 0, max: 1, default: 0.75 }
+    - { id: amp_r, name: "Amp Release", type: float, min: 0.005, max: 30, default: 5, mid: 1.5, unit: s }
+
+  filter_env:
+    - { id: fenv_a, name: "Filter Env Attack",  type: float, min: 0.001, max: 20, default: 2.5, mid: 0.6, unit: s }
+    - { id: fenv_d, name: "Filter Env Decay",   type: float, min: 0.001, max: 20, default: 4, mid: 0.8, unit: s }
+    - { id: fenv_s, name: "Filter Env Sustain", type: float, min: 0, max: 1, default: 0.35 }
+    - { id: fenv_r, name: "Filter Env Release", type: float, min: 0.005, max: 30, default: 6, mid: 1.5, unit: s }
+
+  lfo:   # repeated by the generator: lfo1_rate … lfo2_amt
+    count: 2
     template:
-      - { id: "lfo{n}_rate",  name: "LFO {n} Rate", type: float, min: 0.001, max: 2, default: 0.02, unit: Hz, skew: 0.2, modulatable: true }
-      - { id: "lfo{n}_shape", name: "LFO {n} Shape", type: choice, choices: [Sine, Triangle, SmoothRandom, Breath], default: Sine }
-    count: 4
-  fx:
-    - { id: delay_mix,   name: "Delay Mix", type: float, min: 0, max: 1, default: 0.2, modulatable: true }
-    - { id: verb_size,   name: "Reverb Size", type: float, min: 0, max: 1, default: 0.8, modulatable: true }
-    - { id: verb_mix,    name: "Reverb Mix", type: float, min: 0, max: 1, default: 0.45, modulatable: true }
-    - { id: verb_freeze, name: "Reverb Freeze", type: bool, default: false }
+      - { id: "lfo{n}_rate",  name: "LFO {n} Rate",  type: float, min: 0.01, max: 20, default: [0.05, 0.13], mid: 0.5, unit: Hz, modulatable: true }
+      - { id: "lfo{n}_shape", name: "LFO {n} Shape", type: choice, choices: [Sine, Triangle, Saw, Square, "S&H", Drift], default: [Sine, Drift] }
+      - { id: "lfo{n}_dest",  name: "LFO {n} Destination", type: choice, choices: [Position, Cutoff, Pitch, Drive, Amp, Pan], default: [Position, Cutoff] }
+      - { id: "lfo{n}_amt",   name: "LFO {n} Amount", type: float, min: -1, max: 1, default: [0.4, 0.25], modulatable: true }
+
+  delay:
+    - { id: dly_time,  name: "Delay Time", type: choice, choices: ["1/16", "1/8T", "1/8", "1/8D", "1/4T", "1/4", "1/4D", "1/2", "1/1"], default: "1/4D" }
+    - { id: dly_fb,    name: "Delay Feedback", type: float, min: 0, max: 0.95, default: 0.45, modulatable: true }
+    - { id: dly_tone,  name: "Delay Tone", type: float, min: 0, max: 1, default: 0.45 }
+    - { id: dly_pingpong, name: "Delay Ping-Pong", type: bool, default: true }
+    - { id: dly_mix,   name: "Delay Mix", type: float, min: 0, max: 1, default: 0.2, modulatable: true }
+
+  reverb:
+    - { id: rev_size,     name: "Reverb Size",     type: float, min: 0, max: 1, default: 0.75 }
+    - { id: rev_decay,    name: "Reverb Decay",    type: float, min: 0.3, max: 30, default: 8, mid: 4, unit: s, modulatable: true }
+    - { id: rev_damp,     name: "Reverb Damping",  type: float, min: 0, max: 1, default: 0.4 }
+    - { id: rev_predelay, name: "Reverb Pre-Delay", type: float, min: 0, max: 250, default: 20, unit: ms }
+    - { id: rev_shimmer,  name: "Reverb Shimmer",  type: float, min: 0, max: 1, default: 0.3, modulatable: true }
+    - { id: rev_mod,      name: "Reverb Modulation", type: float, min: 0, max: 1, default: 0.4 }
+    - { id: rev_mix,      name: "Reverb Mix",      type: float, min: 0, max: 1, default: 0.4, modulatable: true }
+
+  output:
+    - { id: lim_gain,    name: "Limiter Gain",    type: float, min: 0, max: 18, default: 0, unit: dB }
+    - { id: lim_ceiling, name: "Limiter Ceiling", type: float, min: -12, max: 0, default: -1, unit: dB }
+    - { id: lim_release, name: "Limiter Release", type: float, min: 10, max: 1000, default: 150, mid: 120, unit: ms }
+    - { id: master,      name: "Output",          type: float, min: -60, max: 0, default: 0, unit: dB }
 
 # Non-automatable state (ValueTree, not APVTS): mappings, focus, frozen snapshot.
 state:

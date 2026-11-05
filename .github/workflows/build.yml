@@ -17,6 +17,7 @@ jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60     # a hung build fails within the hour instead of at GitHub's 6 h cap
     strategy:
       fail-fast: false
       matrix:
@@ -30,8 +31,11 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
+      # Keep the job count explicit: a bare --parallel becomes an unlimited `make -j` on
+      # macOS, and starting every JUCE unit of every target at once exhausts the 7 GB
+      # runner (the TP.1 run hung in this step until the 6 h cap).
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --config Release --parallel 3
 
       # ctest + pluginval are wired in T0.3.
 

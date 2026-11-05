@@ -4,12 +4,28 @@
 namespace worldtable
 {
 
-PluginProcessor::PluginProcessor()
+namespace
+{
+const params::ParamPointers& bound (params::ParamPointers& pp, juce::AudioProcessorValueTreeState& apvts)
+{
+    pp.bind (apvts);
+    return pp;
+}
+} // namespace
+
+PluginProcessor::PluginProcessor (bool networkEnabled)
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts (*this, nullptr, kStateType, juce::AudioProcessorValueTreeState::ParameterLayout {})
+      apvts (*this, nullptr, kStateType, params::createLayout()),
+      feed (tables, bound (paramPointers, apvts), networkEnabled),
+      engine (paramPointers, tables)
 {
     apvts.state.setProperty (kStateVersionId, kStateVersion, nullptr);
+
+    // A table exists before the first block: built synchronously from cache/factory data.
+    feed.prime();
 }
+
+PluginProcessor::~PluginProcessor() = default;
 
 juce::ValueTree PluginProcessor::migrateState (juce::ValueTree state)
 {
@@ -29,7 +45,15 @@ juce::ValueTree PluginProcessor::migrateState (juce::ValueTree state)
 }
 
 //==============================================================================
-void PluginProcessor::prepareToPlay (double, int) {}
+void PluginProcessor::prepareToPlay (double sampleRate, int maximumExpectedSamplesPerBlock)
+{
+    // Rebuilds synchronously if restored state changed the source or transform,
+    // then lets the data thread run (fetching, live rebuilds).
+    feed.start();
+
+    engine.prepare (sampleRate, maximumExpectedSamplesPerBlock);
+    setLatencySamples (engine.getLatencySamples());
+}
 
 void PluginProcessor::releaseResources() {}
 
@@ -42,9 +66,24 @@ bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
-    juce::ignoreUnused (midi);
 
-    buffer.clear(); // M0: silence
+    dsp::HostTime host;
+    if (auto* hostPlayHead = getPlayHead())
+    {
+        if (const auto pos = hostPlayHead->getPosition())
+        {
+            if (const auto bpm = pos->getBpm())
+                host.bpm = *bpm;
+            host.isPlaying = pos->getIsPlaying();
+            if (const auto ppq = pos->getPpqPosition())
+            {
+                host.hasPpq = true;
+                host.ppq = *ppq;
+            }
+        }
+    }
+
+    engine.process (buffer, midi, host);
 }
 
 //==============================================================================

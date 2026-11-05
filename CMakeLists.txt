@@ -57,22 +57,70 @@ add_library(WorldtableShared INTERFACE)
 
 target_sources(WorldtableShared INTERFACE
     source/PluginProcessor.cpp
-    source/PluginEditor.cpp)
+    source/PluginEditor.cpp
+    source/params/Params.cpp
+    source/data/WorldData.cpp
+    source/data/WorldSources.cpp
+    source/data/WorldFeed.cpp
+    source/transform/WavetableBuilder.cpp
+    source/dsp/Voice.cpp
+    source/dsp/Engine.cpp
+    source/dsp/fx/ShimmerReverb.cpp)
 
 target_include_directories(WorldtableShared INTERFACE source)
 
 target_compile_definitions(WorldtableShared INTERFACE
-    JUCE_WEB_BROWSER=0                # WebView UI arrives with ADR-0004 / T5.1
+    WORLDTABLE_VERSION="${PROJECT_VERSION}"
+    JUCE_WEB_BROWSER=1                # WebView UI (POC, see spec/tasks/TP.1-poc-sound.md)
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0)
 
+# Factory world: recorded API responses bundled so the synth plays offline.
+juce_add_binary_data(WorldtableWorldData
+    HEADER_NAME WorldtableWorldData.h
+    NAMESPACE   WorldtableWorldData
+    SOURCES
+        resources/world/wavespec/46026.data_spec
+        resources/world/wavespec/51201.data_spec
+        resources/world/wavespec/44013.data_spec
+        resources/world/wavespec/41010.data_spec
+        resources/world/geomag/BOU.json
+        resources/world/geomag/CMO.json)
+
+# Web UI assets, served to the WebView from memory.
+file(GLOB WORLDTABLE_UI_FILES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/*.html
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/*.css
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/*.js)
+juce_add_binary_data(WorldtableUIData
+    HEADER_NAME WorldtableUIData.h
+    NAMESPACE   WorldtableUIData
+    SOURCES     ${WORLDTABLE_UI_FILES})
+
+set_target_properties(WorldtableWorldData WorldtableUIData PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 target_link_libraries(WorldtableShared INTERFACE
+    WorldtableWorldData
+    WorldtableUIData
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
 
 target_link_libraries(Worldtable PRIVATE WorldtableShared)
+
+#------------------------------------------------------------------------------
+# Offline renderer: headless processor → WAV (spec T1.5, pulled forward for the POC)
+#------------------------------------------------------------------------------
+juce_add_console_app(WorldtableRender PRODUCT_NAME "WorldtableRender")
+target_sources(WorldtableRender PRIVATE tools/render/RenderOffline.cpp)
+target_link_libraries(WorldtableRender PRIVATE WorldtableShared)
+
+# UI integration check: real editor + WebView, bridge verified over evaluateJavascript.
+juce_add_gui_app(WorldtableUICheck PRODUCT_NAME "WorldtableUICheck")
+target_sources(WorldtableUICheck PRIVATE tools/uicheck/UiCheck.cpp)
+target_compile_definitions(WorldtableUICheck PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
+target_link_libraries(WorldtableUICheck PRIVATE WorldtableShared)
 
 #------------------------------------------------------------------------------
 # Tests

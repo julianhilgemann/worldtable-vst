@@ -1,12 +1,16 @@
 #pragma once
 
+#include "data/WorldFeed.h"
+#include "dsp/Engine.h"
+#include "dsp/TableExchange.h"
+#include "params/Params.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 namespace worldtable
 {
 
-/** M0 skeleton: a MIDI-input synth that outputs silence.
-    Parameters arrive with T0.2 (generated from spec/parameters.yaml). */
+/** Worldtable: world data → wavetable → voices → delay → shimmer reverb → limiter. */
 class PluginProcessor final : public juce::AudioProcessor
 {
 public:
@@ -21,8 +25,9 @@ public:
         or newer than this build) — callers must then keep their current state. */
     static juce::ValueTree migrateState (juce::ValueTree state);
 
-    PluginProcessor();
-    ~PluginProcessor() override = default;
+    /** networkEnabled = false plays only the bundled factory world (tests, offline renders). */
+    explicit PluginProcessor (bool networkEnabled = true);
+    ~PluginProcessor() override;
 
     //== AudioProcessor ========================================================
     void prepareToPlay (double sampleRate, int maximumExpectedSamplesPerBlock) override;
@@ -39,7 +44,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return 12.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -52,9 +57,15 @@ public:
 
     //==========================================================================
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept { return apvts; }
+    data::WorldFeed& getWorldFeed() noexcept                         { return feed; }
+    dsp::Engine& getEngine() noexcept                                { return engine; }
 
 private:
     juce::AudioProcessorValueTreeState apvts;
+    params::ParamPointers paramPointers;
+    dsp::TableExchange tables;
+    data::WorldFeed feed;
+    dsp::Engine engine;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Worldtable</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <radialGradient id="knobFace" cx="50%" cy="30%" r="75%">
+        <stop offset="0%" stop-color="#20395b"/>
+        <stop offset="100%" stop-color="#0a1626"/>
+      </radialGradient>
+    </defs>
+  </svg>
+
+  <div id="ambient" aria-hidden="true"></div>
+
+  <div id="stage">
+    <header>
+      <div class="brand">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffc93c" stroke-width="1.4">
+          <circle cx="12" cy="12" r="9.5"/>
+          <path d="M2.5 12h19M12 2.5c3 3 3 16 0 19M12 2.5c-3 3-3 16 0 19" stroke-opacity="0.55"/>
+          <path d="M3.5 15.5c2.2-2 3.6 1.8 5.8 0s3.6-4.5 5.8-2.5 3.4 2.6 5.4 1" stroke-width="1.6"/>
+        </svg>
+        <div>
+          <div class="name">WORLD<b>TABLE</b></div>
+          <div class="ver ambient-pick" id="ambient-pick">
+            <span>AMBIENT</span>
+            <button data-level="0" title="Static background">OFF</button>
+            <button data-level="1" title="Level 1 · CSS gradients, no data">1</button>
+            <button data-level="2" title="Level 2 · WebGL shader, free-running">2</button>
+            <button data-level="3" title="Level 3 · shader driven by the world data and the sound">3</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="source-box">
+        <span class="lbl">LISTEN TO</span>
+        <div data-select="wt_source" data-wide="1"></div>
+        <button class="icon-btn" id="refresh" title="Fetch now">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.5 8A5.5 5.5 0 1 1 11.9 4.1"/><path d="M13.6 2.2v3.3h-3.3"/></svg>
+        </button>
+      </div>
+
+      <div class="status" id="status">
+        <span class="dot" id="status-dot"></span>
+        <span class="state" id="status-state">—</span>
+        <span class="sep">·</span>
+        <span id="status-text">starting…</span>
+      </div>
+
+      <div data-seg="trig_mode" data-big="1"></div>
+    </header>
+
+    <!-- Row A: world → wavetable, filter -->
+    <div class="row row-a">
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">WORLD <b>→</b> WAVETABLE</span>
+          <span class="spacer"></span>
+          <span class="info" id="world-info"></span>
+        </div>
+        <div class="world-body">
+          <div class="world-side">
+            <div class="display"><span class="stage-label">1 · <b>DATA</b></span><canvas id="cv-data"></canvas></div>
+            <div class="display"><span class="stage-label">2 · <b>HARMONICS</b></span><canvas id="cv-harm"></canvas></div>
+          </div>
+          <div class="display"><span class="stage-label">3 · <b>WAVETABLE</b></span><canvas id="cv-wt"></canvas><span class="stage-note" id="wt-note"></span></div>
+        </div>
+        <div class="knob-row">
+          <div class="knob-group">
+            <span class="group-label">TRANSFORM</span>
+            <div data-knob="wt_spread" data-label="SPREAD"></div>
+            <div data-knob="wt_tilt" data-label="TILT"></div>
+            <div data-knob="wt_contrast" data-label="CONTRAST"></div>
+            <div data-knob="wt_phase" data-label="PHASE"></div>
+          </div>
+          <div class="knob-group">
+            <span class="group-label">OSCILLATOR</span>
+            <div data-knob="osc_pos" data-label="POSITION"></div>
+            <div data-knob="osc_unison" data-label="UNISON"></div>
+            <div data-knob="osc_detune" data-label="DETUNE"></div>
+            <div data-knob="osc_width" data-label="WIDTH"></div>
+            <div data-knob="osc_drive" data-label="DRIVE"></div>
+            <div data-knob="osc_octave" data-label="OCTAVE"></div>
+            <div data-knob="osc_level" data-label="LEVEL"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">FILTER</span>
+          <span class="spacer"></span>
+          <div data-seg="flt_type"></div>
+        </div>
+        <div class="display interactive filter-body"><canvas id="cv-filter"></canvas></div>
+        <div class="knob-row">
+          <div data-knob="flt_cutoff" data-label="CUTOFF"></div>
+          <div data-knob="flt_reso" data-label="RESO"></div>
+          <div data-knob="flt_env" data-label="ENV AMT"></div>
+          <div data-knob="flt_key" data-label="KEYTRACK"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Row B: envelopes + LFOs -->
+    <div class="row row-b">
+      <section class="panel">
+        <div class="panel-head"><span class="panel-title">AMP <b>ENV</b></span></div>
+        <div class="display interactive env-body"><canvas id="cv-amp"></canvas></div>
+        <div class="knob-row">
+          <div data-knob="amp_a" data-label="ATTACK" data-small="1"></div>
+          <div data-knob="amp_d" data-label="DECAY" data-small="1"></div>
+          <div data-knob="amp_s" data-label="SUSTAIN" data-small="1"></div>
+          <div data-knob="amp_r" data-label="RELEASE" data-small="1"></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><span class="panel-title">FILTER <b>ENV</b></span></div>
+        <div class="display interactive env-body"><canvas id="cv-fenv"></canvas></div>
+        <div class="knob-row">
+          <div data-knob="fenv_a" data-label="ATTACK" data-small="1" data-mod="1"></div>
+          <div data-knob="fenv_d" data-label="DECAY" data-small="1" data-mod="1"></div>
+          <div data-knob="fenv_s" data-label="SUSTAIN" data-small="1" data-mod="1"></div>
+          <div data-knob="fenv_r" data-label="RELEASE" data-small="1" data-mod="1"></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">LFO <b>1</b></span><span class="spacer"></span>
+          <div data-select="lfo1_shape"></div><div data-select="lfo1_dest"></div>
+        </div>
+        <div class="display lfo-body"><canvas id="cv-lfo1"></canvas></div>
+        <div class="knob-row" style="justify-content:center;gap:18px">
+          <div data-knob="lfo1_rate" data-label="RATE" data-small="1"></div>
+          <div data-knob="lfo1_amt" data-label="AMOUNT" data-small="1"></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">LFO <b>2</b></span><span class="spacer"></span>
+          <div data-select="lfo2_shape"></div><div data-select="lfo2_dest"></div>
+        </div>
+        <div class="display lfo-body"><canvas id="cv-lfo2"></canvas></div>
+        <div class="knob-row" style="justify-content:center;gap:18px">
+          <div data-knob="lfo2_rate" data-label="RATE" data-small="1" data-mod="1"></div>
+          <div data-knob="lfo2_amt" data-label="AMOUNT" data-small="1" data-mod="1"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Row C: notes, delay, space, output -->
+    <div class="row row-c">
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">NOTES <b>·</b> EUCLID</span><span class="spacer"></span>
+          <div data-drag="bpm" data-caption="TEMPO"></div>
+        </div>
+        <div class="seq-body">
+          <div class="display seq-ring"><canvas id="cv-euclid"></canvas></div>
+          <div class="seq-controls">
+            <div class="seq-line">
+              <div data-select="root" data-caption="ROOT"></div>
+              <div data-select="octave" data-caption="OCT"></div>
+              <div data-select="scale"></div>
+              <div data-select="chord"></div>
+            </div>
+            <div class="knob-row">
+              <div data-knob="eu_steps" data-label="STEPS" data-small="1"></div>
+              <div data-knob="eu_pulses" data-label="PULSES" data-small="1"></div>
+              <div data-knob="eu_rotate" data-label="ROTATE" data-small="1"></div>
+              <div data-knob="eu_gate" data-label="GATE" data-small="1"></div>
+              <div data-knob="eu_range" data-label="RANGE" data-small="1"></div>
+              <div data-knob="eu_mutate" data-label="MUTATE" data-small="1"></div>
+            </div>
+            <div class="seq-line">
+              <div data-select="eu_rate" data-caption="RATE"></div>
+              <div data-select="eu_notes" data-caption="NOTES"></div>
+            </div>
+            <div class="notes-strip" id="notes-strip"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">DELAY</span><span class="spacer"></span>
+          <div data-toggle="dly_pingpong" data-label="PING"></div>
+          <div data-select="dly_time"></div>
+        </div>
+        <div class="display delay-body"><canvas id="cv-delay"></canvas></div>
+        <div class="knob-row">
+          <div data-knob="dly_fb" data-label="FEEDBACK" data-small="1"></div>
+          <div data-knob="dly_tone" data-label="TONE" data-small="1"></div>
+          <div data-knob="dly_mix" data-label="MIX" data-small="1"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><span class="panel-title">SPACE <b>·</b> SHIMMER</span></div>
+        <div class="display space-body"><canvas id="cv-space"></canvas></div>
+        <div class="knob-row">
+          <div data-knob="rev_size" data-label="SIZE" data-small="1"></div>
+          <div data-knob="rev_decay" data-label="DECAY" data-small="1"></div>
+          <div data-knob="rev_damp" data-label="DAMP" data-small="1"></div>
+          <div data-knob="rev_predelay" data-label="PRE" data-small="1"></div>
+          <div data-knob="rev_shimmer" data-label="SHIMMER" data-small="1"></div>
+          <div data-knob="rev_mod" data-label="MOD" data-small="1"></div>
+          <div data-knob="rev_mix" data-label="MIX" data-small="1"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><span class="panel-title">OUTPUT</span></div>
+        <div class="out-body">
+          <div class="display"><canvas id="cv-meter"></canvas></div>
+          <div class="out-knobs">
+            <div data-knob="lim_gain" data-label="DRIVE" data-small="1"></div>
+            <div data-knob="lim_ceiling" data-label="CEILING" data-small="1"></div>
+            <div data-knob="lim_release" data-label="REL" data-small="1"></div>
+            <div data-knob="master" data-label="OUT" data-small="1"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script src="params.js"></script>
+  <script src="bridge.js"></script>
+  <script src="mock.js"></script>
+  <script src="widgets.js"></script>
+  <script src="views.js"></script>
+  <script src="app.js"></script>
+  <script src="ambient.js"></script>
+</body>
+</html>
