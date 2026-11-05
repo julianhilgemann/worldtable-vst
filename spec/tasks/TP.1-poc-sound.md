@@ -1,6 +1,11 @@
 # TP.1 — Proof of concept: world data → wavetable → sound → UI
 **Milestone:** POC (vertical slice through M1–M5)   **Depends on:** T0.1   **Branch:** feat/poc-sound
 
+> **Superseded direction (2026-11-05).** v1 is now a magnetosphere drone
+> played by a Sky Model (ADR-0002). This file records the POC as built;
+> milestone numbers and spec references below are from the old plan. What is
+> reused or retired: `spec/07-implementation-plan.md`.
+
 ## Goal
 Prove the whole idea end to end before building each milestone properly:
 live data comes in from a public API, is bent into a wavetable, is audible

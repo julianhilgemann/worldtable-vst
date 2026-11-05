@@ -1,6 +1,10 @@
 # TP.2 — Prototype: ambient animated background (levels 1–3)
 **Milestone:** POC   **Depends on:** TP.1   **Branch:** feat/poc-sound
 
+> **Superseded (2026-11-05).** The all-sky dome (ADR-0006) replaces the
+> ambient background; level 3's techniques (smoothed targets, phase-integrated
+> speed, GPU budget) carry over to the dome renderer.
+
 ## Goal
 Let the owner compare three ways of adding soft motion behind the UI, in the
 browser mock and in a DAW, before deciding what the product gets.
