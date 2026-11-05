@@ -12,6 +12,7 @@ target_sources(WorldtableTests PRIVATE
     unit/SkyProjectionTests.cpp
     unit/SkyRuntimeTests.cpp
     unit/HarmonyTests.cpp
+    unit/FxTests.cpp
     unit/SkySoundTests.cpp
     unit/TrackBuilderTests.cpp
     unit/AllocationCounter.cpp)
