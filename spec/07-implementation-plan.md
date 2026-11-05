@@ -14,8 +14,8 @@ plug-in renderer → OSC.
 | M2: Sky Model in C++ (T2.1–T2.5) | merged (#7–#11); M2 complete |
 | M3: T3.1 resonator bank + exciter | merged (#12) |
 | M3: T3.2 harmony (vocabulary, chord hold, scales, MIDI latch) | merged (#13) |
-| M3: T3.3 progression (the sky writes the chords) | this branch |
-| M3: T3.3 progression, T3.4 layers, T3.5 FX, T3.6 parameters | next |
+| M3: T3.3 progression (the sky writes the chords) | merged (#14) |
+| M3: T3.4 sparkles/whistlers/Breath, T3.5 FX chain, T3.6 parameters | next (T3.4 needs the owner's design/ear) |
 
 **Reused from the POC:** CMake/CI, `gen_params.py`, `WorldtableRender`,
 `WorldtableUICheck`, WebView bridge and mock backend, Drive, SVF, LFO, ADSR,
