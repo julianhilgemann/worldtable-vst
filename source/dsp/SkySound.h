@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Exciter.h"
+#include "Harmony.h"
 #include "ResonatorBank.h"
 #include "Voicing.h"
 #include "sky/SkyRuntime.h"
@@ -62,8 +63,13 @@ public:
     void process (sky::SkyRuntime& runtime, float* left, float* right, int numSamples) noexcept;
 
     /** Audio thread, between blocks: asks for a chord. Taken on a tick when the banks allow (see the
-        class comment). */
+        class comment). The progression asks by itself once `harmony()` is configured. */
     void requestChord (const Chord&, bool urgent) noexcept;
+
+    /** The chord hold + progression (T3.2/T3.3). Configure it and call start() before playback; the
+        sound feeds it the tick's phase and onset events and applies its requests. */
+    Harmony& harmony() noexcept { return harmonyEngine; }
+    uint64_t lastChordTick() const noexcept { return chordTick; }
 
     //== State (tests, later the UI) ==================================================================
     const Chord& chord() const noexcept       { return applied; }   ///< newest applied chord
@@ -94,6 +100,7 @@ private:
 
     ResonatorBank resonators;
     Exciter exciter;
+    Harmony harmonyEngine;
 
     // voices: position along the chain, slot, notes per bank and layer
     std::array<double, kMaxVoices> pos {};
@@ -114,8 +121,9 @@ private:
     double xf = 1.0, xfStart = 0.0, xfEnd = 0.0;
     double dampStart = -1.0;              ///< real s when damping began; < 0: not damping
     Chord applied {}, pending {};
-    bool pendingValid = false, pendingUrgent = false;
+    bool pendingValid = false, pendingUrgent = false, pendingFromHarmony = false;
     uint32_t changes = 0;
+    uint64_t chordTick = 0;
     int guardResets = 0;
 
     // output of the block being rendered

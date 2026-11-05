@@ -1,5 +1,7 @@
 #include "Harmony.h"
 
+#include "sky/SkyRandom.h"
+
 #include <algorithm>
 #include <bit>
 #include <cstddef>
@@ -284,29 +286,39 @@ void Harmony::setKey (int pitchClass) noexcept
 {
     keyPc.store (wrap12 (pitchClass), std::memory_order_relaxed);
     latched.store (false, std::memory_order_release);
+    revoiceReason.store ("root", std::memory_order_relaxed);
+    revoice.store (true, std::memory_order_release);
 }
 
 void Harmony::setMood (Mood mood) noexcept
 {
     moodIndex.store (indexOf (mood, kNumMoods), std::memory_order_relaxed);
     latched.store (false, std::memory_order_release);
+    revoiceReason.store ("mood", std::memory_order_relaxed);
+    revoice.store (true, std::memory_order_release);
 }
 
 void Harmony::setFunction (ChordFunction fn) noexcept
 {
     functionIndex.store (indexOf (fn, kNumFunctions), std::memory_order_relaxed);
     latched.store (false, std::memory_order_release);
+    revoiceReason.store ("chord", std::memory_order_relaxed);
+    revoice.store (true, std::memory_order_release);
 }
 
 void Harmony::setChordIndex (int index) noexcept
 {
     shapeIndex.store (std::clamp (index, 0, 2), std::memory_order_relaxed);
     latched.store (false, std::memory_order_release);
+    revoiceReason.store ("chord", std::memory_order_relaxed);
+    revoice.store (true, std::memory_order_release);
 }
 
 void Harmony::setTranspose (int semitones) noexcept
 {
     transposeSemis.store (semitones, std::memory_order_relaxed);
+    revoiceReason.store ("transpose", std::memory_order_relaxed);
+    revoice.store (true, std::memory_order_release);
 }
 
 void Harmony::setScale (Scale scale) noexcept
@@ -438,6 +450,184 @@ bool Harmony::poll (Chord& out) noexcept
     hasPolled = true;
     out = c;
     return true;
+}
+
+
+//==================================================================================================
+// Progression (spec/05-sound-engine.md §3): prototype/sky/sound/harmony.js's Harmony class and
+// engine.js's tick(). The phase writes the function; the sky's minute seeds the choice.
+namespace
+{
+constexpr const char* kReasonHome = "quiet \xE2\x86\x92 home";
+constexpr const char* kReasonTension = "growth \xE2\x86\x92 tension";
+constexpr const char* kReasonAwe = "onset \xE2\x86\x92 chromatic mediant";
+constexpr const char* kReasonBorrowed = "recovery \xE2\x86\x92 borrowed chord";
+constexpr const char* kReasonWeak = "weak onset \xE2\x86\x92 tension";
+constexpr const char* kReasonWander = "wander";
+constexpr const char* kReasonHold = "hold";
+
+constexpr const char* reasonFor (int function) noexcept
+{
+    switch (function)
+    {
+        case 0:  return kReasonHome;
+        case 1:  return kReasonTension;
+        case 2:  return kReasonAwe;
+        default: return kReasonBorrowed;
+    }
+}
+} // namespace
+
+int Harmony::functionOf (Phase phase) noexcept
+{
+    switch (phase)
+    {
+        case Phase::quiet:    return 0;
+        case Phase::growth:   return 1;
+        case Phase::onset:    return 2;
+        case Phase::recovery: return 3;
+    }
+    return 0;
+}
+
+void Harmony::setProgression (double amount) noexcept
+{
+    const double value = std::clamp (amount, 0.0, 1.0);
+    progressionAmount.store (value, std::memory_order_relaxed);
+    if (value <= 0.0)
+    {
+        functionIndex.store (0, std::memory_order_relaxed);
+        shapeIndex.store (0, std::memory_order_relaxed);
+        revoiceReason.store (kReasonHold, std::memory_order_relaxed);
+        revoice.store (true, std::memory_order_release);
+    }
+}
+
+double Harmony::progression() const noexcept { return progressionAmount.load (std::memory_order_relaxed); }
+void Harmony::setSeed (uint32_t newSeed) noexcept { soundSeed.store (newSeed, std::memory_order_relaxed); }
+uint32_t Harmony::seed() const noexcept { return soundSeed.load (std::memory_order_relaxed); }
+
+double Harmony::wanderDelay() const noexcept
+{
+    const double r = sky::rng::rand01 (seed(), 65u, static_cast<uint32_t> (wanders));
+    return (150.0 + 210.0 * r) / (0.5 + progression());
+}
+
+void Harmony::start (Phase phase) noexcept
+{
+    pendingValid = false;
+    moves = 0;
+    wanders = 0;
+    lastChangeS = 0.0;
+    lastIndex.fill (-1);
+    if (progression() > 0.0)
+    {
+        targetFunction = functionOf (phase);
+        targetIndex = 0;
+        functionIndex.store (targetFunction, std::memory_order_relaxed);
+        shapeIndex.store (0, std::memory_order_relaxed);
+    }
+    else
+    {
+        targetFunction = static_cast<int> (function());
+        targetIndex = chordIndex();
+    }
+    wanderAfterS = wanderDelay();
+    revoice.store (false, std::memory_order_relaxed);
+    revoiceReason.store (nullptr, std::memory_order_relaxed);
+}
+
+void Harmony::request (int function, int index, const char* reason) noexcept
+{
+    targetFunction = std::clamp (function, 0, kNumFunctions - 1);
+    targetIndex = std::clamp (index, 0, 2);
+    pendingFn = targetFunction;
+    pendingIdx = targetIndex;
+    pendingWhy = reason != nullptr ? reason : "sky";
+    pendingUrgentFlag = std::strcmp (pendingWhy, kReasonWander) != 0;
+    pendingValid = true;
+}
+
+void Harmony::onPhase (Phase phase, int modelMinute, const char* reason) noexcept
+{
+    ++moves;
+    if (progression() <= 0.0)
+        return;
+
+    const int function = functionOf (phase);
+    if (function == 0)
+    {
+        if (targetFunction != 0 || targetIndex != 0)
+            request (0, 0, reason != nullptr ? reason : kReasonHome);
+        return;
+    }
+
+    const auto minute = static_cast<uint32_t> (modelMinute);
+    if (sky::rng::rand01 (seed(), 61u, minute) >= progression())
+        return;
+
+    const int count = vocabulary (mood(), static_cast<ChordFunction> (function)).count;
+    int index = static_cast<int> (std::floor (sky::rng::rand01 (seed(), 63u, minute) * static_cast<double> (count)));
+    if (count > 1 && (index == lastIndex[static_cast<size_t> (function)]
+                      || (function == targetFunction && index == targetIndex)))
+        index = (index + 1) % count;
+    lastIndex[static_cast<size_t> (function)] = index;
+    request (function, index, reason != nullptr ? reason : reasonFor (function));
+}
+
+void Harmony::onOnset (float strength, int modelMinute) noexcept
+{
+    if (strength >= 0.3f)
+        onPhase (Phase::onset, modelMinute);
+    else
+        onPhase (Phase::growth, modelMinute, kReasonWeak);
+}
+
+void Harmony::update (double realSeconds) noexcept
+{
+    if (revoice.exchange (false, std::memory_order_acq_rel))
+    {
+        const char* why = revoiceReason.exchange (nullptr, std::memory_order_acq_rel);
+        if (progression() <= 0.0)
+            request (static_cast<int> (function()), chordIndex(), why != nullptr ? why : kReasonHold);
+        else
+            request (targetFunction, targetIndex, why != nullptr ? why : "control");
+    }
+
+    if (progression() <= 0.0 || pendingValid || realSeconds - lastChangeS < wanderAfterS)
+        return;
+
+    const int count = vocabulary (mood(), static_cast<ChordFunction> (targetFunction)).count;
+    if (count < 2)
+        return;
+
+    ++wanders;
+    const int step = 1 + static_cast<int> (std::floor (
+        sky::rng::rand01 (seed(), 67u, static_cast<uint32_t> (wanders)) * static_cast<double> (count - 1)));
+    request (targetFunction, (targetIndex + step) % count, kReasonWander);
+    lastChangeS = realSeconds;
+}
+
+bool Harmony::hasPending() const noexcept { return pendingValid; }
+bool Harmony::pendingUrgent() const noexcept { return pendingUrgentFlag; }
+int Harmony::pendingFunction() const noexcept { return pendingFn; }
+int Harmony::pendingIndex() const noexcept { return pendingIdx; }
+const char* Harmony::pendingReason() const noexcept { return pendingWhy; }
+
+Chord Harmony::pendingChord() const noexcept
+{
+    return chordOf (mood(), static_cast<ChordFunction> (pendingFn), pendingIdx,
+                    wrap12 (key() + transpose()));
+}
+
+void Harmony::take (double realSeconds) noexcept
+{
+    if (! pendingValid)
+        return;
+    pendingValid = false;
+    lastChangeS = realSeconds;
+    ++wanders;
+    wanderAfterS = wanderDelay();
 }
 
 } // namespace worldtable::dsp
