@@ -1,5 +1,8 @@
 #include "dsp/DspCommon.h"
 #include "dsp/fx/AutoGain.h"
+#include "dsp/fx/Chorus.h"
+#include "dsp/fx/Phaser.h"
+#include "dsp/fx/ShimmerReverb.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -80,4 +83,134 @@ TEST_CASE ("the DC blocker removes a constant and passes a sine", "[fx][dc]")
     }
     const double lossDb = 10.0 * std::log10 (out / std::max (in, 1.0e-30));
     CHECK_THAT (lossDb, Catch::Matchers::WithinAbs (0.0, 0.1));
+}
+
+//==================================================================================================
+TEST_CASE ("phaser and chorus stay clean and stereo", "[fx][modulation]")
+{
+    const int n = 4 * 48000;
+    std::vector<float> dry (static_cast<size_t> (n));
+    for (int i = 0; i < n; ++i)
+        dry[static_cast<size_t> (i)] = 0.2f * std::sin (dsp::kTwoPi * 1000.0f * static_cast<float> (i) / 48000.0f);
+
+    const auto rms = [] (const std::vector<float>& x)
+    {
+        double s = 0.0;
+        for (const float v : x)
+            s += static_cast<double> (v) * v;
+        return std::sqrt (s / std::max<size_t> (x.size(), 1));
+    };
+
+    {
+        dsp::Phaser phaser;
+        phaser.prepare (48000.0);
+        dsp::Phaser::Settings s;
+        s.mix = 0.5f;
+        phaser.setSettings (s);
+        auto l = dry, r = dry;
+        phaser.process (l.data(), r.data(), n);
+        const double level = rms (l) / rms (dry);
+        double diff = 0.0;
+        for (int i = 0; i < n; ++i)
+            diff = std::max (diff, static_cast<double> (std::abs (l[static_cast<size_t> (i)] - r[static_cast<size_t> (i)])));
+        INFO ("phaser level " << level << ", stereo difference " << diff);
+        CHECK (level > 0.2);
+        CHECK (level < 2.0);
+        CHECK (diff > 1.0e-4);
+        CHECK (std::all_of (l.begin(), l.end(), [] (float x) { return std::isfinite (x); }));
+
+        s.mix = 0.0f;
+        phaser.setSettings (s);
+        auto bl = dry, br = dry;
+        phaser.process (bl.data(), br.data(), n);
+        CHECK (bl == dry);
+        CHECK (br == dry);
+    }
+
+    {
+        dsp::Chorus chorus;
+        chorus.prepare (48000.0);
+        dsp::Chorus::Settings s;
+        s.mix = 0.4f;
+        chorus.setSettings (s);
+        auto l = dry, r = dry;
+        chorus.process (l.data(), r.data(), n);
+        const double level = rms (l) / rms (dry);
+        double diff = 0.0;
+        for (int i = 0; i < n; ++i)
+            diff = std::max (diff, static_cast<double> (std::abs (l[static_cast<size_t> (i)] - r[static_cast<size_t> (i)])));
+        INFO ("chorus level " << level << ", stereo difference " << diff);
+        CHECK (level > 0.2);
+        CHECK (level < 2.0);
+        CHECK (diff > 1.0e-4);
+        CHECK (std::all_of (l.begin(), l.end(), [] (float x) { return std::isfinite (x); }));
+
+        s.mix = 0.0f;
+        chorus.setSettings (s);
+        auto bl = dry, br = dry;
+        chorus.process (bl.data(), br.data(), n);
+        CHECK (bl == dry);
+        CHECK (br == dry);
+    }
+}
+
+//==================================================================================================
+namespace
+{
+/** Goertzel power at `hz` over `x` (the last full cycles, for a clean comparison). */
+double goertzelPower (const std::vector<float>& x, double hz, double sampleRate)
+{
+    const double w = 2.0 * 3.14159265358979323846 * hz / sampleRate;
+    const double c = 2.0 * std::cos (w);
+    double s1 = 0.0, s2 = 0.0;
+    for (const float v : x)
+    {
+        const double s = static_cast<double> (v) + c * s1 - s2;
+        s2 = s1;
+        s1 = s;
+    }
+    return (s1 * s1 + s2 * s2 - c * s1 * s2) / (static_cast<double> (x.size()) * static_cast<double> (x.size()));
+}
+
+std::vector<float> shimmerTail (float shimmer)
+{
+    dsp::ShimmerReverb reverb;
+    reverb.prepare (48000.0);
+    dsp::ShimmerReverb::Settings s;
+    s.size = 0.6f;
+    s.decaySeconds = 4.0f;
+    s.damping = 0.3f;
+    s.predelayMs = 0.0f;
+    s.shimmer = shimmer;
+    s.modulation = 0.0f;   // no FM sidebands, for a clean spectral comparison
+    s.mix = 1.0f;
+    reverb.setSettings (s);
+
+    const int total = 4 * 48000;
+    std::vector<float> l (static_cast<size_t> (total)), r (static_cast<size_t> (total));
+    for (int i = 0; i < total; ++i)
+        l[static_cast<size_t> (i)] = r[static_cast<size_t> (i)]
+            = 0.2f * std::sin (dsp::kTwoPi * 440.0f * static_cast<float> (i) / 48000.0f);
+    reverb.process (l.data(), r.data(), total);
+    return { l.end() - 48000, l.end() };
+}
+} // namespace
+
+TEST_CASE ("shimmer adds the octave and the fifth", "[fx][shimmer]")
+{
+    const auto dry = shimmerTail (0.0f);
+    const auto wet = shimmerTail (0.6f);
+    const double dry440 = goertzelPower (dry, 440.0, 48000.0);
+    const double wet440 = goertzelPower (wet, 440.0, 48000.0);
+    const double dry880 = goertzelPower (dry, 880.0, 48000.0);
+    const double wet880 = goertzelPower (wet, 880.0, 48000.0);
+    const double dry1320 = goertzelPower (dry, 1320.0, 48000.0);
+    const double wet1320 = goertzelPower (wet, 1320.0, 48000.0);
+    INFO ("440 dry " << dry440 << " wet " << wet440 << " | 880 dry " << dry880 << " wet " << wet880
+          << " | 1320 dry " << dry1320 << " wet " << wet1320);
+    CHECK (wet440 > dry440 * 0.01);
+    CHECK (wet880 > dry880 * 100.0);
+    CHECK (wet1320 > dry1320 * 100.0);
+    CHECK (wet880 > wet440 * 1.0e-5);
+    CHECK (wet1320 > wet440 * 1.0e-6);
 }

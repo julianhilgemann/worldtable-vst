@@ -57,6 +57,9 @@ void ShimmerReverb::prepare (double rate)
 
     shifter.line.allocate (ms (90.0f) + 8);
     shifter.windowSamples = static_cast<float> (0.075 * rate);
+    shifterFifth.line.allocate (ms (90.0f) + 8);
+    shifterFifth.windowSamples = static_cast<float> (0.075 * rate);
+    shifterFifth.ratio = 3.0f;   // an octave and a fifth
 
     shimmerHpCoef = 1.0f - std::exp (-kTwoPi * 350.0f / static_cast<float> (rate));
     shimmerLpCoef = 1.0f - std::exp (-kTwoPi * 7000.0f / static_cast<float> (rate));
@@ -78,6 +81,8 @@ void ShimmerReverb::reset() noexcept
     lineLp.fill (0.0f);
     shifter.line.clear();
     shifter.phase = 0.0f;
+    shifterFifth.line.clear();
+    shifterFifth.phase = 0.0f;
     shimmerHp = shimmerLp = shimmerFeedback = 0.0f;
     wetLevel = 0.0f;
 }
@@ -161,7 +166,8 @@ void ShimmerReverb::process (float* left, float* right, int numSamples) noexcept
         // Shimmer path: octave up, band-limited, soft-limited.
         if (shimmerGain > 0.0f)
         {
-            const float shifted = shifter.process (0.5f * (outL + outR));
+            const float mono = 0.5f * (outL + outR);
+            const float shifted = 0.75f * (shifter.process (mono) + 0.5f * shifterFifth.process (mono));
             shimmerLp += shimmerLpCoef * (shifted - shimmerLp);
             shimmerHp += shimmerHpCoef * (shimmerLp - shimmerHp);
             shimmerFeedback = std::tanh ((shimmerLp - shimmerHp) * shimmerGain * 1.5f) * 0.66f;
