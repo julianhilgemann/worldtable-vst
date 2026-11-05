@@ -98,6 +98,8 @@ Real data nudges the model; it never replaces it.
 - Rays follow field lines and converge at **magnetic zenith** (inclination at
   CMO ≈ 77°); a curtain overhead becomes a corona.
 - Sound follows the dome: azimuth → stereo position, elevation × brightness → presence.
+- In C++: `source/sky/Observer.h` (T2.2 frame and MLT, T2.5 projection and
+  magnetic zenith; CMO: 202°, 77.3°).
 
 ## 5. Astronomy (lightweight)
 - Sun: NOAA solar-position algorithm (simplified), alt/az.

@@ -9,7 +9,8 @@
 #include <numbers>
 
 // prototype/sky/model.js `SkyModel`, line by line: constructor, seek, step (the curtain on real
-// time), snapshot. The slow sky is SlowSky.cpp (T2.2).
+// time), snapshot. The slow sky is SlowSky.cpp (T2.2); sun, moon and the dome frame are
+// Astronomy.cpp and Observer.cpp.
 
 namespace worldtable::sky
 {
@@ -328,9 +329,13 @@ void SkyModel::writeSnapshot (bool refreshSun) noexcept
     if (refreshSun)
     {
         const auto sun = astro::sun (o.modelTimeUtc, station.latDeg, station.lonDeg);
+        const auto moon = astro::moon (o.modelTimeUtc, station.latDeg, station.lonDeg);
         o.astronomy.sunAzDeg = static_cast<float> (sun.azDeg);
         o.astronomy.sunElDeg = static_cast<float> (sun.elDeg);
-        // moon: T2.5
+        o.astronomy.moonAzDeg = static_cast<float> (moon.azDeg);
+        o.astronomy.moonElDeg = static_cast<float> (moon.elDeg);
+        o.astronomy.moonIllumination = static_cast<float> (moon.illumination);
+        o.astronomy.moonWaxing = moon.waxing;
     }
 
     o.observer.latDeg = static_cast<float> (station.latDeg);
@@ -340,7 +345,8 @@ void SkyModel::writeSnapshot (bool refreshSun) noexcept
     o.observer.mlonDeg = static_cast<float> (observer.mlonDeg());
     o.observer.poleLatDeg = static_cast<float> (p.poleLatDeg);
     o.observer.poleLonDeg = static_cast<float> (p.poleLonDeg);
-    // magnetic zenith: T2.5
+    o.observer.magZenithAzDeg = static_cast<float> (observer.magneticZenith().azDeg);
+    o.observer.magZenithElDeg = static_cast<float> (observer.magneticZenith().elDeg);
 
     o.nodeCount = curtain.nodes;
 }
