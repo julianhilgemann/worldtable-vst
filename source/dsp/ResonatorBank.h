@@ -43,7 +43,8 @@ public:
     /** Input amplitude of resonator k (× its voice's noise). */
     void setInput (int k, double amplitude) noexcept { inA[static_cast<size_t> (k)] = amplitude; }
 
-    /** Ramps the output gains of resonator k to (left, right) over `samples`. */
+    /** Ramps the output gains of resonator k to (left, right) over `samples`. As in the sketch, the
+        ramp doesn't stop there: the caller ramps again every tick, for exactly the tick's length. */
     void ramp (int k, double left, double right, int samples) noexcept;
 
     void setActive (int bank, bool active) noexcept { activeBank[static_cast<size_t> (bank)] = active; }

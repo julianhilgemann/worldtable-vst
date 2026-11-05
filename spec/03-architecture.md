@@ -49,7 +49,10 @@ and contains:
   latitude and longitude, pulse.
 Written by the audio thread into a triple buffer per reader (ADR-0003); the UI
 and OSC threads read the newest one, and get each tick's events through a FIFO. The sound runs on the audio thread and reads the model's own
-copy (`SkyModel::current()`), together with the events each `step()` returns.
+copy (`SkyModel::current()`), together with the events each `step()` returns:
+`SkyRuntime::process` calls a `TickListener` (the sound, `dsp/SkySound`) after
+every step and then for the samples up to the next tick, so the sound sees each
+tick at its sample whatever the block size (T3.1).
 
 ### C. Raw-field table swap — builder → audio (optional layer)
 The POC's `TableExchange`: builder fills a pending `WavetableSet` from a pool,
@@ -72,8 +75,10 @@ sky/        SkyModel (step, reset, seed), Reservoir (loading, substorm phases),
             Curtain (node chain, damped driven wave equation), Pulsations, Events,
             Assimilation (H, Kp nudging), Observer (station, geomagnetic frame,
             dome projection), Astronomy (sun, moon, stars), Rng, SkySnapshot
-dsp/        ResonatorBank, Exciter, Harmony (scales, chords, progression,
-            voice-leading), Sparkles (event voices, whistlers), Drift (tape wobble),
+dsp/        SkySound (the curtain → resonators, per tick; chord double-banking),
+            ResonatorBank, Exciter, Voicing (layer slots, ranges, voice-leading),
+            Harmony (scales, chords, progression), Sparkles (event voices,
+            whistlers), Drift (tape wobble),
             mod/ (SlowLfo, RandomWalk, EnvFollower, ModMatrix, Triggers),
             RawField (POC WavetableOsc + table exchange), AutoGain,
             fx/ (Drive, Phaser, Chorus, TapeDelay, ShimmerReverb, Limiter)

@@ -6,12 +6,26 @@
 // Values for --set are real parameter values (Hz, s, dB …); choices accept the
 // index or the choice name. Without --live only the bundled factory world is used
 // (deterministic, no network).
+//
+// The sky's sound (T3.1, not in the plug-in yet): the Sky Model playing a bundled day through
+// SkySound, one held chord (D maj7), then the POC ShimmerReverb (shimmer off) and Limiter as
+// stand-ins until the real effects (T3.5). Like the sketch's bounce.mjs: a 20 s pre-roll so the
+// resonators already ring, a 2 s fade-in and a 3 s fade-out.
+//
+//   WorldtableRender --sky --out renders/T3.1-storm.wav [--day 2024-05-10] [--from 17:20]
+//                    [--speed 24] [--seconds 300] [--voices 64|128] [--seed 1] [--gain 0] [--dry]
 
 #include "PluginProcessor.h"
+#include "data/SkyDays.h"
+#include "dsp/SkySound.h"
+#include "dsp/fx/Limiter.h"
+#include "dsp/fx/ShimmerReverb.h"
+#include "sky/SkyFeed.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <chrono>
+#include <ctime>
 #include <iostream>
 
 namespace
@@ -45,6 +59,176 @@ bool setParameter (juce::AudioProcessorValueTreeState& apvts, const juce::String
     param->setValueNotifyingHost (param->convertTo0to1 (real));
     return true;
 }
+
+std::unique_ptr<juce::AudioFormatWriter> createWav (const juce::File& out, double rate)
+{
+    out.getParentDirectory().createDirectory();
+    out.deleteFile();
+    std::unique_ptr<juce::OutputStream> stream (out.createOutputStream());
+    if (stream == nullptr)
+        return {};
+    juce::WavAudioFormat wav;
+    return wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}
+                                            .withSampleRate (rate)
+                                            .withNumChannels (2)
+                                            .withBitsPerSample (24));
+}
+
+struct SkyRenderOptions
+{
+    juce::String day = worldtable::data::kDefaultSkyDay;
+    juce::String from = "00:00";        // UT on the day's first date, or a full ISO time
+    double speed = 24.0, seconds = 300.0, rate = 48000.0, gainDb = 0.0;
+    int voices = 64;
+    uint32_t seed = 1;
+    bool dry = false;
+};
+
+int renderSky (const juce::File& out, const SkyRenderOptions& o)
+{
+    using namespace worldtable;
+    constexpr double kPreRollSeconds = 20.0, kFadeInSeconds = 2.0, kFadeOutSeconds = 3.0;
+    constexpr int block = 512;
+
+    sky::SkyRuntime runtime;
+    sky::SkyFeed feed (runtime);
+    const sky::SkyParams params;
+    if (! feed.load (o.day, o.seed, params))
+        return fail ("unknown day " + o.day);
+
+    const double startUtc = o.from.containsChar ('T')
+        ? static_cast<double> (juce::Time::fromISO8601 (o.from + (o.from.endsWithChar ('Z') ? "" : "Z")).toMilliseconds()) / 1000.0
+        : feed.dayStartUtc() + 3600.0 * o.from.upToFirstOccurrenceOf (":", false, false).getIntValue()
+                             + 60.0 * o.from.fromFirstOccurrenceOf (":", false, false).getIntValue();
+
+    // start early enough that the pre-roll ends at `from` (model time per tick: 10 ms × speed)
+    const double modelPerTick = sky::SkyModel::kTickSeconds * o.speed;
+    const auto wantTicks = static_cast<int64_t> (std::lround (kPreRollSeconds / sky::SkyModel::kTickSeconds));
+    const auto preTicks = o.speed > 0.0 ? std::min (wantTicks, static_cast<int64_t> ((startUtc - feed.dayStartUtc()) / modelPerTick))
+                                        : wantTicks;
+    runtime.seek (startUtc - static_cast<double> (preTicks) * modelPerTick);
+    runtime.setSpeed (o.speed);
+    runtime.prepare (o.rate);
+
+    dsp::SkySound sound;
+    dsp::SkySound::Settings settings;
+    settings.voicesPerNode = o.voices > params.nodes ? 2 : 1;
+    sound.prepare (o.rate, params.nodes, o.seed, settings, dsp::Chord::dMaj7());
+
+    dsp::ShimmerReverb reverb;
+    reverb.prepare (o.rate);
+    dsp::ShimmerReverb::Settings rs;
+    rs.shimmer = 0.0f;
+    rs.decaySeconds = 9.0f;
+    rs.mix = 0.35f;
+    reverb.setSettings (rs);
+    dsp::Limiter limiter;
+    limiter.prepare (o.rate);
+    limiter.setSettings (0.0f, -1.0f, 200.0f);
+    const auto gain = static_cast<float> (juce::Decibels::decibelsToGain (o.gainDb));
+
+    juce::AudioBuffer<float> buffer (2, block);
+    double soundSeconds = 0.0, fxSeconds = 0.0;
+    const auto timed = [] (double& total, auto&& fn)
+    {
+        const auto t0 = std::chrono::steady_clock::now();
+        fn();
+        total += std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
+    };
+    const auto renderBlock = [&] (int n)
+    {
+        float* l = buffer.getWritePointer (0);
+        float* r = buffer.getWritePointer (1);
+        timed (soundSeconds, [&] { sound.process (runtime, l, r, n); });
+        if (o.dry)
+            return;
+        timed (fxSeconds, [&]
+        {
+            juce::FloatVectorOperations::multiply (l, gain, n);
+            juce::FloatVectorOperations::multiply (r, gain, n);
+            reverb.process (l, r, n);
+            limiter.process (l, r, n);
+        });
+    };
+
+    for (auto pre = static_cast<int64_t> (std::llround (static_cast<double> (preTicks) * o.rate / sky::SkyModel::kTicksPerSecond)); pre > 0;)
+    {
+        const int n = static_cast<int> (std::min<int64_t> (block, pre));
+        renderBlock (n);
+        pre -= n;
+    }
+    const auto preRollSeconds = soundSeconds + fxSeconds;
+    soundSeconds = fxSeconds = 0.0;
+
+    auto writer = createWav (out, o.rate);
+    if (writer == nullptr)
+        return fail ("cannot write " + out.getFullPathName());
+
+    const auto total = static_cast<int64_t> (std::llround (o.seconds * o.rate));
+    const double fadeIn = kFadeInSeconds * o.rate, fadeOut = kFadeOutSeconds * o.rate;
+    double sumSq = 0.0;
+    float peak = 0.0f, maxDelta = 0.0f, prevL = 0.0f, prevR = 0.0f;
+    int64_t nonFinite = 0;
+    const auto chordsBefore = sound.chordChanges();
+    const auto onsetsBefore = runtime.model().current().onsetCount;
+    for (int64_t at = 0; at < total; at += block)
+    {
+        const int n = static_cast<int> (std::min<int64_t> (block, total - at));
+        buffer.setSize (2, n, false, false, true);
+        renderBlock (n);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* d = buffer.getWritePointer (ch);
+            for (int k = 0; k < n; ++k)
+            {
+                const auto i = static_cast<double> (at + k);
+                const double fade = std::min ({ 1.0, i < fadeIn ? 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * i / fadeIn) : 1.0,
+                                                static_cast<double> (total) - i < fadeOut
+                                                    ? 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * (static_cast<double> (total) - i) / fadeOut) : 1.0 });
+                d[k] = static_cast<float> (d[k] * fade);
+                if (! std::isfinite (d[k])) { ++nonFinite; continue; }
+                sumSq += static_cast<double> (d[k]) * d[k];
+                peak = std::max (peak, std::abs (d[k]));
+                float& prev = ch == 0 ? prevL : prevR;
+                if (at + k > 0)
+                    maxDelta = std::max (maxDelta, std::abs (d[k] - prev));
+                prev = d[k];
+            }
+        }
+        writer->writeFromAudioSampleBuffer (buffer, 0, n);
+    }
+    writer.reset();
+
+    const auto rms = std::sqrt (sumSq / (2.0 * static_cast<double> (total)));
+    const auto hhmm = [] (double utc)
+    {
+        const auto when = static_cast<std::time_t> (std::floor (utc));
+        std::tm parts {};
+       #if JUCE_WINDOWS
+        gmtime_s (&parts, &when);
+       #else
+        gmtime_r (&when, &parts);
+       #endif
+        char text[32] {};
+        std::strftime (text, sizeof (text), "%Y-%m-%d %H:%M", &parts);
+        return std::string (text);
+    };
+    std::cout << "sky:     " << o.day << " from " << hhmm (startUtc) << " to " << hhmm (runtime.model().modelTimeUtc())
+              << " UT at " << o.speed << "x, seed " << o.seed << ", " << sound.voices() << " voices per layer\n"
+              << "chord:   D maj7 held; " << (sound.chordChanges() - chordsBefore) << " changes, "
+              << (runtime.model().current().onsetCount - onsetsBefore) << " onsets in the file\n"
+              << "length:  " << o.seconds << " s @ " << o.rate << " Hz" << (o.dry ? " (dry)" : "") << "\n"
+              << "peak:    " << juce::Decibels::gainToDecibels (peak, -200.0f) << " dBFS\n"
+              << "rms:     " << juce::Decibels::gainToDecibels (static_cast<float> (rms), -200.0f) << " dBFS\n"
+              << "maxStep: " << maxDelta << "\n"
+              << "nonFinite samples: " << nonFinite << "\n"
+              << "resets:  " << sound.resets() << "\n"
+              << "cpu:     sky + sound " << juce::String (100.0 * soundSeconds / o.seconds, 2) << " % of real time"
+              << (o.dry ? juce::String() : ", stand-in effects " + juce::String (100.0 * fxSeconds / o.seconds, 2) + " %")
+              << " (pre-roll " << juce::String (preRollSeconds, 2) << " s)\n"
+              << "wrote:   " << out.getFullPathName() << "\n";
+    return nonFinite == 0 ? 0 : 2;
+}
 } // namespace
 
 int main (int argc, char* argv[])
@@ -53,19 +237,36 @@ int main (int argc, char* argv[])
 
     juce::File out = juce::File::getCurrentWorkingDirectory().getChildFile ("renders/render.wav");
     double seconds = 30.0, rate = 48000.0;
-    bool live = false;
+    bool live = false, skyMode = false, secondsGiven = false;
     juce::StringArray sets;
+    SkyRenderOptions sky;
 
     for (int i = 1; i < argc; ++i)
     {
         const juce::String a (argv[i]);
         const auto next = [&]() { return i + 1 < argc ? juce::String (argv[++i]) : juce::String(); };
         if (a == "--out")          out = juce::File::getCurrentWorkingDirectory().getChildFile (next());
-        else if (a == "--seconds") seconds = next().getDoubleValue();
+        else if (a == "--seconds") { seconds = next().getDoubleValue(); secondsGiven = true; }
         else if (a == "--rate")    rate = next().getDoubleValue();
         else if (a == "--set")     sets.add (next());
         else if (a == "--live")    live = true;
+        else if (a == "--sky")     skyMode = true;
+        else if (a == "--day")     sky.day = next();
+        else if (a == "--from")    sky.from = next();
+        else if (a == "--speed")   sky.speed = next().getDoubleValue();
+        else if (a == "--voices")  sky.voices = next().getIntValue();
+        else if (a == "--seed")    sky.seed = static_cast<uint32_t> (next().getLargeIntValue());
+        else if (a == "--gain")    sky.gainDb = next().getDoubleValue();
+        else if (a == "--dry")     sky.dry = true;
         else return fail ("unknown argument " + a);
+    }
+
+    if (skyMode)
+    {
+        sky.rate = rate;
+        if (secondsGiven)
+            sky.seconds = seconds;
+        return renderSky (out, sky);
     }
 
     worldtable::PluginProcessor processor (live);
@@ -133,19 +334,9 @@ int main (int argc, char* argv[])
               << "nonFinite samples: " << nonFinite << "\n"
               << "cpu:     " << juce::String (100.0 * elapsed / seconds, 2) << " % of real time\n";
 
-    out.getParentDirectory().createDirectory();
-    out.deleteFile();
-    juce::WavAudioFormat wav;
-    std::unique_ptr<juce::OutputStream> stream (out.createOutputStream());
-    if (stream == nullptr)
-        return fail ("cannot write " + out.getFullPathName());
-
-    auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}
-                                                   .withSampleRate (rate)
-                                                   .withNumChannels (2)
-                                                   .withBitsPerSample (24));
+    auto writer = createWav (out, rate);
     if (writer == nullptr)
-        return fail ("cannot create WAV writer");
+        return fail ("cannot write " + out.getFullPathName());
 
     writer->writeFromAudioSampleBuffer (result, 0, total);
     writer.reset();

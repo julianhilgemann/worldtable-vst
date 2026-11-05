@@ -83,10 +83,11 @@ dsp::Chord chordOf (const juce::var& v)
     return c;
 }
 
-/** Stereo output of a whole run. */
+/** Stereo output of a whole run, and the allocations SkySound::process made. */
 struct Render
 {
     std::vector<float> left, right;
+    int64_t allocations = 0;
 
     void resize (size_t n) { left.assign (n, 0.0f); right.assign (n, 0.0f); }
 };
@@ -104,7 +105,9 @@ Render play (sky::SkyRuntime& rt, dsp::SkySound& sound, double sampleRate, doubl
     {
         const int n = std::min (blockSize (i), total - done);
         beforeBlock (i, done);
+        const auto before = testing::allocationsOnThisThread();
         sound.process (rt, r.left.data() + done, r.right.data() + done, n);
+        r.allocations += testing::allocationsOnThisThread() - before;
         done += n;
     }
     return r;
@@ -114,6 +117,24 @@ template <typename BlockSize>
 Render play (sky::SkyRuntime& rt, dsp::SkySound& sound, double sampleRate, double seconds, BlockSize blockSize)
 {
     return play (rt, sound, sampleRate, seconds, blockSize, [] (int, int) {});
+}
+
+/** Output gain g on resonator k from now on (the ramp keeps going past its target: stop it). */
+void holdGain (dsp::ResonatorBank& bank, int k, double g)
+{
+    float l = 0.0f, r = 0.0f;
+    bank.ramp (k, g, g, 1);
+    bank.process (&l, &r, 1);
+    bank.ramp (k, g, g, 1);
+}
+
+/** Decays and fades ten times faster than the defaults, so the chord tests run quickly. */
+dsp::SkySound::Settings fastSettings()
+{
+    dsp::SkySound::Settings s;
+    s.t60 = { 2.0, 0.6, 0.25 };
+    s.crossfadeSeconds = 1.2;
+    return s;
 }
 
 const dsp::Chord kDmaj7 = dsp::Chord::dMaj7();
@@ -133,7 +154,7 @@ TEST_CASE ("ResonatorBank rings at its frequency and decays 60 dB in its T60", "
         const double t60 = 2.0, hz = 440.0;
         const double r = bank.radius (t60);
         bank.tune (k, hz, r);
-        bank.ramp (k, 1.0, 1.0, 1);
+        holdGain (bank, k, 1.0);
 
         // 10 ms of noise, then let it ring for 1.2 s
         const auto total = static_cast<int> (1.21 * rate);
@@ -172,7 +193,7 @@ TEST_CASE ("ResonatorBank loudness doesn't depend on the decay (input × √(1�
         const double r = bank.radius (t60);
         bank.tune (k, 220.0, r);
         bank.setInput (k, std::sqrt (1.0 - r * r));
-        bank.ramp (k, 1.0, 1.0, 1);
+        holdGain (bank, k, 1.0);
 
         // settle for 2 × T60, then measure 20 s
         std::vector<float> l (48000), rr (48000);
@@ -198,7 +219,7 @@ TEST_CASE ("ResonatorBank: retuning a ringing resonator doesn't jump; the guard 
     const int k = bank.index (0, 2, 0);
     const double r = bank.radius (5.0);
     bank.tune (k, 880.0, r);
-    bank.ramp (k, 1.0, 1.0, 1);
+    holdGain (bank, k, 1.0);
     bank.setInput (k, std::sqrt (1.0 - r * r) * 20.0);
 
     std::vector<float> l (9600), rr (9600);
@@ -296,7 +317,7 @@ TEST_CASE ("SkySound matches the T1.3 sketch on the 10 May 2024 storm (dry, 120 
 
     auto rt = stormRuntime (48000.0, g.startUtc, json["speed"]);
     dsp::SkySound sound;
-    sound.prepare (48000.0, kNodes, json["seed"], dsp::SkySound::Settings {}, chordOf (json["start"]));
+    sound.prepare (48000.0, kNodes, static_cast<uint32_t> (static_cast<int> (json["seed"])), dsp::SkySound::Settings {}, chordOf (json["start"]));
     CHECK (noteMismatches (sound, 0, json["start"]["notes"]) == 0);
 
     // One tick per block, so each request lands on its tick as in the sketch (Harmony asks inside
@@ -385,31 +406,32 @@ TEST_CASE ("SkySound matches the T1.3 sketch on the 10 May 2024 storm (dry, 120 
 //==================================================================================================
 TEST_CASE ("SkySound double-banks a chord change: crossfade, ring-out, then the next", "[sound][chords]")
 {
+    // fastSettings(): T60 2 / 0.6 / 0.25 s, crossfade 1.2 s; the urgent damping stays 3 s
     auto rt = quietRuntime (48000.0);
     dsp::SkySound sound;
-    sound.prepare (48000.0, kNodes, 1, dsp::SkySound::Settings {}, kDmaj7);
+    sound.prepare (48000.0, kNodes, 1, fastSettings(), kDmaj7);
     const auto tickBlocks = [] (int) { return 480; };
 
-    play (*rt, sound, 48000.0, 1.0, tickBlocks);
+    play (*rt, sound, 48000.0, 0.2, tickBlocks);
     CHECK (sound.bankActive (0));
     CHECK_FALSE (sound.bankActive (1));
 
-    // A wander (not urgent) with a free bank: taken at once, crossfades over 12 s
+    // A wander (not urgent) with a free bank: taken at once, crossfades over 1.2 s
     sound.requestChord (kGadd9, false);
     play (*rt, sound, 48000.0, 0.01, tickBlocks);
     CHECK (sound.chordChanges() == 1);
     CHECK (sound.currentBank() == 1);
     CHECK (sound.bankActive (0));
     CHECK (sound.bankActive (1));
-    play (*rt, sound, 48000.0, 6.0, tickBlocks);
+    play (*rt, sound, 48000.0, 0.6, tickBlocks);
     CHECK_THAT (sound.crossfade(), Catch::Matchers::WithinAbs (0.5, 0.01));
-    play (*rt, sound, 48000.0, 6.0, tickBlocks);
+    play (*rt, sound, 48000.0, 0.6, tickBlocks);
     CHECK_THAT (sound.crossfade(), Catch::Matchers::WithinAbs (1.0, 1e-12));
 
-    // The next wander waits until the old bank has rung out (the longest T60, 20 s, after the fade)
+    // The next wander waits until the old bank has rung out (the longest T60 after the fade)
     sound.requestChord (kBbmaj7, false);
     sound.requestChord (kDmaj7, false);   // replaces the pending one
-    play (*rt, sound, 48000.0, 19.9, tickBlocks);
+    play (*rt, sound, 48000.0, 1.9, tickBlocks);
     CHECK (sound.hasPendingChord());
     CHECK (sound.bankActive (0));
     CHECK (sound.chordChanges() == 1);
@@ -420,7 +442,8 @@ TEST_CASE ("SkySound double-banks a chord change: crossfade, ring-out, then the 
     CHECK (sound.chord().degree == kDmaj7.degree);
 
     // An urgent change finds the old bank ringing: damps it (T60 3 s) instead of waiting
-    play (*rt, sound, 48000.0, 13.0, tickBlocks);
+    play (*rt, sound, 48000.0, 1.3, tickBlocks);
+    CHECK (sound.bankActive (1));
     sound.requestChord (kBbmaj7, true);
     play (*rt, sound, 48000.0, 0.01, tickBlocks);
     CHECK (sound.damping());
@@ -435,36 +458,40 @@ TEST_CASE ("SkySound: an urgent change mid-crossfade ends the fade and damps the
 {
     auto rt = quietRuntime (48000.0);
     dsp::SkySound sound;
-    sound.prepare (48000.0, kNodes, 2, dsp::SkySound::Settings {}, kDmaj7);
+    sound.prepare (48000.0, kNodes, 2, dsp::SkySound::Settings {}, kDmaj7);   // the real decays
     const auto tickBlocks = [] (int) { return 480; };
 
-    const auto out = play (*rt, sound, 48000.0, 30.0, tickBlocks, [&] (int i, int)
+    const auto out = play (*rt, sound, 48000.0, 12.0, tickBlocks, [&] (int i, int)
     {
-        if (i == 500) sound.requestChord (kGadd9, true);    //  5 s: a free bank, taken at once
-        if (i == 1100) sound.requestChord (kBbmaj7, true);  // 11 s: mid-fade, old bank ringing
-        if (i == 1101) { CHECK (sound.damping()); CHECK_THAT (sound.crossfade(), Catch::Matchers::WithinAbs (1.0, 1e-12)); }
+        if (i == 300) sound.requestChord (kGadd9, true);    // 3 s: a free bank, taken at once
+        if (i == 600) sound.requestChord (kBbmaj7, true);   // 6 s: mid-fade, the old bank ringing
+        if (i == 601)
+        {
+            CHECK (sound.damping());
+            CHECK_THAT (sound.crossfade(), Catch::Matchers::WithinAbs (1.0, 1e-12));
+        }
     });
     CHECK (sound.chordChanges() == 2);   // the B♭ came 3 s after its request
-    const float steady = maxStepOf (out.left, 48000, 5 * 48000);
-    CHECK (steady > 0.0f);
-    CHECK (maxStepOf (out.left, 5 * 48000, out.left.size()) < 1.5f * steady + 1e-4f);
-    CHECK (maxStepOf (out.right, 5 * 48000, out.right.size()) < 1.5f * maxStepOf (out.right, 48000, 5 * 48000) + 1e-4f);
+    for (const auto* ch : { &out.left, &out.right })
+    {
+        const float steady = maxStepOf (*ch, 48000, 3 * 48000);
+        CHECK (steady > 0.0f);
+        CHECK (maxStepOf (*ch, 3 * 48000, ch->size()) < 1.5f * steady + 1e-4f);
+    }
 }
 
 TEST_CASE ("SkySound is block-size independent and allocation-free", "[sound][determinism]")
 {
-    // From 17:38:30, so the 17:38:48 onset strikes within the first seconds (24×)
+    // From 17:38:30, so the 17:38:48 onset strikes within the first second (24×)
     const double from = kStormStart + (17 * 60 + 38) * 60.0 + 30.0;
-    const double seconds = 3.0;
-
     const auto run = [&] (auto blockSize)
     {
         auto rt = stormRuntime (48000.0, from);
         dsp::SkySound sound;
         sound.prepare (48000.0, kNodes, 1, dsp::SkySound::Settings {}, kDmaj7);
-        const auto before = testing::allocationsOnThisThread();
-        auto out = play (*rt, sound, 48000.0, seconds, blockSize);
-        CHECK (testing::allocationsOnThisThread() - before <= 1);   // the Render vectors, before the loop
+        auto out = play (*rt, sound, 48000.0, 3.0, blockSize);
+        CHECK (out.allocations == 0);
+        CHECK (rt->model().current().onsetCount > 0);
         return out;
     };
 
@@ -472,7 +499,7 @@ TEST_CASE ("SkySound is block-size independent and allocation-free", "[sound][de
     CHECK (rmsOf (reference.left.data(), static_cast<int> (reference.left.size())) > 1e-4);
     std::mt19937 rng (5);
     std::uniform_int_distribution<int> sizes (1, 2000);
-    const auto variants = {
+    const std::vector<Render> variants {
         run ([] (int) { return 128; }),
         run ([] (int) { return 37; }),
         run ([&] (int) { return sizes (rng); }),
@@ -486,20 +513,18 @@ TEST_CASE ("SkySound is block-size independent and allocation-free", "[sound][de
 
 TEST_CASE ("SkySound doesn't allocate through onsets and chord changes", "[sound][realtime]")
 {
-    auto rt = stormRuntime (48000.0, kStormStart + (17 * 60 + 38) * 60.0);
+    auto rt = stormRuntime (48000.0, kStormStart + (17 * 60 + 38) * 60.0);   // onset after 2 s
     dsp::SkySound sound;
-    sound.prepare (48000.0, kNodes, 1, dsp::SkySound::Settings {}, kDmaj7);
-    std::vector<float> l (512), r (512);
-    const auto before = testing::allocationsOnThisThread();
-    for (int i = 0; i < 2000; ++i)   // 21 s
+    sound.prepare (48000.0, kNodes, 1, fastSettings(), kDmaj7);
+    const auto out = play (*rt, sound, 48000.0, 8.0, [] (int) { return 512; }, [&] (int i, int)
     {
-        if (i == 100) sound.requestChord (kGadd9, true);
-        if (i == 600) sound.requestChord (kBbmaj7, true);
-        if (i == 700) sound.requestChord (kDmaj7, false);
-        sound.process (*rt, l.data(), r.data(), 512);
-    }
-    CHECK (testing::allocationsOnThisThread() == before);
-    CHECK (sound.chordChanges() >= 2);
+        if (i == 100) sound.requestChord (kGadd9, true);   // free bank
+        if (i == 300) sound.requestChord (kBbmaj7, true);  // damps
+        if (i == 320) sound.requestChord (kDmaj7, false);  // replaces it while it waits
+    });
+    CHECK (out.allocations == 0);
+    CHECK (sound.chordChanges() == 2);
+    CHECK (sound.chord().degree == kDmaj7.degree);
     CHECK (rt->model().current().onsetCount > 0);
 }
 
@@ -509,20 +534,25 @@ TEST_CASE ("SkySound takes waiting chords on the same ticks at 44.1 and 48 kHz",
     {
         auto rt = quietRuntime (rate);
         dsp::SkySound sound;
-        sound.prepare (rate, kNodes, 1, dsp::SkySound::Settings {}, kDmaj7);
+        sound.prepare (rate, kNodes, 1, fastSettings(), kDmaj7);
         const int perTick = static_cast<int> (rate / 100.0);
         std::vector<uint64_t> ticks;
         uint32_t seen = 0;
-        play (*rt, sound, rate, 50.0, [perTick] (int) { return perTick; }, [&] (int i, int)
+        play (*rt, sound, rate, 5.0, [perTick] (int) { return perTick; }, [&] (int i, int)
         {
-            if (sound.chordChanges() != seen) { seen = sound.chordChanges(); ticks.push_back (sound.ticks()); }
-            if (i == 100) sound.requestChord (kGadd9, false);
-            if (i == 1500) sound.requestChord (kBbmaj7, false);   // waits for the ring-out
+            if (sound.chordChanges() != seen)
+            {
+                seen = sound.chordChanges();
+                ticks.push_back (sound.ticks());
+            }
+            if (i == 20) sound.requestChord (kGadd9, false);
+            if (i == 150) sound.requestChord (kBbmaj7, false);   // waits for the ring-out
         });
         return ticks;
     };
     const auto at48 = ticksOfChanges (48000.0);
     REQUIRE (at48.size() == 2);
-    CHECK (at48[1] > 3200);   // 1 s + 12 s fade + 20 s ring-out
+    CHECK (at48[0] == 21);
+    CHECK (at48[1] >= 21 + 120 + 200);   // the 1.2 s fade, then the 2 s ring-out
     CHECK (ticksOfChanges (44100.0) == at48);
 }

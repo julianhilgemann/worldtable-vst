@@ -97,6 +97,7 @@ Worker and offers the WAV for download. For a phone:
 | `dome.js` | WebGL renderer (Canvas 2D fallback) + instrument overlay |
 | `charts.js`, `app.js`, `index.html`, `style.css` | the page |
 | `export-goldens.mjs` | `node prototype/sky/export-goldens.mjs [day] [speed]` → `tests/golden/sky/` |
+| `export-sound-golden.mjs` | `node prototype/sky/export-sound-golden.mjs [day] [from] [seconds]` → `tests/golden/sound/` (dry sound, chord requests, voicings; T3.1) |
 | `sound/engine.js` | the sound engine (pure; owns the model clock; the `processBlock` analogue) |
 | `sound/harmony.js` | chord vocabulary per Mood, progression on sky phases, voice-leading |
 | `sound/bank.js` | complex one-pole resonators, double-banked |

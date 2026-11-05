@@ -5,8 +5,11 @@ tuned to the held chord (12-TET). Mood: positive, shimmering, uplifting,
 awe-inspiring; emotion comes from harmony plus slight pitch instability.
 
 Status: **sketched** (T1.3, `prototype/sky/sound/`, 2026-11-05): §1–3 run in
-the browser on the T1.2 sky; mapping and constants in §12. Owner's listening
-pending.
+the browser on the T1.2 sky; mapping and constants in §12; the owner signed off
+the direction. **§1–2 ported to C++** (T3.1: `dsp/SkySound`, `ResonatorBank`,
+`Exciter`, `Voicing`): the dry sound matches the sketch (null test −135 dB) and
+plays through `WorldtableRender --sky`; the plug-in keeps the POC voice until
+the effects and parameters arrive (T3.5, T3.6).
 
 ```
 SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet layers) ─┐
@@ -134,7 +137,9 @@ Journey bounces and A/B them against the references.
   cross-modulation only?
 - N = 64 or 128 resonators (CPU vs density), decided with the T1.3 sketch.
   Data so far (§12): in JS, 64 per layer costs 9 % of a core, 128 costs 16 %.
-  Owner to compare the `-n64` and `-n128` bounces by ear.
+  In C++ (T3.1, Release, this Mac, sky + sound, no effects): 64 costs 1.4 %,
+  128 costs 3.1 %. Both fit the 5 % budget before the effects; 64 stays the
+  default (T1.3) until the owner compares the `-n64` and `-n128` bounces by ear.
 
 ## 11. Real-time checklist (copy into every DSP task)
 - [ ] `prepareToPlay` allocates everything (max block size, max nodes).
@@ -176,9 +181,10 @@ on 2026-11-05 ("sounds fine … run with it"), constants unchanged. N = 64 per l
   −18 dBFS RMS (±12 dB, τ 10 s, no K-weighting), DC blocker, 5 ms lookahead
   limiter at −1 dBFS.
 - **Cost (JS, this Mac):** 64 per layer 11.5× real time in Node (9 % of a
-  core), 10.5× in Chrome's AudioWorklet; 128 per layer 6.4× (16 %), 5.7×. C++
-  should be several times cheaper; 128 with double-banking may not fit the 5 %
-  budget without SIMD.
+  core), 10.5× in Chrome's AudioWorklet; 128 per layer 6.4× (16 %), 5.7×.
+  **C++ (T3.1, Release):** the Sky Model and the resonator bank together cost
+  1.4 % of a core at 64 per layer and 3.1 % at 128, without SIMD; the
+  stand-in reverb and limiter add 0.5 %.
 - **Levels:** storm and moderate bounces sit at −17 to −19 dBFS RMS. The quiet
   day sits at −26 dBFS RMS: the auto-gain's +12 dB isn't enough. Calm and sparse
   is intended, but it may be too quiet.

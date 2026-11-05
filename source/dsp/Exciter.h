@@ -31,8 +31,8 @@ public:
 
     void prepare (int voices, int voicesPerNode, const Settings&) noexcept;
 
-    /** A substorm onset at `node` (the sky's node index). */
-    void onset (double realSeconds, double strength, int node) noexcept;
+    /** A substorm onset, centred on `voice` (the onset node × voices per node). */
+    void onset (double realSeconds, double strength, int voice) noexcept;
 
     /** One control tick. `brightness[v]`: the curtain's brightness at each voice. */
     void tick (double realSeconds, double activity, const double* brightness) noexcept;

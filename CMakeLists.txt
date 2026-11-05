@@ -74,6 +74,10 @@ target_sources(WorldtableShared INTERFACE
     source/transform/WavetableBuilder.cpp
     source/dsp/Voice.cpp
     source/dsp/Engine.cpp
+    source/dsp/Voicing.cpp
+    source/dsp/ResonatorBank.cpp
+    source/dsp/Exciter.cpp
+    source/dsp/SkySound.cpp
     source/dsp/fx/ShimmerReverb.cpp)
 
 target_include_directories(WorldtableShared INTERFACE source)
