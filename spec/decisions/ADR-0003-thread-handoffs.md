@@ -1,7 +1,7 @@
 # ADR-0003 — Hand-offs between threads: tracks in, snapshots out
 
-**Status:** Proposed (Claude Code, 2026-11-05) — owner to confirm. Drafted on
-the owner's go-ahead in the T2.1 review.
+**Status:** Accepted (owner, 2026-11-05). Drafted by Claude Code on the
+owner's go-ahead in the T2.1 review; implemented in T2.4.
 
 ## Context
 Two hand-offs cross the audio thread (`spec/03-architecture.md`):
@@ -18,7 +18,7 @@ Readers never see a half-written object. A slow reader may skip frames, but it
 never holds up the writer. ADR-0001 left the choice open: triple buffer or
 `std::atomic<std::shared_ptr>`.
 
-## Decision (proposed)
+## Decision
 - **No `std::shared_ptr` across the audio thread.** `std::atomic<shared_ptr>`
   is not lock-free (or not available) in the standard libraries we build with,
   and dropping the last reference on the audio thread would free a 1 MB

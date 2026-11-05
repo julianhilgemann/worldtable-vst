@@ -228,6 +228,57 @@ void PluginEditor::updateAnalyzer()
     }
 }
 
+juce::var PluginEditor::makeSkyTelemetry()
+{
+    auto& runtime = wtProcessor.getSky();
+    haveSkyFrame = runtime.readSnapshot (sky::SkyRuntime::Reader::ui, skyFrame) || haveSkyFrame;
+
+    std::array<sky::SkyEvent, 64> events {};
+    const int numEvents = runtime.readEvents (sky::SkyRuntime::Reader::ui, events);
+
+    if (! haveSkyFrame)
+        return {};
+
+    static constexpr std::array<const char*, 4> phaseNames { "quiet", "growth", "onset", "recovery" };
+    static constexpr std::array<const char*, 3> kindNames { "loaded", "forced", "pseudo" };
+    const auto& s = skyFrame;
+    const auto phaseName = phaseNames[static_cast<size_t> (s.phase) & 3u];
+
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("day", wtProcessor.getSkyFeed().dayId());
+    o->setProperty ("utc", s.modelTimeUtc);
+    o->setProperty ("speed", round3 (s.speed));
+    o->setProperty ("phase", phaseName);
+    o->setProperty ("progress", round3 (s.phaseProgress));
+    o->setProperty ("kp", round3 (s.kp));
+    o->setProperty ("bz", round3 (s.bzNt));
+    o->setProperty ("wind", std::round (static_cast<double> (s.windSpeedKmS)));
+    o->setProperty ("dh", std::round (static_cast<double> (s.dhMeasuredNt)));
+    o->setProperty ("dhModel", std::round (static_cast<double> (s.dhModelNt)));
+    o->setProperty ("energy", round3 (s.energy));
+    o->setProperty ("activity", round3 (s.activity));
+    o->setProperty ("unloading", round3 (s.unloading));
+    o->setProperty ("mlt", round3 (s.mltHours));
+    o->setProperty ("arcLat", round3 (s.ovalLatitudeDeg));
+    o->setProperty ("onsets", static_cast<int> (s.onsetCount));
+    o->setProperty ("whistlers", static_cast<int> (s.whistlerCount));
+
+    juce::Array<juce::var> news;
+    for (int i = 0; i < numEvents; ++i)
+    {
+        const auto& e = events[static_cast<size_t> (i)];
+        if (e.type != sky::SkyEvent::Type::onset)
+            continue;
+        auto* onset = new juce::DynamicObject();
+        onset->setProperty ("utc", e.modelTimeUtc);
+        onset->setProperty ("kind", kindNames[static_cast<size_t> (e.onsetKind) % kindNames.size()]);
+        onset->setProperty ("strength", round3 (e.strength));
+        news.add (juce::var (onset));
+    }
+    o->setProperty ("newOnsets", news);
+    return juce::var (o);
+}
+
 juce::var PluginEditor::makeTelemetry()
 {
     auto& t = wtProcessor.getEngine().getTelemetry();
@@ -265,6 +316,7 @@ juce::var PluginEditor::makeTelemetry()
                 notes.add (w * 32 + b);
     }
     o->setProperty ("notes", notes);
+    o->setProperty ("sky", makeSkyTelemetry());
 
     juce::Array<juce::var> spec;
     for (auto b : bands)

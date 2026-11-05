@@ -1,0 +1,339 @@
+#include "AllocationCounter.h"
+#include "PluginProcessor.h"
+#include "data/SkyDays.h"
+#include "dsp/SlotExchange.h"
+#include "sky/SkyFeed.h"
+#include "sky/SkyHandoff.h"
+#include "sky/SkyRuntime.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+
+#include <array>
+#include <atomic>
+#include <cstring>
+#include <memory>
+#include <random>
+#include <thread>
+#include <vector>
+
+using namespace worldtable;
+
+namespace
+{
+template <typename T>
+bool sameBits (const T& a, const T& b) { return std::memcmp (&a, &b, sizeof (T)) == 0; }
+
+/** The fields a reader sees, compared bit for bit (SkySnapshot has padding, so not memcmp). */
+bool sameSky (const sky::SkySnapshot& a, const sky::SkySnapshot& b)
+{
+    return sameBits (a.modelTimeUtc, b.modelTimeUtc) && a.step == b.step && a.phase == b.phase
+        && sameBits (a.phaseProgress, b.phaseProgress) && sameBits (a.energy, b.energy)
+        && sameBits (a.activity, b.activity) && sameBits (a.unloading, b.unloading) && sameBits (a.gain, b.gain)
+        && sameBits (a.kp, b.kp) && sameBits (a.dhModelNt, b.dhModelNt) && sameBits (a.mltHours, b.mltHours)
+        && sameBits (a.ovalLatitudeDeg, b.ovalLatitudeDeg) && sameBits (a.recoveryPulse, b.recoveryPulse)
+        && a.onsetCount == b.onsetCount && a.whistlerCount == b.whistlerCount
+        && sameBits (a.astronomy.moonAzDeg, b.astronomy.moonAzDeg) && a.nodeCount == b.nodeCount
+        && sameBits (a.nodes, b.nodes);   // CurtainNode is nine floats: no padding
+}
+
+bool sameEvent (const sky::SkyEvent& a, const sky::SkyEvent& b)
+{
+    return sameBits (a.modelTimeUtc, b.modelTimeUtc) && sameBits (a.strength, b.strength) && a.node == b.node
+        && a.type == b.type && a.phase == b.phase && a.falling == b.falling
+        && (a.type != sky::SkyEvent::Type::onset || a.onsetKind == b.onsetKind);
+}
+
+constexpr double kStormStart = 1715299200.0;   // 2024-05-10T00:00:00Z
+
+/** A runtime playing the storm from 17:30 UT on 10 May (the storm arrives at 17:38) at `speed`. */
+std::unique_ptr<sky::SkyRuntime> stormRuntime (double sampleRate, double speed)
+{
+    auto rt = std::make_unique<sky::SkyRuntime>();
+    sky::SkyFeed feed (*rt);
+    REQUIRE (feed.load (data::kDefaultSkyDay, 1, sky::SkyParams {}));
+    rt->seek (kStormStart + (17 * 60 + 30) * 60.0);
+    rt->setSpeed (speed);
+    rt->prepare (sampleRate);
+    return rt;
+}
+
+struct Run
+{
+    sky::SkySnapshot last {};
+    std::vector<sky::SkyEvent> events;
+};
+
+/** Feeds `totalSamples` through process() in blocks from `blockSize(i)`, draining the OSC reader. */
+template <typename BlockSize>
+Run play (sky::SkyRuntime& rt, int totalSamples, BlockSize blockSize)
+{
+    Run run;
+    std::array<sky::SkyEvent, 256> buffer {};
+    for (int done = 0, i = 0; done < totalSamples; ++i)
+    {
+        const int n = std::min (blockSize (i), totalSamples - done);
+        rt.process (n);
+        done += n;
+        const int got = rt.readEvents (sky::SkyRuntime::Reader::osc, buffer);
+        run.events.insert (run.events.end(), buffer.begin(), buffer.begin() + got);
+    }
+    rt.readSnapshot (sky::SkyRuntime::Reader::osc, run.last);
+    return run;
+}
+} // namespace
+
+//==================================================================================================
+TEST_CASE ("TripleBuffer: the reader gets the newest value, never a torn one", "[sky][handoff]")
+{
+    SECTION ("one thread: newest wins, nothing new means false")
+    {
+        sky::TripleBuffer<int> tb;
+        CHECK_FALSE (tb.update());
+        tb.write (1);
+        tb.write (2);
+        CHECK (tb.update());
+        CHECK (tb.front() == 2);
+        CHECK_FALSE (tb.update());
+        CHECK (tb.front() == 2);
+        tb.write (3);
+        CHECK (tb.update());
+        CHECK (tb.front() == 3);
+    }
+
+    SECTION ("two threads: 200,000 writes of a 2 KB value")
+    {
+        struct Big
+        {
+            std::array<uint64_t, 256> words {};
+        };
+        auto tb = std::make_unique<sky::TripleBuffer<Big>>();
+        constexpr uint64_t kWrites = 200000;
+        std::atomic<bool> done { false };
+
+        std::thread writer ([&]
+        {
+            for (uint64_t v = 1; v <= kWrites; ++v)
+            {
+                tb->back().words.fill (v);
+                tb->publish();
+            }
+            done = true;
+        });
+
+        uint64_t lastSeen = 0, reads = 0, torn = 0, backwards = 0;
+        for (;;)
+        {
+            const bool finished = done.load();   // before update(): every write is published by now
+            if (! tb->update())
+            {
+                if (finished)
+                    break;
+                continue;
+            }
+            const auto& w = tb->front().words;
+            for (auto x : w)
+                torn += x != w[0] ? 1 : 0;
+            backwards += w[0] < lastSeen ? 1 : 0;
+            lastSeen = w[0];
+            ++reads;
+        }
+        writer.join();
+
+        CHECK (torn == 0);
+        CHECK (backwards == 0);
+        CHECK (reads > 0);
+        CHECK (lastSeen == kWrites);   // the newest value always arrives
+    }
+}
+
+TEST_CASE ("SkyEventFifo keeps order and counts what it drops", "[sky][handoff]")
+{
+    SECTION ("one thread")
+    {
+        sky::SkyEventFifo fifo;
+        sky::SkyEvent e {};
+        for (int i = 0; i < 300; ++i)
+        {
+            e.modelTimeUtc = i;
+            fifo.push (e);
+        }
+        CHECK (fifo.droppedCount() == 300u - sky::SkyEventFifo::kCapacity);
+
+        std::array<sky::SkyEvent, 400> out {};
+        const int n = fifo.pop (out.data(), static_cast<int> (out.size()));
+        REQUIRE (n == static_cast<int> (sky::SkyEventFifo::kCapacity));
+        for (int i = 0; i < n; ++i)
+            CHECK_THAT (out[static_cast<size_t> (i)].modelTimeUtc, Catch::Matchers::WithinULP (static_cast<double> (i), 0));
+    }
+
+    SECTION ("two threads: 500,000 values arrive in order")
+    {
+        auto q = std::make_unique<sky::SpscQueue<uint64_t, 256>>();
+        constexpr uint64_t kCount = 500000;
+        std::thread producer ([&]
+        {
+            for (uint64_t v = 0; v < kCount; ++v)
+                while (! q->push (v)) {}
+        });
+
+        uint64_t expected = 0, outOfOrder = 0, v = 0;
+        while (expected < kCount)
+            if (q->pop (v))
+                outOfOrder += v != expected++ ? 1 : 0;
+        producer.join();
+        CHECK (outOfOrder == 0);
+    }
+}
+
+TEST_CASE ("SlotExchange hands over whole objects between two threads", "[sky][handoff]")
+{
+    struct Payload
+    {
+        std::array<uint32_t, 1024> values {};
+    };
+    auto exchange = std::make_unique<dsp::SlotExchange<Payload, 3>>();
+    constexpr uint32_t kPublishes = 20000;
+    std::atomic<bool> done { false };
+
+    std::thread producer ([&]
+    {
+        for (uint32_t v = 1; v <= kPublishes;)
+        {
+            const int slot = exchange->acquireForWriting();
+            if (slot < 0)
+                continue;
+            exchange->slot (slot).values.fill (v++);
+            exchange->publish (slot);
+        }
+        done = true;
+    });
+
+    int current = -1;
+    uint32_t taken = 0, torn = 0, backwards = 0, last = 0;
+    while (! done.load() || exchange->hasPending())
+    {
+        const int next = exchange->take();
+        if (next < 0)
+            continue;
+        const auto& v = exchange->slot (next).values;
+        for (auto x : v)
+            torn += x != v[0] ? 1 : 0;
+        backwards += v[0] < last ? 1 : 0;
+        last = v[0];
+        if (current >= 0)
+            exchange->release (current);
+        current = next;
+        ++taken;
+    }
+    producer.join();
+
+    CHECK (torn == 0);
+    CHECK (backwards == 0);
+    CHECK (taken > 0);
+    CHECK (last == kPublishes);
+}
+
+//==================================================================================================
+TEST_CASE ("The sky doesn't depend on the block size", "[sky][runtime][determinism]")
+{
+    constexpr double sr = 48000.0;
+    constexpr int total = 3000 * 480;   // 3,000 ticks at 1440×: 12 h of the storm from 17:30 UT
+
+    auto reference = stormRuntime (sr, sky::SkyModel::kMaxSpeed);
+    const auto expected = play (*reference, total, [] (int) { return 4800; });
+    REQUIRE (expected.last.step == 3000u);
+    REQUIRE (expected.last.onsetCount > 5u);
+    REQUIRE (expected.events.size() > 20u);
+
+    std::mt19937 rng (7);
+    std::uniform_int_distribution<int> randomSize (1, 2000);
+    const std::array<std::pair<const char*, std::function<int (int)>>, 4> variants { {
+        { "128", [] (int) { return 128; } },
+        { "37", [] (int) { return 37; } },
+        { "1 then 4799", [] (int i) { return i % 2 == 0 ? 1 : 4799; } },
+        { "random 1–2000", [&] (int) { return randomSize (rng); } },
+    } };
+
+    for (const auto& [name, blockSize] : variants)
+    {
+        INFO ("blocks of " << name);
+        auto rt = stormRuntime (sr, sky::SkyModel::kMaxSpeed);
+        const auto run = play (*rt, total, blockSize);
+        CHECK (sameSky (run.last, expected.last));
+        REQUIRE (run.events.size() == expected.events.size());
+        bool allSame = true;
+        for (size_t i = 0; i < run.events.size(); ++i)
+            allSame = allSame && sameEvent (run.events[i], expected.events[i]);
+        CHECK (allSame);
+        CHECK (rt->droppedEvents (sky::SkyRuntime::Reader::osc) == 0u);
+    }
+}
+
+TEST_CASE ("The sky only depends on ticks, not on the sample rate", "[sky][runtime][determinism]")
+{
+    auto at48 = stormRuntime (48000.0, 96.0);
+    auto at441 = stormRuntime (44100.0, 96.0);
+    const auto a = play (*at48, 2000 * 480, [] (int) { return 512; });
+    const auto b = play (*at441, 2000 * 441, [] (int) { return 512; });
+
+    CHECK (a.last.step == 2000u);
+    CHECK (sameSky (a.last, b.last));
+    REQUIRE (a.events.size() == b.events.size());
+    for (size_t i = 0; i < a.events.size(); ++i)
+        CHECK (sameEvent (a.events[i], b.events[i]));
+}
+
+TEST_CASE ("process() doesn't allocate, even when it picks up a new day", "[sky][runtime]")
+{
+    auto rt = std::make_unique<sky::SkyRuntime>();
+    sky::SkyFeed feed (*rt);
+    rt->prepare (48000.0);
+
+    for (const auto& day : data::kSkyDays)
+    {
+        INFO ("day " << day.id);
+        REQUIRE (feed.load (day.id, 1, sky::SkyParams {}));   // allocates: data side
+        rt->seek (feed.dayStartUtc());
+        rt->setSpeed (24.0);
+
+        const auto before = testing::allocationsOnThisThread();
+        for (int k = 0; k < 50; ++k)
+            rt->process (512);
+        CHECK (testing::allocationsOnThisThread() == before);
+
+        const double t = rt->model().modelTimeUtc();
+        CHECK (t >= feed.dayStartUtc());
+        CHECK (t < feed.dayStartUtc() + 3600.0);
+    }
+
+    // Three days through a pool of three: the old slots came back.
+    CHECK (rt->tracks().acquireForWriting() >= 0);
+}
+
+TEST_CASE ("The plug-in plays the storm at 24×", "[sky][runtime][processor]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;   // the world feed uses timers, as in PluginProcessorTests
+    PluginProcessor p (false);
+    p.prepareToPlay (48000.0, 512);
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    juce::MidiBuffer midi;
+    constexpr int blocks = 188;   // 96,256 samples: ticks at samples 0, 480, … 96,000
+    for (int b = 0; b < blocks; ++b)
+    {
+        buffer.clear();
+        p.processBlock (buffer, midi);
+    }
+
+    sky::SkySnapshot s {};
+    REQUIRE (p.getSky().readSnapshot (sky::SkyRuntime::Reader::ui, s));
+    CHECK (p.getSkyFeed().dayId() == "2024-05-10");
+    CHECK_THAT (s.speed, Catch::Matchers::WithinULP (24.0f, 0));
+    CHECK (s.step == 201u);
+    // model time moves 0.24 s per tick from the start of the day
+    CHECK_THAT (s.modelTimeUtc, Catch::Matchers::WithinULP (kStormStart + 0.24 * 201.0, 0));
+    CHECK (s.nodeCount == 64);
+    CHECK (s.onsetCount == 0u);   // the first onset is at 02:25 UT
+    CHECK (s.kp > 0.0f);
+}

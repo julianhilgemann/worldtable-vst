@@ -23,6 +23,9 @@ PluginProcessor::PluginProcessor (bool networkEnabled)
 
     // A table exists before the first block: built synchronously from cache/factory data.
     feed.prime();
+
+    // The sky's default Journey (M2): the 10–11 May 2024 storm at 24×, built here like the table.
+    skyFeed.startDefaultJourney();
 }
 
 PluginProcessor::~PluginProcessor() = default;
@@ -52,6 +55,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int maximumExpectedSampl
     feed.start();
 
     engine.prepare (sampleRate, maximumExpectedSamplesPerBlock);
+    skyRuntime.prepare (sampleRate);
     setLatencySamples (engine.getLatencySamples());
 }
 
@@ -83,6 +87,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         }
     }
 
+    skyRuntime.process (buffer.getNumSamples());   // 100 Hz ticks on the sample clock (ADR-0007)
     engine.process (buffer, midi, host);
 }
 

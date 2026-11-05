@@ -4,13 +4,16 @@
 #include "dsp/Engine.h"
 #include "dsp/TableExchange.h"
 #include "params/Params.h"
+#include "sky/SkyFeed.h"
+#include "sky/SkyRuntime.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
 namespace worldtable
 {
 
-/** Worldtable: world data → wavetable → voices → delay → shimmer reverb → limiter. */
+/** Worldtable: world data → wavetable → voices → delay → shimmer reverb → limiter (the POC sound),
+    with the Sky Model running alongside on the audio clock (T2.4; it drives the sound from M3). */
 class PluginProcessor final : public juce::AudioProcessor
 {
 public:
@@ -59,6 +62,8 @@ public:
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept { return apvts; }
     data::WorldFeed& getWorldFeed() noexcept                         { return feed; }
     dsp::Engine& getEngine() noexcept                                { return engine; }
+    sky::SkyRuntime& getSky() noexcept                               { return skyRuntime; }
+    const sky::SkyFeed& getSkyFeed() const noexcept                  { return skyFeed; }
 
 private:
     juce::AudioProcessorValueTreeState apvts;
@@ -66,6 +71,8 @@ private:
     dsp::TableExchange tables;
     data::WorldFeed feed;
     dsp::Engine engine;
+    sky::SkyRuntime skyRuntime;
+    sky::SkyFeed skyFeed { skyRuntime };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };
