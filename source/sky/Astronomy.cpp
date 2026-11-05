@@ -68,4 +68,33 @@ Sun sun (double utc, double latDeg, double lonDeg) noexcept
     return { where.azDeg, where.elDeg, s.dec, std::fmod (s.ra - gmstDeg (utc) + 540.0, 360.0) - 180.0 };
 }
 
+MoonEquatorial moonEquatorial (double utc) noexcept
+{
+    const double t = centuries (utc);
+    const double lambda = 218.32 + 481267.881 * t
+        + 6.29 * sind (135.0 + 477198.87 * t) - 1.27 * sind (259.3 - 413335.36 * t)
+        + 0.66 * sind (235.7 + 890534.22 * t) + 0.21 * sind (269.9 + 954397.74 * t)
+        - 0.19 * sind (357.5 + 35999.05 * t) - 0.11 * sind (186.5 + 966404.03 * t);
+    const double beta = 5.13 * sind (93.3 + 483202.02 * t) + 0.28 * sind (228.2 + 960400.89 * t)
+        - 0.28 * sind (318.3 + 6003.15 * t) - 0.17 * sind (217.6 - 407332.21 * t);
+    const double parallax = 0.9508 + 0.0518 * cosd (135.0 + 477198.87 * t) + 0.0095 * cosd (259.3 - 413335.36 * t)
+        + 0.0078 * cosd (235.7 + 890534.22 * t) + 0.0028 * cosd (269.9 + 954397.74 * t);
+    const double eps = obliquityDeg (t, 125.04 - 1934.136 * t);
+    const double l = norm360 (lambda);
+    const double x = cosd (beta) * cosd (l);
+    const double y = cosd (eps) * cosd (beta) * sind (l) - sind (eps) * sind (beta);
+    const double z = sind (eps) * cosd (beta) * sind (l) + cosd (eps) * sind (beta);
+    return { l, beta, parallax, norm360 (std::atan2 (y, x) * kR2D), std::asin (z) * kR2D };
+}
+
+Moon moon (double utc, double latDeg, double lonDeg) noexcept
+{
+    const auto s = sunEquatorial (utc);
+    const auto m = moonEquatorial (utc);
+    auto where = altAz (m.raDeg, m.decDeg, latDeg, lonDeg, utc);
+    where.elDeg -= m.parallaxDeg * cosd (where.elDeg);   // topocentric
+    const double elongation = std::acos (cosd (m.betaDeg) * cosd (m.lambdaDeg - s.lambda)) * kR2D;
+    return { where.azDeg, where.elDeg, (1.0 - cosd (elongation)) / 2.0, sind (m.lambdaDeg - s.lambda) > 0.0 };
+}
+
 } // namespace worldtable::sky::astro

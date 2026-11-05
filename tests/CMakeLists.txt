@@ -9,6 +9,7 @@ target_sources(WorldtableTests PRIVATE
     unit/SkySlowTests.cpp
     unit/SkyGoldenTests.cpp
     unit/SkyModelTests.cpp
+    unit/SkyProjectionTests.cpp
     unit/TrackBuilderTests.cpp
     unit/AllocationCounter.cpp)
 
