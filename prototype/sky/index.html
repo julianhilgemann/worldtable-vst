@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sky Model sketch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="word">WORLDTABLE</span><span class="tag">sky model sketch · T1.2 · <span id="r-perf">-</span></span></div>
+  <div class="readouts" aria-live="off">
+    <span id="r-station">CMO 64.87N 147.86W</span>
+    <span id="r-ut">--:-- UT</span>
+    <span>Kp <b id="r-kp" class="green">-</b></span>
+    <span>Bz <b id="r-bz" class="violet">-</b></span>
+    <span>v <b id="r-v">-</b></span>
+    <span id="r-mode" class="mode">JOURNEY</span>
+  </div>
+</header>
+
+<main>
+  <section class="dome" aria-label="All-sky dome over College, Alaska">
+    <canvas id="dome" role="img" aria-label="Aurora over the station, all-sky view, north up, east left"></canvas>
+    <canvas id="overlay" aria-hidden="true"></canvas>
+  </section>
+
+  <aside>
+    <div class="block">
+      <div class="phase-row">
+        <span class="label">PHASE</span>
+        <b id="r-phase">quiet</b>
+        <span class="bar"><span id="r-progress"></span></span>
+      </div>
+      <dl class="grid">
+        <dt>energy</dt><dd id="r-energy">-</dd>
+        <dt>activity</dt><dd id="r-activity">-</dd>
+        <dt>gain</dt><dd id="r-gain">-</dd>
+        <dt>E (v·Bs)</dt><dd id="r-e">-</dd>
+        <dt>ΔH CMO</dt><dd id="r-dh">-</dd>
+        <dt>arc lat</dt><dd id="r-oval">-</dd>
+        <dt>MLT</dt><dd id="r-mlt">-</dd>
+        <dt>sun / moon</dt><dd id="r-sun">-</dd>
+      </dl>
+    </div>
+
+    <div class="block">
+      <label class="field"><span class="label">DAY</span><select id="day"></select></label>
+      <div class="transport">
+        <button id="play" type="button" aria-label="Pause">❚❚</button>
+        <div class="speeds" role="group" aria-label="Journey speed"></div>
+      </div>
+      <div class="transport">
+        <button id="next-onset" type="button">next onset ›</button>
+        <label class="field inline"><span class="label">SEED</span><input id="seed" type="number" min="1" max="999999" value="1"></label>
+      </div>
+    </div>
+
+    <div class="block toggles">
+      <label><input type="checkbox" id="t-stars" checked> stars and moon</label>
+      <label><input type="checkbox" id="t-day" checked> day/night tracking</label>
+      <label><input type="checkbox" id="t-grad"> gradients only</label>
+    </div>
+
+    <div class="block">
+      <span class="label">EVENTS</span>
+      <ol id="ticker"></ol>
+    </div>
+
+    <details class="block">
+      <summary class="label">TUNING</summary>
+      <div id="tuning"></div>
+      <div class="transport">
+        <button id="copy" type="button">copy constants</button>
+        <button id="defaults" type="button">defaults</button>
+      </div>
+      <pre id="constants"></pre>
+    </details>
+  </aside>
+</main>
+
+<section class="strip"><canvas id="chart" aria-label="Magnetogram, coupling and substorm phases over the day; click to jump"></canvas></section>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

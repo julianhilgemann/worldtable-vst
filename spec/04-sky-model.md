@@ -5,16 +5,23 @@ source of truth (ADR-0002). The data sets the mean level; the model adds
 plausible, seeded detail around it. Sound, dome and OSC are renderings of the
 same `SkySnapshot` (`03-architecture.md`).
 
-Status: **draft**. Equations and constants are starting points to tune in the
-browser prototype (T1.2) against the 10 May 2024 storm, then freeze as
-goldens for the C++ port. Physics here is deliberately simplified: plausible
-and beautiful beats correct.
+Status: **sketched** (T1.2, `prototype/sky/`, 2026-11-05). The browser sketch
+implements this spec; its tuned constants are in §9 and its goldens in
+`tests/golden/sky/`. The owner's look at it is still pending. Physics here is
+deliberately simplified: plausible and beautiful beats correct.
 
-## 1. Clock
-- Control rate **100 Hz** of audio sample time (ADR-0007). `dt = 0.01 s` of
-  model time × time compression (Journey) or × 0 for data in Freeze.
-- Model time (UTC) selects data from the `WorldSnapshot` track and drives
-  astronomy and magnetic local time (MLT).
+## 1. Clocks
+Two clocks, so a Journey at any speed shows the same substorms with natural
+motion:
+- **Model time** (UTC) drives data, the reservoir, substorm phases,
+  assimilation and the oval. It advances on a **fixed 1 s grid**, independent
+  of the Journey speed, so the slow sky is bit-identical at 1×, 24× or 1440×
+  (tested in the sketch). Model time selects data from the `WorldSnapshot`
+  track and drives astronomy and magnetic local time (MLT).
+- **Real time** drives the curtain waves, brightness, pulsations and
+  whistlers: ticks at **100 Hz** of audio sample time (ADR-0007). One tick
+  advances model time by 10 ms × speed (Journey) or 0 (Freeze).
+Rule: anything with a period under about a minute lives on real time.
 
 ## 2. State
 
@@ -111,9 +118,51 @@ N, c, γ, k, α, τ_leak, W_c and its jitter, release shape, brightness time
 constants, pulsation ranges, assimilation gains and thresholds. Macros expose
 only musical meaning (Storm scales sensitivity to the data; see `01` §6).
 
-## 8. Questions for the prototype (T1.2)
-- N = 64 or 128 for sound vs image (could differ: image interpolates).
-- Does `v·Bs` give a convincing growth phase on 10 May 2024, or is Newell's
-  coupling needed?
-- How often should onsets happen on a quiet day so it never feels dead?
-- What H-bay threshold catches CMO's real onsets without false ones?
+## 8. Questions for the prototype (T1.2) — answers from the sketch
+- **N = 64 is enough for the image:** the renderer interpolates 4 columns per
+  node. For sound, decide in T1.3.
+- **`v·Bs` is convincing on 10 May 2024,** but on its own it fired an onset
+  every ~40 min. A 90 min refractory time and a release cap (3 × threshold)
+  shape it into a substorm every ~1.5 h through the storm. Newell's coupling
+  isn't needed yet.
+- **Quiet days:** loading alone never reaches the threshold at Kp ≤ 1, so
+  seeded **pseudo-breakups** (0.25 per hour after 2.5 h without an onset,
+  strength 0.4) give about one soft event per 8 h. Continuous curtain motion
+  does the rest.
+- **H-bay threshold:** −45 nT per 5 min gave 50 onsets in 48 h on the moderate
+  day. **−80 nT per 5 min while ΔH ≤ −150 nT** (nightside, 60 min refractory)
+  catches CMO's ~11 UT bays on both nights (onsets 11:30 and 11:01 UT) with few
+  extras.
+- **H baseline:** the median of the calmest 6 h of the track (the lowest
+  standard deviation). It's robust on all three days; Live needs a rolling
+  version.
+
+## 9. Tuned constants (sketch defaults, 2026-11-05)
+Source of truth: `prototype/sky/model.js` `DEFAULTS` (also stored in the
+goldens).
+
+| Group | Constants |
+|---|---|
+| Coupling | E = v·max(0, −Bz)/1000 mV/m, smoothed τ 5 min; Kp smoothed τ 20 min |
+| Reservoir | load 0.8 /h per mV/m + quiet 0.2 /h (seeded ±40 % per 10 min); leak τ 2 h; threshold 2.5 (±30 % per cycle) |
+| Release | 70 % of W₀ over τ 10 min, W₀ ≤ 3 thresholds; strength × (0.35 + E/2), ≤ 1.2 for loaded onsets |
+| Phases | expansion 14–26 min, recovery 50–100 min (seeded); refractory 90 min; growth when E > 0.5 mV/m |
+| Data-forced onset | ΔH over 5 min ≤ −80 nT and ΔH ≤ −150 nT, MLT 18–06, refractory 60 min |
+| Assimilation | gain τ 10 min, dead zone 60 nT (inside it the gain drifts back to 1 over ~1 h), range 0.4–2.5; model ΔH = −700 nT × gain × (0.25·activity + unloading) × proximity × night |
+| Oval (midnight) | equatorward edge 66.5° − 2.0°·Kp, poleward edge 75° − 0.45°·Kp, +7° at noon; arc halfway between; growth −1.5°, expansion +2.5° poleward |
+| Curtain | N 64 over station maglon ± 25°; c 2.2 nodes/s, γ 0.35 /s, k 0.03 /s²; forcing 900 km/s² × (0.15 + activity) × √gain; surge 4000 km/s², moving west 1.2 nodes/min; folds ≤ ±160 km |
+| Brightness | base 0.09 + 0.45·activity·patch + 1.1·unloading·envelope; × night factor × gain × motion × pulsation; rise τ 0.5 s, fall τ 3 s |
+| Events | pulsating patches of 6 nodes, 3–14 s; Pc ringing 40 s; whistlers 0.08 /s × activity² × (1 + 2·unloading) |
+
+## 10. Open after the sketch
+- **One arc is too few for great storms.** On 10 May 2024 the arc stays at
+  59–68° geomagnetic latitude, low in the southern sky from CMO, while the
+  real storm put aurora overhead as well. Options: a second, poleward arc
+  during storms, or an arc position that follows activity.
+- **A full corona needs strong folds overhead.** The geometry is right (an
+  overhead arc collapses edge-on to a band through magnetic zenith, and rays
+  converge there), but the folds are too small for a radiating corona.
+- **Snapshot fields the renderer needs** beyond `03-architecture.md` §B:
+  per-node geomagnetic latitude and longitude, the oval edges (`eqLat`,
+  `poleLat`), gain, unloading, coupling, MLT, the last whistler. Fold these
+  into `SkySnapshot.h` in T2.1.
