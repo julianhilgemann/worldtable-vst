@@ -24,7 +24,9 @@
 #include "dsp/SkySound.h"
 #include "dsp/Drive.h"
 #include "dsp/fx/AutoGain.h"
+#include "dsp/fx/Chorus.h"
 #include "dsp/fx/Limiter.h"
+#include "dsp/fx/Phaser.h"
 #include "dsp/fx/StereoDelay.h"
 #include "dsp/fx/ShimmerReverb.h"
 #include "sky/SkyFeed.h"
@@ -175,6 +177,24 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
     drive.prepare (o.rate);
     drive.setDrive (0.15f);
 
+    dsp::Phaser phaser;
+    phaser.prepare (o.rate);
+    dsp::Phaser::Settings ps;
+    ps.rateHz = 0.05f;
+    ps.depth = 0.6f;
+    ps.feedback = 0.3f;
+    ps.mix = 0.4f;
+    ps.stages = 6;
+    phaser.setSettings (ps);
+
+    dsp::Chorus chorus;
+    chorus.prepare (o.rate);
+    dsp::Chorus::Settings cs;
+    cs.rateHz = 0.1f;
+    cs.depthMs = 3.0f;
+    cs.mix = 0.25f;
+    chorus.setSettings (cs);
+
     dsp::StereoDelay delay;
     delay.prepare (o.rate);
     dsp::StereoDelay::Settings ds;
@@ -230,6 +250,8 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
                 l[k] = drive.process (l[k]);
                 r[k] = drive.process (r[k]);
             }
+            phaser.process (l, r, n);
+            chorus.process (l, r, n);
             delay.process (l, r, n);
             reverb.process (l, r, n);
             autoGain.process (l, r, n);
@@ -314,7 +336,7 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
               << dsp::nameOf (sound.chord()).label.data() << ", "
               << (runtime.model().current().onsetCount - onsetsBefore) << " onsets in the file\n"
               << "length:  " << o.seconds << " s @ " << o.rate << " Hz" << (o.dry ? " (dry)"
-                                                                               : " (drive -> delay -> shimmer -> autogain -> dc -> limiter)") << "\n"
+                                                                               : " (drive -> phaser -> chorus -> delay -> shimmer -> autogain -> dc -> limiter)") << "\n"
               << "peak:    " << juce::Decibels::gainToDecibels (peak, -200.0f) << " dBFS\n"
               << "rms:     " << juce::Decibels::gainToDecibels (static_cast<float> (rms), -200.0f) << " dBFS\n"
               << "maxStep: " << maxDelta << "\n"

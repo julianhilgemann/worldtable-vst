@@ -99,18 +99,19 @@ private:
         }
     };
 
-    /** Two-tap delay-line pitch shifter (+12 st), Hann-windowed crossfade. */
+    /** Two-tap delay-line pitch shifter, Hann-windowed crossfade. `ratio` 2 is +12 st,
+        3 is +19 st (an octave and a fifth): the delay shrinks by ratio − 1 samples per sample. */
     struct PitchShifter
     {
         DelayLine line;
         float windowSamples = 2048.0f;
         float phase = 0.0f;
+        float ratio = 2.0f;
 
         float process (float x) noexcept
         {
             line.write (x);
-            // ratio 2 → delay shrinks by one sample per sample
-            phase += 1.0f / windowSamples;
+            phase += (ratio - 1.0f) / windowSamples;
             if (phase >= 1.0f)
                 phase -= 1.0f;
             float p2 = phase + 0.5f;
@@ -134,7 +135,7 @@ private:
     std::array<double, kLines> modPhase {}, modInc {};
     float lpCoef = 0.5f, modDepth = 0.0f, predelaySamples = 0.0f;
 
-    PitchShifter shifter;
+    PitchShifter shifter, shifterFifth;
     float shimmerGain = 0.0f, shimmerHp = 0.0f, shimmerLp = 0.0f, shimmerHpCoef = 0.0f, shimmerLpCoef = 0.0f;
     float shimmerFeedback = 0.0f;
 
