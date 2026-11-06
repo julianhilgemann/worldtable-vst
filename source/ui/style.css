@@ -89,6 +89,11 @@ button { font: inherit; color: inherit; }
   color: var(--muted);
 }
 .mono { font-family: var(--mono); }
+/* a live number in a fixed slot (--w characters), right-aligned, so its neighbours never move */
+.num { display: inline-block; min-width: calc(var(--w, 4) * 1ch); text-align: right; }
+.num.l { text-align: left; }
+/* space between fields, in place of separator glyphs */
+.gap { margin-left: 12px; }
 .dim { color: var(--muted); }
 .faint { color: var(--faint); }
 .c-green { color: var(--o-green); }
@@ -203,8 +208,9 @@ header {
 #dome-wrap .tr { right: 0; top: 0; text-align: right; }
 #dome-wrap .bl { left: 0; bottom: 0; }
 #dome-wrap .br { right: 0; bottom: 0; text-align: right; }
-.legend span { display: block; }
-.legend i { display: inline-block; width: 12px; height: 1.5px; margin: 0 8px 3px 0; vertical-align: middle; }
+.legend { display: grid; grid-template-columns: 12px auto auto auto; column-gap: 8px; align-items: center; }
+.legend i { width: 12px; height: 1.5px; }
+.legend .r { text-align: right; }
 
 #right {
   display: grid;
@@ -338,6 +344,9 @@ nav#tabs .chain { margin-left: auto; align-self: center; font-family: var(--mono
 .knob .dot { fill: var(--kc); }
 .knob .zero { stroke: rgba(201, 211, 230, 0.35); }
 .knob .live { stroke: var(--kc); fill: none; }
+/* label and value are centred under the arc but take no width, so a changing value never
+   resizes the knob and never pushes its neighbours */
+.knob .label, .knob .value { width: 0; display: flex; justify-content: center; }
 .knob .label { font-family: var(--mono); font-size: 10px; line-height: 12px; color: var(--muted); white-space: nowrap; }
 .knob .value { font-family: var(--mono); font-size: 10px; line-height: 12px; color: var(--faint); white-space: nowrap; transition: color 0.2s; }
 .knob:hover .value, .knob.active .value { color: var(--ink); }

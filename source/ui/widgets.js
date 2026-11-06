@@ -41,7 +41,7 @@
   const signedPct = (v) => { const p = Math.round((v - 0.5) * 200); return p === 0 ? "neutral" : (p > 0 ? "+" : "−") + Math.abs(p) + " %"; };
   const FORMAT = {
     macro_storm: signedPct, macro_glow: signedPct, macro_space: signedPct, macro_drift: signedPct,
-    macro_breath: (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " % · 5/min"),
+    macro_breath: (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " % at 5/min"),
     progression: (v) => (v < 0.005 ? "hold" : v > 0.995 ? "follow sky" : Math.round(v * 100) + " %"),
     ph_stages: (v) => v + " st.",
     lim_ceiling: (v) => v.toFixed(1) + " dB",
@@ -148,7 +148,7 @@
       val.textContent = UI.format(id, v);
     });
 
-    root.title = m.name + " — drag · shift fine · double-click resets";
+    root.title = m.name + " — drag, shift for fine, double-click resets";
     verticalDrag(root, id);
 
     return {

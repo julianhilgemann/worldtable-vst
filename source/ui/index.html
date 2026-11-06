@@ -28,7 +28,7 @@
         </svg>
         <div class="stack">
           <div class="word">Worldtable</div>
-          <div class="sub">magnetosphere · drone</div>
+          <div class="sub">a magnetosphere drone</div>
         </div>
       </div>
 
@@ -52,12 +52,12 @@
       <section id="dome-wrap" aria-label="All-sky view">
         <canvas id="dome"></canvas>
         <canvas id="dome-ov"></canvas>
-        <div class="corner tl">All-sky · <b id="dome-station">CMO</b><br><span id="dome-place">College, Alaska</span></div>
+        <div class="corner tl">All-sky<b id="dome-station" class="gap">CMO</b><br><span id="dome-place">College, Alaska</span></div>
         <div class="corner tr" id="dome-astro">sun —<br>moon —</div>
         <div class="corner bl legend">
-          <span><i style="background:#ff6b6b"></i>630.0 nm · O · 250 km</span>
-          <span><i style="background:#5cf2a0"></i>557.7 nm · O · 110 km</span>
-          <span><i style="background:#8f7bff"></i>427.8 nm · N₂⁺ · 100 km</span>
+          <i style="background:#ff6b6b"></i><span>630.0 nm</span><span>O</span><span class="r">250 km</span>
+          <i style="background:#5cf2a0"></i><span>557.7 nm</span><span>O</span><span class="r">110 km</span>
+          <i style="background:#8f7bff"></i><span>427.8 nm</span><span>N₂⁺</span><span class="r">100 km</span>
         </div>
         <div class="corner br" id="dome-oval">arc —<br>MLT —</div>
       </section>
@@ -99,7 +99,7 @@
           <div class="head">
             <span class="cap">Macros</span>
             <span class="spacer"></span>
-            <span class="note">centre is neutral · double-click resets</span>
+            <span class="note">centre is neutral, double-click resets</span>
           </div>
           <div class="macro-row">
             <div data-knob="macro_storm" data-label="Storm" data-size="macro" data-color="red" data-live="storm"></div>
@@ -122,14 +122,14 @@
       <button type="button" data-tab="sound" class="on">Sound</button>
       <button type="button" data-tab="fx">Space FX</button>
       <button type="button" data-tab="sky">Sky</button>
-      <span class="chain" id="tab-hint">harmony · layers</span>
+      <span class="chain" id="tab-hint">harmony, layers</span>
     </nav>
 
     <section id="pages">
       <!-- ---------------------------------------------------------- Sound -->
       <div class="page on" data-page="sound">
         <div class="module frame" style="flex: 0 0 770px">
-          <div class="head"><span class="cap"><b>Harmony</b></span><span class="note">the sky writes the progression · MIDI holds a chord</span></div>
+          <div class="head"><span class="cap"><b>Harmony</b></span><span class="note">the sky writes the progression, MIDI holds a chord</span></div>
           <div class="harmony-grid">
             <div class="choice-stack">
               <div class="choice-line"><span class="cap">key</span><div data-keys="key"></div></div>
@@ -149,7 +149,7 @@
         </div>
 
         <div class="module frame" style="flex: 1">
-          <div class="head"><span class="cap"><b>Layers</b></span><span class="note">red · green · violet</span></div>
+          <div class="head"><span class="cap"><b>Layers</b></span><span class="note">red, green, violet</span></div>
           <div class="layers-grid">
             <canvas id="cv-layers" title="Each layer's level and ring-out time"></canvas>
             <div class="layer-knobs">
@@ -205,7 +205,7 @@
           </div>
         </div>
         <div class="module frame" style="flex: 1">
-          <div class="head"><span class="cap"><b>Reverb</b> · shimmer</span><span class="spacer"></span><span class="note" id="verb-note"></span><span class="arrow">→</span></div>
+          <div class="head"><span class="cap"><b>Shimmer reverb</b></span><span class="spacer"></span><span class="note" id="verb-note"></span><span class="arrow">→</span></div>
           <canvas class="view" id="cv-reverb"></canvas>
           <div class="knobs">
             <div data-knob="rev_size" data-label="Size" data-color="violet"></div>
@@ -249,11 +249,11 @@
           </div>
         </div>
         <div class="module frame" style="flex: 0 0 236px">
-          <div class="head"><span class="cap"><b>Data</b></span><span class="note">bundled · offline</span></div>
+          <div class="head"><span class="cap"><b>Data</b></span><span class="note">bundled, offline</span></div>
           <div class="info-grid" style="grid-template-columns: auto minmax(0,1fr)">
-            <span class="k">H</span><span>USGS Geomagnetism · <b>CMO</b></span>
-            <span class="k">Kp</span><span>GFZ Potsdam · NOAA SWPC</span>
-            <span class="k">wind</span><span>NASA OMNI · NOAA SWPC</span>
+            <span class="k">H</span><span>USGS Geomagnetism, <b>CMO</b></span>
+            <span class="k">Kp</span><span>GFZ Potsdam, NOAA SWPC</span>
+            <span class="k">wind</span><span>NASA OMNI, NOAA SWPC</span>
             <span class="k">stars</span><span>Yale Bright Star Catalogue</span>
           </div>
         </div>

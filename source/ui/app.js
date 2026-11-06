@@ -28,7 +28,7 @@
   for (const n of document.querySelectorAll("[data-toggle]")) UI.Toggle(n, n.dataset.toggle, n.dataset.label || "");
 
   // ---------------------------------------------------------------- tabs
-  const HINTS = { sound: "harmony · layers", fx: "drive → phaser → chorus → delay → reverb → output", sky: "observer · journey · view" };
+  const HINTS = { sound: "harmony, layers", fx: "drive → phaser → chorus → delay → reverb → output", sky: "observer, journey, view" };
   const hash = new URLSearchParams(location.hash.slice(1));
   // #shot: no CSS transitions (headless review screenshots run on virtual time, which they ignore)
   if (hash.has("shot")) document.documentElement.classList.add("shot");
@@ -150,10 +150,13 @@
 
   // ---------------------------------------------------------------- the day
   const DAY_LABELS = {
-    "2024-05-10": "10–11 May 2024 · Gannon storm (Kp 9)",
-    "2025-01-19": "19–20 Jan 2025 · moderate, substorms",
-    "2025-01-25": "25–26 Jan 2025 · quiet",
+    "2024-05-10": "10–11 May 2024, Gannon storm (Kp 9)",
+    "2025-01-19": "19–20 Jan 2025, moderate, substorms",
+    "2025-01-25": "25–26 Jan 2025, quiet",
   };
+  /** A live number in a fixed slot of w characters (mono), so nothing beside it moves when it changes. */
+  const num = (text, w, tag = "b", cls = "") => `<${tag} class="num${cls ? " " + cls : ""}" style="--w:${w}">${text}</${tag}>`;
+  const signed = (v, d) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d);
   const WINDS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
   const wind = (az) => WINDS[Math.round(((az % 360) + 360) % 360 / 22.5) % 16];
   const latLon = (lat, lon) => `${Math.abs(lat).toFixed(2)}${lat >= 0 ? "N" : "S"} ${Math.abs(lon).toFixed(2)}${lon >= 0 ? "E" : "W"}`;
@@ -168,10 +171,10 @@
       $("dome-station").textContent = st.code;
       $("dome-place").textContent = st.name;
       $("info-station").innerHTML =
-        `<span class="k">station</span><span><b>${st.code}</b> · ${st.name}</span>` +
-        `<span class="k">position</span><span>${Math.abs(st.lat).toFixed(2)}° ${st.lat >= 0 ? "N" : "S"} · ${Math.abs(st.lon).toFixed(2)}° ${st.lon >= 0 ? "E" : "W"} · ${Math.round(st.elevKm * 1000)} m</span>` +
-        `<span class="k">geomag</span><span>${st.mlat.toFixed(1)}° lat · ${st.mlon.toFixed(1)}° lon (dipole)</span>` +
-        `<span class="k">zenith</span><span>rays converge at <b>${st.mzEl.toFixed(0)}°</b> · ${wind(st.mzAz)} (MZ)</span>` +
+        `<span class="k">station</span><span><b>${st.code}</b><span class="gap">${st.name}</span></span>` +
+        `<span class="k">position</span><span>${Math.abs(st.lat).toFixed(2)}° ${st.lat >= 0 ? "N" : "S"}<span class="gap">${Math.abs(st.lon).toFixed(2)}° ${st.lon >= 0 ? "E" : "W"}</span><span class="gap">${Math.round(st.elevKm * 1000)} m</span></span>` +
+        `<span class="k">geomag</span><span>${st.mlat.toFixed(1)}° lat<span class="gap">${st.mlon.toFixed(1)}° lon (dipole)</span></span>` +
+        `<span class="k">zenith</span><span>rays converge at <b>${st.mzEl.toFixed(0)}°</b><span class="gap">${wind(st.mzAz)} (MZ)</span></span>` +
         `<span class="k">sky</span><span id="info-astro">—</span>`;
     }
   });
@@ -224,11 +227,11 @@
       // open with what the day has already done: the last two onsets before now, then the start
       started = true;
       for (const e of S.day.onsets.filter((o) => o.utc < sky.utc - 30).slice(-2))
-        ticker.push(`<span class="t">${ut(e.utc)} UT</span><span class="faint">substorm onset · ${KIND[e.kind] || e.kind}</span>`);
-      ticker.push(`<span class="t">${ut(sky.utc)} UT</span>journey · ${DAY_LABELS[sky.day] || sky.day} · ${Math.round(sky.speed)}×`);
+        ticker.push(`<span class="t">${ut(e.utc)} UT</span><span class="faint">substorm onset, ${KIND[e.kind] || e.kind}</span>`);
+      ticker.push(`<span class="t">${ut(sky.utc)} UT</span>journey ${DAY_LABELS[sky.day] || sky.day}, at ${Math.round(sky.speed)}×`);
     }
     for (const e of sky.newOnsets || [])
-      ticker.push(`<span class="t">${ut(e.utc)} UT</span><b class="${e.kind === "pseudo" ? "" : "c-green"}">substorm onset</b> · ${KIND[e.kind] || e.kind} · ${e.strength.toFixed(2)}`);
+      ticker.push(`<span class="t">${ut(e.utc)} UT</span><b class="${e.kind === "pseudo" ? "" : "c-green"}">substorm onset</b>, ${KIND[e.kind] || e.kind}, strength ${e.strength.toFixed(2)}`);
     if (lastPhase && sky.phase !== lastPhase && sky.phase !== "onset")
       ticker.push(`<span class="t">${ut(sky.utc)} UT</span>${sky.phase} begins`);
     lastPhase = sky.phase;
@@ -239,30 +242,30 @@
     if (t - textShown < 250) return;   // text at 4 Hz is plenty
     textShown = t;
     const date = new Date(sky.utc * 1000);
-    $("ro-date").innerHTML = `<b>${date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</b>`;
+    $("ro-date").innerHTML = `<b class="num l" style="--w:11">${date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</b>`;
     $("ro-ut").innerHTML = `<b>${ut(sky.utc)}</b> UT`;
-    $("ro-kp").innerHTML = `Kp <b>${sky.kp.toFixed(1)}</b>`;
+    $("ro-kp").innerHTML = `Kp ${num(sky.kp.toFixed(1), 3, "b", "l")}`;
     $("ro-kp").classList.toggle("storm", sky.kp >= 5);
-    $("ro-bz").innerHTML = `Bz <b>${sky.bz >= 0 ? "+" : "−"}${Math.abs(sky.bz).toFixed(1)}</b> nT`;
+    $("ro-bz").innerHTML = `Bz ${num(signed(sky.bz, 1), 5)} nT`;
     $("ro-bz").classList.toggle("south", sky.bz < 0);
-    $("ro-v").innerHTML = `v <b>${Math.round(sky.wind)}</b> km/s`;
+    $("ro-v").innerHTML = `v ${num(Math.round(sky.wind), 4)} km/s`;
     const frozen = (sky.speed || 0) < 0.01;
-    $("mode").innerHTML = `<i></i>${frozen ? "Frozen" : "Journey"} <b id="mode-speed">${frozen ? "" : Math.round(sky.speed) + "×"}</b>`;
+    $("mode").innerHTML = `<i></i>${frozen ? "Frozen" : "Journey"} <b id="mode-speed" class="num l" style="--w:4">${frozen ? "" : Math.round(sky.speed) + "×"}</b>`;
 
     const e = clamp(sky.energy / 1.5, 0, 1);
     $("sky-row").innerHTML =
-      `<span>ΔH <b>${Math.round(sky.dh)}</b> nT <span class="faint">model ${Math.round(sky.dhModel)}</span></span>` +
-      `<span>E <b>${(sky.coupling || 0).toFixed(1)}</b> mV/m</span>` +
-      `<span>energy<span class="bar"><i style="width:${(e * 100).toFixed(1)}%"></i><u style="left:${(100 / 1.5).toFixed(1)}%"></u></span><b>${sky.energy.toFixed(2)}</b></span>` +
-      `<span>activity <b>${sky.activity.toFixed(2)}</b></span>` +
-      `<span>whistlers <b>${sky.whistlers}</b></span>`;
+      `<span>ΔH ${num(Math.round(sky.dh), 5)} nT <span class="faint">model ${num(Math.round(sky.dhModel), 5, "span", "l")}</span></span>` +
+      `<span>E ${num((sky.coupling || 0).toFixed(1), 4)} mV/m</span>` +
+      `<span>energy<span class="bar"><i style="width:${(e * 100).toFixed(1)}%"></i><u style="left:${(100 / 1.5).toFixed(1)}%"></u></span>${num(sky.energy.toFixed(2), 4, "b", "l")}</span>` +
+      `<span>activity ${num(sky.activity.toFixed(2), 4, "b", "l")}</span>` +
+      `<span>whistlers ${num(sky.whistlers, 2, "b", "l")}</span>`;
     $("sky-note").textContent = { quiet: "quiet: the arc rests low", growth: "growth: loading from the solar wind", onset: "onset: the reservoir lets go", recovery: "recovery: patchy, pulsating" }[sky.phase] || "";
     $("sky-onsets").textContent = `${sky.onsets} onset${sky.onsets === 1 ? "" : "s"}`;
     if (d) {
-      $("dome-astro").innerHTML = `sun <b>${d.sunEl >= 0 ? "+" : "−"}${Math.abs(d.sunEl).toFixed(1)}°</b> · ${wind(d.sunAz)}<br>moon <b>${Math.round(d.moonIllum * 100)} %</b> · ${d.moonEl >= 0 ? "+" : "−"}${Math.abs(d.moonEl).toFixed(0)}°`;
-      if ($("info-astro")) $("info-astro").innerHTML = `sun ${d.sunEl.toFixed(1)}° el · moon ${Math.round(d.moonIllum * 100)} % lit, ${d.moonEl.toFixed(0)}° el`;
+      $("dome-astro").innerHTML = `sun ${num(signed(d.sunEl, 1) + "°", 6)}${num(wind(d.sunAz), 3, "span", "gap")}<br>moon ${num(Math.round(d.moonIllum * 100) + " %", 5)}${num(signed(d.moonEl, 0) + "°", 4, "span", "gap")}`;
+      if ($("info-astro")) $("info-astro").innerHTML = `sun ${d.sunEl.toFixed(1)}° el, moon ${Math.round(d.moonIllum * 100)} % lit, ${d.moonEl.toFixed(0)}° el`;
     }
-    $("dome-oval").innerHTML = `arc <b>${sky.arcLat.toFixed(1)}°</b> mlat<br>MLT <b>${sky.mlt.toFixed(1)} h</b>`;
+    $("dome-oval").innerHTML = `arc ${num(sky.arcLat.toFixed(1) + "°", 5)} mlat<br>MLT ${num(sky.mlt.toFixed(1) + " h", 6)}`;
     if (tab === "sky") showJourney(sky);
   }
 
@@ -270,8 +273,8 @@
     const day = S.day;
     $("info-journey").innerHTML =
       `<span class="k">day</span><span><b>${DAY_LABELS[sky.day] || sky.day}</b></span>` +
-      `<span class="k">speed</span><span><b>${Math.round(sky.speed)}×</b> · ${sky.speed > 0 ? (24 / sky.speed).toFixed(sky.speed >= 24 ? 1 : 0) + " h of listening per day" : "frozen"}</span>` +
-      `<span class="k">now</span><span><b>${new Date(sky.utc * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} ${ut(sky.utc)} UT</b> · MLT ${sky.mlt.toFixed(1)} h</span>`;
+      `<span class="k">speed</span><span>${num(Math.round(sky.speed) + "×", 4, "b", "l")}<span class="gap">${sky.speed > 0 ? (24 / sky.speed).toFixed(sky.speed >= 24 ? 1 : 0) + " h of listening per day" : "frozen"}</span></span>` +
+      `<span class="k">now</span><span><b>${new Date(sky.utc * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} ${ut(sky.utc)} UT</b><span class="gap">MLT ${num(sky.mlt.toFixed(1), 4, "span")} h</span></span>`;
     if (!day) return;
     const span = day.phase.length * day.step;
     const f = clamp((sky.utc - day.t0) / span, 0, 1);
@@ -281,8 +284,8 @@
     const leftS = (day.t0 + span - sky.utc) / Math.max(1e-6, sky.speed);
     const past = day.onsets.filter((o) => o.utc <= sky.utc).length;
     $("info-journey-2").innerHTML =
-      `<span class="k">left</span><span><b>${sky.speed > 0 ? Math.round(leftS / 60) + " min" : "—"}</b> of listening to the end of the recording</span>` +
-      `<span class="k">onsets</span><span><b>${past}</b> of ${day.onsets.length} in this day</span>` +
+      `<span class="k">left</span><span>${num(sky.speed > 0 ? Math.round(leftS / 60) + " min" : "—", 7, "b", "l")} of listening to the end of the recording</span>` +
+      `<span class="k">onsets</span><span>${num(past, 2, "b", "l")} of ${day.onsets.length} in this day</span>` +
       `<span class="k">choice</span><span class="faint">day and speed arrive with the autopilot (M4)</span>`;
   }
 
@@ -299,7 +302,7 @@
     env += (Math.max(tel.peakL || 0, tel.peakR || 0) - env) * 0.05;
     if (tel.autoGain) {
       const db = 20 * Math.log10(tel.autoGain);
-      $("out-note").textContent = `auto ${db >= 0 ? "+" : "−"}${Math.abs(db).toFixed(1)} dB`;
+      $("out-note").innerHTML = `auto ${num(signed(db, 1), 4, "span")} dB`;
     }
   });
 
@@ -347,7 +350,7 @@
       fx.delay.draw({ time: P("dly_time"), fb: P("dly_fb"), tone: P("dly_tone"), mix: P("dly_mix"), ping: P("dly_pingpong") });
       fx.reverb.draw({ size: P("rev_size"), decay: P("rev_decay"), damp: P("rev_damp"), pre: P("rev_predelay"), shimmer: P("rev_shimmer"), mix: P("rev_mix") }, tel.verb || 0);
       fx.output.draw(tel.peakL || 0, tel.peakR || 0, tel.gr || 1, P("lim_ceiling"));
-      $("verb-note").textContent = `${P("rev_decay").toFixed(1)} s · size ${Math.round(P("rev_size") * 100)} %`;
+      $("verb-note").innerHTML = `${num(P("rev_decay").toFixed(1), 4, "span")} s<span class="gap">size ${num(Math.round(P("rev_size") * 100), 3, "span")} %</span>`;
     }
   }
   requestAnimationFrame(frame);

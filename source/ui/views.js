@@ -208,7 +208,7 @@
       ctx.fillStyle = C.green; ctx.fillText("— " + (day.station ? day.station.code : "CMO"), 10, 37);
       ctx.fillStyle = C.violet; ctx.fillText("— model", 52, 37);
       ctx.fillStyle = C.ink; ctx.fillText("energy", 10, 48);
-      ctx.fillStyle = C.red; ctx.fillText("· E", 50, 48);
+      ctx.fillStyle = C.red; ctx.fillText("E", 56, 48);
       ctx.fillStyle = C.muted; ctx.fillText("phase", 10, 58);
       dirty = false;
     }
