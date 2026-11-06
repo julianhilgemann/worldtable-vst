@@ -32,18 +32,25 @@
   const hash = new URLSearchParams(location.hash.slice(1));
   // #shot: no CSS transitions (headless review screenshots run on virtual time, which they ignore)
   if (hash.has("shot")) document.documentElement.classList.add("shot");
-  let detailsOpen = false;
-  function showDetails(open) {
-    detailsOpen = open;
-    $("details").hidden = !open;
-    $("details-btn").setAttribute("aria-expanded", String(open));
-    if (open && S.tel.sky) showJourney(S.tel.sky);
+  /** A button that opens a panel; Escape or a click outside closes it. */
+  function popover(btnId, panelId, onOpen) {
+    const btn = $(btnId), panel = $(panelId);
+    const p = { open: false, set(open) {
+      p.open = open;
+      panel.hidden = !open;
+      btn.setAttribute("aria-expanded", String(open));
+      if (open && onOpen) onOpen();
+    } };
+    btn.addEventListener("click", (e) => { e.stopPropagation(); p.set(!p.open); });
+    panel.addEventListener("click", (e) => e.stopPropagation());
+    document.addEventListener("click", () => { if (p.open) p.set(false); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && p.open) p.set(false); });
+    return p;
   }
-  $("details-btn").addEventListener("click", (e) => { e.stopPropagation(); showDetails(!detailsOpen); });
-  $("details").addEventListener("click", (e) => e.stopPropagation());
-  document.addEventListener("click", () => { if (detailsOpen) showDetails(false); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && detailsOpen) showDetails(false); });
-  if (hash.has("details")) showDetails(true);   // for review screenshots
+  const details = popover("details-btn", "details", () => { if (S.tel.sky) showJourney(S.tel.sky); });
+  const viewPop = popover("view-btn", "view-panel");
+  if (hash.has("details")) details.set(true);   // for review screenshots
+  if (hash.has("view")) viewPop.set(true);
 
   // ---------------------------------------------------------------- scaling
   function rescale() {
@@ -267,7 +274,7 @@
       if ($("info-astro")) $("info-astro").innerHTML = `sun ${d.sunEl.toFixed(1)}° el, moon ${Math.round(d.moonIllum * 100)} % lit, ${d.moonEl.toFixed(0)}° el`;
     }
     $("dome-oval").innerHTML = `arc ${num(sky.arcLat.toFixed(1) + "°", 5)} mlat<br>MLT ${num(sky.mlt.toFixed(1) + " h", 6)}`;
-    if (detailsOpen) showJourney(sky);
+    if (details.open) showJourney(sky);
   }
 
   function showJourney(sky) {

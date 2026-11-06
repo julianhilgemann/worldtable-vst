@@ -144,8 +144,8 @@
           <canvas id="dome-ov"></canvas>
           <div class="corner tl">All-sky<b id="dome-station" class="gap">CMO</b><br><span id="dome-place">College, Alaska</span></div>
           <div class="corner tr" id="dome-astro">sun —<br>moon —</div>
-          <div class="view-panel frame" aria-label="View">
-            <div class="head"><span class="cap"><b>View</b></span></div>
+          <button type="button" class="view-btn" id="view-btn" aria-expanded="false" aria-controls="view-panel" title="What the dome shows">View</button>
+          <div class="view-panel frame" id="view-panel" aria-label="View" hidden>
             <div class="toggle-stack">
               <div class="toggle on" data-view="stars"><i></i><span>Stars and moon</span></div>
               <div class="toggle on" data-view="dayNight"><i></i><span>Day / night</span></div>

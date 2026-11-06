@@ -208,13 +208,24 @@ header {
   background: none;
 }
 #dome-wrap canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
-/* the view switches sit on the dome's left edge, above the legend */
-.view-panel {
-  position: absolute; left: 0; bottom: 64px; width: 172px;
-  padding: 8px 12px 12px;
-  background-color: rgba(5, 7, 13, 0.82);
+/* View: a small button on the dome's left edge, above the legend; the switches open over the
+   dome only when asked for */
+.view-btn {
+  position: absolute; left: 0; bottom: 60px; z-index: 2;
+  height: 24px; padding: 0 10px; cursor: pointer;
+  background: rgba(5, 7, 13, 0.6); border: 1px solid var(--hair-strong); border-radius: 4px;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  transition: color 0.2s, background-color 0.2s;
 }
-.view-panel .toggle-stack { margin-top: 4px; }
+.view-btn:hover, .view-btn[aria-expanded="true"] { color: var(--ink); }
+.view-btn:focus-visible { outline: 1px solid var(--hair-strong); outline-offset: 2px; }
+.view-panel {
+  position: absolute; left: 0; bottom: 92px; width: 172px; z-index: 2;
+  padding: 12px;
+  background-color: rgba(5, 7, 13, 0.9);
+}
+.view-panel[hidden] { display: none; }
+.view-panel .toggle-stack { margin-top: 0; }
 .view-panel .toggle { white-space: nowrap; }
 #dome-wrap .corner {
   position: absolute;
