@@ -5,7 +5,7 @@ a file `spec/tasks/Tx.y-<slug>.md` (template in `08-agentic-workflow.md`).
 Build order from ADR-0002: prototype → C++ Sky Model and resonators →
 plug-in renderer → OSC.
 
-## Where we are (2026-11-05)
+## Where we are (2026-11-06)
 | Work | State |
 |---|---|
 | T0.1 skeleton: CMake + JUCE + Catch2, CI macOS + Windows | merged (#1); Windows CI still red (T0.4), tests not in CI (T0.3) |
@@ -18,8 +18,10 @@ plug-in renderer → OSC.
 | M3: T3.5a FX I (AutoGain, DC, render chain) | merged (#15) |
 | M3: T3.5b FX II (Phaser, Chorus, shimmer fifth) | merged (#16) |
 | M3: T3.6 the instrument: SkySound + FX in the plug-in, parameters v1, chord readout | merged |
+| M6 (pulled forward): T6.1 the v1 UI: dome, instrument layer, astronomy (T6.1–T6.3) | merged |
 | M3: T3.6b raw-field wavetable layer | after T3.4 |
 | M3: T3.4 sparkles/whistlers/Breath | after (needs the owner's design/ear) |
+| M6: T6.4 UI cost pass | open |
 
 **Reused from the POC:** CMake/CI, `gen_params.py`, `WorldtableRender`,
 `WorldtableUICheck`, WebView bridge and mock backend, Drive, SVF, LFO, ADSR,
@@ -27,7 +29,7 @@ delay, shimmer reverb, limiter, geomag parser and CMO factory data, cache,
 table exchange (raw-field layer).
 **Retired (T3.6):** Euclid, `wavespec` source and builder B, the POC voice (`Engine`,
 `Voice`, LFOs, envelopes), the world-data feed and its UI panels, wavetable as the main
-voice, the yellow-on-navy look (partly; the final UI is M6), the ambient-level switcher.
+voice, the yellow-on-navy look and the TP.2 ambient background (T6.1), the ambient-level switcher.
 
 ## M0 — Foundations (in parallel with M1)
 - T0.3 ctest + pluginval in CI.
@@ -87,9 +89,10 @@ Exit: owner signs off the look and the sound direction; mapping recorded in
 **Hear:** today's sky over College, Alaska.
 
 ## M6 — UI
-- T6.1 Dome renderer (WebGL) fed by `SkySnapshot`.
-- T6.2 Instrument layer: header readouts, magnetogram, macros, ticker, tabs.
-- T6.3 Astronomy layer: sun, moon, stars, day shimmer, toggles.
+Pulled forward after M3 on the owner's review of the T3.6 shell (2026-11-06).
+- T6.1 Dome renderer (WebGL) fed by `SkySnapshot`. **Done, with T6.2 and T6.3 in one task.**
+- T6.2 Instrument layer: header readouts, magnetogram, macros, ticker, tabs. (in T6.1)
+- T6.3 Astronomy layer: sun, moon, stars, day shimmer, toggles. (in T6.1)
 - T6.4 UI cost pass (redraw on change, GPU budget).
 
 ## M7 — OSC and TouchDesigner

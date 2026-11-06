@@ -91,6 +91,9 @@ public:
     int  resets() const noexcept              { return guardResets; }
     int  voices() const noexcept              { return numVoices; }
     int  note (int bank, Layer, int voice) const noexcept;
+    /** The Breath cycle at the last tick, ½ − ½cos: 0 = out, 1 = full in, whatever the depth (the UI
+        mirrors it, spec/06). */
+    double breathCycle() const noexcept       { return breath01; }
 
 private:
     void skyTicked (const sky::SkyModel&, std::span<const sky::SkyEvent>, int tickSamples) noexcept override;
@@ -127,6 +130,7 @@ private:
     // chords: bank `cur` takes the excitation; the other rings out, then retires
     int cur = 0;
     double xf = 1.0, xfStart = 0.0, xfEnd = 0.0;
+    double breath01 = 0.0;
     double dampStart = -1.0;              ///< real s when damping began; < 0: not damping
     Chord applied {}, pending {};
     bool pendingValid = false, pendingUrgent = false, pendingFromHarmony = false;

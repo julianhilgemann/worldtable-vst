@@ -1,6 +1,7 @@
 #include "AllocationCounter.h"
 #include "PluginProcessor.h"
 #include "data/SkyDays.h"
+#include "data/TrackBuilder.h"
 #include "dsp/SlotExchange.h"
 #include "sky/SkyFeed.h"
 #include "sky/SkyHandoff.h"
@@ -338,4 +339,82 @@ TEST_CASE ("The plug-in plays the storm at 24×", "[sky][runtime][processor]")
     CHECK (s.phase == sky::SkyPhase::growth);   // 17:20 UT is the growth phase (T1.1)
     CHECK (s.onsetCount > 0u);                 // the storm window has already seen onsets
     CHECK (s.kp > 0.0f);
+}
+
+//==================================================================================================
+TEST_CASE ("SkyFeed charts the loaded day from its timeline (T6.1 magnetogram)", "[sky][feed][ui]")
+{
+    auto rt = std::make_unique<sky::SkyRuntime>();
+    sky::SkyFeed feed (*rt);
+    CHECK (feed.dayChart().sequence == 0u);
+    REQUIRE (feed.load (data::kDefaultSkyDay, 1, sky::SkyParams {}));
+
+    // The same day built by hand: the chart must be the timeline's state after each minute.
+    data::RawTrack raw;
+    REQUIRE (data::loadBundledDay (data::kDefaultSkyDay, raw));
+    auto track = std::make_unique<data::WorldSnapshot>();
+    REQUIRE (data::prepareTrack (raw, *track, 1));
+    sky::SkyTimeline timeline;
+    timeline.build (*track, 1, sky::SkyParams {});
+
+    const auto& c = feed.dayChart();
+    CHECK (c.sequence == 1u);
+    CHECK (c.dayId == "2024-05-10");
+    CHECK (c.station == data::StationId::CMO);
+    CHECK_THAT (c.startUtc, Catch::Matchers::WithinULP (kStormStart, 0));
+    REQUIRE (c.size() == track->length);
+    for (const auto* v : { &c.dhMeasuredNt, &c.dhModelNt, &c.couplingMvM, &c.reservoir, &c.threshold })
+        CHECK (static_cast<int> (v->size()) == c.size());
+
+    const double unit = sky::SkyParams {}.threshold;
+    for (const int k : { 0, 600, 1060, 1300, c.size() - 1 })
+    {
+        const auto& s = timeline.minutes[static_cast<size_t> (k + 1)];
+        INFO ("minute " << k);
+        CHECK_THAT (c.dhModelNt[static_cast<size_t> (k)], Catch::Matchers::WithinULP (static_cast<float> (s.dhModelNt), 0));
+        CHECK_THAT (c.dhMeasuredNt[static_cast<size_t> (k)], Catch::Matchers::WithinULP (static_cast<float> (s.dhNt), 0));
+        CHECK_THAT (c.reservoir[static_cast<size_t> (k)], Catch::Matchers::WithinULP (static_cast<float> (s.reservoir / unit), 0));
+        CHECK (c.phase[static_cast<size_t> (k)] == static_cast<uint8_t> (s.phase));
+    }
+
+    // every phase appears on the storm day, and the chart's onsets are the timeline's
+    std::array<int, 4> phases {};
+    for (auto p : c.phase)
+    {
+        REQUIRE (p < 4);
+        ++phases[p];
+    }
+    for (int n : phases)
+        CHECK (n > 0);
+    size_t onsets = 0;
+    for (const auto& e : timeline.events)
+        onsets += e.type == sky::SkyEvent::Type::onset ? 1u : 0u;
+    CHECK (c.onsets.size() == onsets);
+    CHECK (onsets > 10u);
+
+    REQUIRE (feed.load (data::kDefaultSkyDay, 1, sky::SkyParams {}));   // a new day: a new chart
+    CHECK (feed.dayChart().sequence == 2u);
+}
+
+TEST_CASE ("The telemetry carries the Breath cycle for the UI", "[processor][ui]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+    PluginProcessor p (false);
+    p.prepareToPlay (48000.0, 512);
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    juce::MidiBuffer midi;
+    float lo = 1.0f, hi = 0.0f;
+    for (int b = 0; b < 48000 * 8 / 512; ++b)   // 8 s: two thirds of a 12 s breath
+    {
+        buffer.clear();
+        p.processBlock (buffer, midi);
+        const float v = p.getInstrument().getTelemetry().breath.load();
+        REQUIRE (v >= 0.0f);
+        REQUIRE (v <= 1.0f);
+        lo = std::min (lo, v);
+        hi = std::max (hi, v);
+    }
+    CHECK (lo < 0.05f);   // it starts out
+    CHECK (hi > 0.8f);    // and breathes in
 }

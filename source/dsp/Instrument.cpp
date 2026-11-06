@@ -67,6 +67,7 @@ void Instrument::prepare (double rate, int maximumBlockSize)
     telemetry.gainReduction.store (1.0f);
     telemetry.autoGain.store (1.0f);
     telemetry.reverbLevel.store (0.0f);
+    telemetry.breath.store (0.0f);
 
     prepared = true;
     publishChord();
@@ -404,6 +405,7 @@ void Instrument::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuff
     telemetry.gainReduction.store (minGain);
     telemetry.autoGain.store (autoGain.currentGain());
     telemetry.reverbLevel.store (reverb.getWetLevel());
+    telemetry.breath.store (static_cast<float> (skySound.breathCycle()));
     scope.push (left, right, n);
 
     publishChord();

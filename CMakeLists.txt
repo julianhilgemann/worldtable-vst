@@ -103,7 +103,9 @@ juce_add_binary_data(WorldtableWorldData
 file(GLOB WORLDTABLE_UI_FILES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/*.html
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/*.css
-    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/*.js)
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/*.js
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/fonts/*.ttf
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/fonts/*.woff2)
 # The recorded sky days (resources/sky/<day>/track.json), bundled as "<day>.json" so the names are
 # unique (data/SkyDays.cpp looks them up by that name).
 set(WORLDTABLE_SKY_DAYS 2024-05-10 2025-01-19 2025-01-25)

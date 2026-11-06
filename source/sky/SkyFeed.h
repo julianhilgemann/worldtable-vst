@@ -4,8 +4,39 @@
 
 #include <juce_core/juce_core.h>
 
+#include <vector>
+
 namespace worldtable::sky
 {
+
+/** The whole loaded day at a glance, for the UI's magnetogram (spec/06, T6.1): one entry per
+    model minute of the track, taken from the timeline the feed publishes (the sketch's
+    `runSlow` trace). Built on the feed's thread when a day loads, so the editor never reads the
+    audio side's bundle. */
+struct DayChart
+{
+    struct Onset
+    {
+        double    utc;
+        float     strength;
+        OnsetKind kind;
+    };
+
+    juce::String dayId;
+    data::StationId station = data::StationId::CMO;
+    double startUtc = 0.0;
+    double stepSeconds = 60.0;
+    std::vector<float>   dhMeasuredNt;   ///< station H deviation, measured
+    std::vector<float>   dhModelNt;      ///< … as the model predicts it
+    std::vector<float>   couplingMvM;    ///< solar-wind coupling v·max(0, −Bz), smoothed (τ of the model)
+    std::vector<float>   reservoir;      ///< stored energy W, in units of SkyParams::threshold
+    std::vector<float>   threshold;      ///< the cycle's jittered threshold, same unit
+    std::vector<uint8_t> phase;          ///< SkyPhase
+    std::vector<Onset>   onsets;
+    uint64_t sequence = 0;               ///< grows with every loaded day (0 = none yet)
+
+    int size() const noexcept { return static_cast<int> (phase.size()); }
+};
 
 /** The data side of the Sky Model (ADR-0003, hand-off A): turns a recorded day into a TrackBundle
     (prepared track + slow-sky timeline) in a free slot and publishes it to the SkyRuntime.
@@ -33,13 +64,19 @@ public:
     bool startDefaultJourney();
 
     const juce::String& dayId() const noexcept { return loadedDay; }
+
+    /** The loaded day's chart; same thread as load(). Empty (sequence 0) before the first day. */
+    const DayChart& dayChart() const noexcept { return chart; }
     double dayStartUtc() const noexcept { return loadedStartUtc; }
 
 private:
+    void buildChart (const juce::String& dayId, const TrackBundle& bundle);
+
     SkyRuntime& runtime;
     juce::String loadedDay;
     double loadedStartUtc = 0.0;
     uint64_t sequence = 0;
+    DayChart chart;
 };
 
 } // namespace worldtable::sky

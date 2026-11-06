@@ -2,13 +2,14 @@
 // the page over evaluateJavascript whether the JUCE bridge works end to end.
 //
 //   WorldtableUICheck            → prints a JSON report, exit code 0 when all checks pass
-//   WorldtableUICheck --soak     → afterwards holds ambient levels 0–2 for 12 s with audio
-//                                  running and prints "soak level N", so the web view's
-//                                  processes can be sampled from outside (TP.2)
+//   WorldtableUICheck --soak     → afterwards keeps the editor running for 30 s with audio and
+//                                  the dome drawing, and prints "soak", so the web view's
+//                                  processes can be sampled from outside (T6.4)
 //
 // Checks: backend attached (not the browser mock), telemetry is streaming, parameters
-// sync C++ → JS and JS → C++, the Sky Model's readout shows the replayed storm (T2.4),
-// and the chord readout shows the sounding chord (T3.6).
+// sync C++ → JS and JS → C++, every parameter has exactly one control, the header shows the
+// replayed storm (T2.4), the chord readout shows the sounding chord (T3.6), the dome draws
+// the plug-in's sky with WebGL and the magnetogram got the day's chart (T6.1).
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
@@ -69,12 +70,10 @@ int main (int argc, char* argv[])
     window.setContentNonOwned (editor.get(), true);
     window.setTopLeftPosition (40, 40);
     window.setVisible (true);
-    if (soak)
-    {
-        // WebKit throttles rendering of occluded windows: the soak window must be in front.
-        juce::Process::makeForegroundProcess();
-        window.toFront (true);
-    }
+    // WebKit throttles rendering of occluded windows (and the page pauses the dome while it is
+    // hidden, spec/06): the check's window must be in front for the dome to draw.
+    juce::Process::makeForegroundProcess();
+    window.toFront (true);
 
     auto* browser = findBrowser (*editor);
     if (browser == nullptr)
@@ -105,7 +104,9 @@ int main (int argc, char* argv[])
         " voices: __wtState.tel.chord && __wtState.tel.chord.voices,"
         " readout: document.getElementById('chord-text').textContent,"
         " progression: WT.get('progression'), knobs: document.querySelectorAll('.knob').length,"
-        " selects: document.querySelectorAll('.select').length })");
+        " segs: document.querySelectorAll('.seg').length,"
+        " unbound: Object.keys(WT.META).filter(function (id) {"
+        "   return document.querySelectorAll('[data-param=\"' + id + '\"]').length !== 1; }) })");
 
     // C++ → JS
     auto* revMix = dynamic_cast<juce::RangedAudioParameter*> (processor.getValueTreeState().getParameter ("rev_mix"));
@@ -120,39 +121,48 @@ int main (int argc, char* argv[])
     const float cppMaster = processor.getValueTreeState().getRawParameterValue ("master")->load();
     const float cppMood = processor.getValueTreeState().getRawParameterValue ("mood")->load();
 
-    // Ambient background (TP.2): the free-running shader, no level switcher since T3.6.
-    const auto ambient = evalSync (*browser,
-        "JSON.stringify({ level: __wtAmbient.level,"
-        " canvas: !!document.querySelector('#ambient canvas'), body: document.body.className })");
-    pump (500);
-    const auto ambientDrawn = evalSync (*browser, "__wtAmbient.smoothed.speed > 0");
-    auto parsedAmbient = juce::JSON::parse (ambient);
+    // The dome (T6.1): WebGL, drawing frames from the plug-in's sky; the day chart arrived.
+    for (int k = 0; k < 40; ++k)
+    {
+        processor.processBlock (buffer, midi);
+        pump (25);
+    }
+    const auto dome = evalSync (*browser,
+        "JSON.stringify({ mode: __wtState.domeMode, frames: __wtState.frames,"
+        " nodes: __wtState.tel.dome ? __wtState.tel.dome.n : 0,"
+        " day: __wtState.day ? __wtState.day.day : '', minutes: __wtState.day ? __wtState.day.phase.length : 0,"
+        " station: __wtState.day && __wtState.day.station ? __wtState.day.station.code : '' })");
+    auto parsedDome = juce::JSON::parse (dome);
 
     // The Sky Model (T2.4) and the chord readout (T3.6).
     pump (600);
     const auto skyState = evalSync (*browser,
-        "JSON.stringify({ hidden: document.getElementById('sky').hidden,"
-        " text: document.getElementById('sky-text').textContent,"
+        "JSON.stringify({ date: document.getElementById('ro-date').textContent,"
+        " ut: document.getElementById('ro-ut').textContent,"
         " day: __wtState.tel.sky && __wtState.tel.sky.day,"
         " chord: document.getElementById('chord-text').textContent })");
     auto parsedSky = juce::JSON::parse (skyState);
 
     auto parsed = juce::JSON::parse (state);
     const bool ok = ready == "true"
-                 && ! static_cast<bool> (parsedSky["hidden"])
-                 && parsedSky["text"].toString().startsWith ("10 May")
+                 && parsedSky["date"].toString().startsWith ("10 May")
+                 && parsedSky["ut"].toString().endsWith ("UT")
                  && parsedSky["day"].toString() == "2024-05-10"
                  && parsedSky["chord"].toString().isNotEmpty()
                  && parsedSky["chord"].toString() != "-"
-                 && static_cast<int> (parsedAmbient["level"]) == 2
-                 && static_cast<bool> (parsedAmbient["canvas"])
-                 && ambientDrawn == "true"
+                 && parsedDome["mode"].toString() == "webgl"
+                 && static_cast<int> (parsedDome["frames"]) > 0
+                 && static_cast<int> (parsedDome["nodes"]) > 0
+                 && parsedDome["day"].toString() == "2024-05-10"
+                 && static_cast<int> (parsedDome["minutes"]) > 1000
+                 && parsedDome["station"].toString() == "CMO"
                  && ! static_cast<bool> (parsed["mock"])
                  && static_cast<int> (parsed["bands"]) > 0
                  && parsed["chord"].toString().isNotEmpty()
                  && static_cast<int> (parsed["voices"]) > 0
-                 && static_cast<int> (parsed["knobs"]) > 20
-                 && static_cast<int> (parsed["selects"]) >= 4
+                 && static_cast<int> (parsed["knobs"]) >= 40
+                 && static_cast<int> (parsed["segs"]) >= 4
+                 && parsed["unbound"].isArray() && parsed["unbound"].size() == 0
                  && std::abs (jsRevMix.getFloatValue() - 0.77f) < 0.001f
                  && std::abs (cppMaster - (-12.0f)) < 0.001f
                  && std::abs (cppMood - 2.0f) < 0.001f;
@@ -161,24 +171,20 @@ int main (int argc, char* argv[])
               << "page state: " << state << "\n"
               << "C++→JS rev_mix 0.77 → JS sees " << jsRevMix << "\n"
               << "JS→C++ master −12 → C++ sees " << cppMaster << ", mood → " << cppMood << "\n"
-              << "ambient:    " << ambient << "\n"
+              << "dome:       " << dome << "\n"
               << "sky/chord:  " << skyState << "\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
 
     if (soak)
     {
-        for (int level = 0; level <= 2; ++level)
+        std::cout << "soak" << std::endl;
+        const auto end = juce::Time::getMillisecondCounter() + 30000;
+        while (juce::Time::getMillisecondCounter() < end)
         {
-            evalSync (*browser, "__wtAmbient.setLevel(" + juce::String (level) + "); true");
-            std::cout << "soak level " << level << std::endl;
-            const auto end = juce::Time::getMillisecondCounter() + 12000;
-            while (juce::Time::getMillisecondCounter() < end)
-            {
-                processor.processBlock (buffer, midi);   // 512 samples ≈ 10.7 ms: roughly real time
-                pump (10);
-            }
+            processor.processBlock (buffer, midi);   // 512 samples ≈ 10.7 ms: roughly real time
+            pump (10);
         }
-        std::cout << "soak done" << std::endl;
+        std::cout << "soak done, frames " << evalSync (*browser, "__wtState.frames") << std::endl;
     }
 
     window.setVisible (false);

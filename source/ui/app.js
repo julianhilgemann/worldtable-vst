@@ -1,87 +1,354 @@
-/* Wires the page: mounts controls declared in index.html, scales the stage,
- * receives backend telemetry and runs the render loop. */
+/* Wires the page (spec/06, T6.1): mounts the controls, scales the stage, feeds the dome and the
+ * instrument layer from the editor's "telemetry" (30 Hz) and "day" events, runs one render loop
+ * capped at 30 fps (15 with reduced motion) and paused while hidden. */
 (function () {
   "use strict";
-  const WT = window.WT, UI = window.UI;
+  const WT = window.WT, UI = window.UI, SKY = window.SKY;
   const BASE_W = 1200, BASE_H = 800;
+  const $ = (id) => document.getElementById(id);
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  const S = { tel: {} };
+  const S = { tel: {}, day: null, frames: 0, domeMode: "" };
   window.__wtState = S;   // for debugging and the UI integration check
 
-  // ---------- mount controls ----------
-  for (const n of document.querySelectorAll("[data-knob]"))
-    UI.Knob(n, n.dataset.knob, n.dataset.label || "", { small: !!n.dataset.small, mod: !!n.dataset.mod });
-  for (const n of document.querySelectorAll("[data-select]"))
-    UI.Select(n, n.dataset.select, { caption: n.dataset.caption, wide: !!n.dataset.wide });
-  for (const n of document.querySelectorAll("[data-seg]"))
-    UI.Seg(n, n.dataset.seg, null, { big: !!n.dataset.big });
-  for (const n of document.querySelectorAll("[data-toggle]"))
-    UI.Toggle(n, n.dataset.toggle, n.dataset.label || "");
-  for (const n of document.querySelectorAll("[data-drag]"))
-    UI.DragValue(n, n.dataset.drag, n.dataset.caption || "");
+  const store = {
+    get(k, d) { try { const v = window.localStorage.getItem("wt." + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { window.localStorage.setItem("wt." + k, JSON.stringify(v)); } catch (e) { /* private window: fine */ } },
+  };
 
-  // ---------- views ----------
-  const $ = (id) => document.getElementById(id);
-  const views = [
-    UI.ChordView($("cv-chord")),
-    UI.DelayView($("cv-delay")),
-    UI.ReverbView($("cv-space")),
-    UI.MeterView($("cv-meter")),
-  ];
+  // ---------------------------------------------------------------- controls
+  const knobs = {};
+  for (const n of document.querySelectorAll("[data-knob]")) {
+    const k = UI.Knob(n, n.dataset.knob, n.dataset.label || "", { size: n.dataset.size, color: n.dataset.color, live: n.dataset.live });
+    if (k) knobs[n.dataset.knob] = k;
+  }
+  for (const n of document.querySelectorAll("[data-seg]")) UI.Seg(n, n.dataset.seg, n.dataset.labels ? n.dataset.labels.split(",") : null);
+  for (const n of document.querySelectorAll("[data-keys]")) UI.Keys(n, n.dataset.keys);
+  for (const n of document.querySelectorAll("[data-toggle]")) UI.Toggle(n, n.dataset.toggle, n.dataset.label || "");
 
-  // ---------- scaling ----------
+  // ---------------------------------------------------------------- tabs
+  const HINTS = { sound: "harmony · layers", fx: "drive → phaser → chorus → delay → reverb → output", sky: "observer · journey · view" };
+  const hash = new URLSearchParams(location.hash.slice(1));
+  // #shot: no CSS transitions (headless review screenshots run on virtual time, which they ignore)
+  if (hash.has("shot")) document.documentElement.classList.add("shot");
+  let tab = hash.get("tab") || store.get("tab", "sound");
+  function showTab(t) {
+    if (!HINTS[t]) t = "sound";
+    tab = t;
+    document.querySelectorAll("nav#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+    document.querySelectorAll(".page").forEach((p) => p.classList.toggle("on", p.dataset.page === t));
+    $("tab-hint").textContent = HINTS[t];
+    store.set("tab", t);
+  }
+  document.querySelectorAll("nav#tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+  showTab(tab);
+
+  // ---------------------------------------------------------------- scaling
   function rescale() {
-    const stage = $("stage");
     UI.scale = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H);
     UI.dpr = window.devicePixelRatio || 1;
-    const x = (window.innerWidth - BASE_W * UI.scale) / 2;
-    const y = (window.innerHeight - BASE_H * UI.scale) / 2;
-    stage.style.transform = `translate(${x}px, ${y}px) scale(${UI.scale})`;
+    const x = (window.innerWidth - BASE_W * UI.scale) / 2, y = (window.innerHeight - BASE_H * UI.scale) / 2;
+    $("stage").style.transform = `translate(${x}px, ${y}px) scale(${UI.scale})`;
   }
   window.addEventListener("resize", rescale);
   rescale();
 
-  // ---------- the Sky Model (T2.4): model time, phase, Kp, onsets; read-only ----------
-  let skyShownAt = 0;
-  function showSky(sky) {
-    if (!sky) return;                       // the browser mock has no sky
-    const now = performance.now();
-    if (now - skyShownAt < 250) return;     // 4 Hz is plenty for text
-    skyShownAt = now;
-    const d = new Date(sky.utc * 1000);
-    const day = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-    const hm = d.toISOString().slice(11, 16);
-    const el = $("sky");
-    el.hidden = false;
-    el.classList.toggle("onset", sky.phase === "onset");
-    $("sky-text").textContent =
-      `${day} ${hm} UT · ${sky.phase} · Kp ${sky.kp.toFixed(1)} · ${sky.onsets} onsets · ${Math.round(sky.speed)}×`;
+  // ---------------------------------------------------------------- views
+  const voicing = UI.VoicingView($("cv-voicing"));
+  const phaseTrack = UI.PhaseTrack($("phase-track"));
+  const ticker = UI.Ticker($("ticker"));
+  const mag = UI.MagnetogramView($("cv-mag"));
+  const layers = UI.LayersView($("cv-layers"));
+  const fx = {
+    drive: UI.DriveView($("cv-drive")), phaser: UI.PhaserView($("cv-phaser")), chorus: UI.ChorusView($("cv-chorus")),
+    delay: UI.DelayView($("cv-delay")), reverb: UI.ReverbView($("cv-reverb")), output: UI.OutputView($("cv-output")),
+  };
+  const hmeter = UI.HeaderMeter($("cv-hmeter"));
+
+  // ---------------------------------------------------------------- the dome
+  const dome = new SKY.DomeRenderer($("dome"), $("dome-ov"), new SKY.Observer(), 1);
+  S.domeMode = dome.mode;
+  const VIEW = { stars: store.get("view.stars", true), dayNight: store.get("view.dayNight", true), gradientsOnly: store.get("view.gradientsOnly", false) };
+  function applyView() {
+    dome.options.stars = dome.options.moon = VIEW.stars;
+    dome.options.dayNight = VIEW.dayNight;
+    dome.options.gradientsOnly = VIEW.gradientsOnly;
+    document.querySelectorAll("[data-view]").forEach((n) => n.classList.toggle("on", !!VIEW[n.dataset.view]));
+  }
+  document.querySelectorAll("[data-view]").forEach((n) => n.addEventListener("click", () => {
+    const k = n.dataset.view;
+    VIEW[k] = !VIEW[k];
+    store.set("view." + k, VIEW[k]);
+    applyView();
+  }));
+  applyView();
+
+  // The snapshot the renderer reads (the sketch's format), eased toward each telemetry frame so the
+  // 30 Hz updates never step.
+  const N = 128;
+  const snap = {
+    nodeCount: 0,
+    nodes: { mlat: new Float32Array(N), mlon: new Float32Array(N), green: new Float32Array(N), red: new Float32Array(N), violet: new Float32Array(N) },
+    activity: 0, unloading: 0, gain: 1, eqLat: 66, poleLat: 72, dayShiftDeg: 4, mlt: 0, stormRed: 0, modelTimeUtc: 0,
+    sky: { sunAz: 0, sunEl: -30, moonAz: 0, moonEl: -30, moonIllum: 0 },
+  };
+  let target = null, primed = false;
+  const SCALARS = [["activity", "sky", "activity"], ["unloading", "sky", "unloading"], ["gain", "sky", "gain"], ["mlt", "sky", "mlt"],
+    ["eqLat", "dome", "eqLat"], ["poleLat", "dome", "poleLat"], ["dayShiftDeg", "dome", "dayShift"], ["stormRed", "dome", "stormRed"]];
+
+  function easeSnap(dt) {
+    const { sky, dome: d } = target;
+    const k = primed ? 1 - Math.exp(-dt / 0.07) : 1;
+    const n = Math.min(N, d.n | 0);
+    snap.nodeCount = n;
+    const nd = snap.nodes;
+    for (let i = 0; i < n; i++) {
+      nd.mlon[i] = d.mlon[i];
+      nd.mlat[i] += (d.mlat[i] - nd.mlat[i]) * k;
+      nd.green[i] += (d.green[i] - nd.green[i]) * k;
+      nd.red[i] += (d.red[i] - nd.red[i]) * k;
+      nd.violet[i] += (d.violet[i] - nd.violet[i]) * k;
+    }
+    for (const [key, src, field] of SCALARS) {
+      const v = (src === "sky" ? sky : d)[field];
+      if (typeof v === "number") snap[key] += (v - snap[key]) * k;
+    }
+    // model time runs on between frames at the replay speed, so the stars turn smoothly
+    snap.modelTimeUtc = (sky.utc + (performance.now() / 1000 - target.at) * (sky.speed || 0)) * 1000;
+    const a = snap.sky;
+    a.sunAz = d.sunAz; a.sunEl = d.sunEl; a.moonAz = d.moonAz; a.moonEl = d.moonEl; a.moonIllum = d.moonIllum;
+    primed = true;
   }
 
-  // ---------- the chord readout (T3.6) ----------
-  function showChord(chord) {
-    if (!chord) return;
-    const box = $("chord");
-    box.classList.toggle("midi", !!chord.latched);
-    $("chord-text").textContent = chord.label || "—";
-    $("chord-roman").textContent = chord.roman || "";
-    $("chord-state").textContent = chord.latched ? "MIDI HOLD" : chord.pending ? "→ NEXT" : "";
+  // Emission per layer (red, green, violet) and the sky's colour, for the voicing view, the glow
+  // behind the dome and the macro rings.
+  const emission = [0, 0, 0];
+  const glow = { r: 92, g: 242, b: 160, a: 0.06 };
+  function measureEmission(d) {
+    let r = 0, g = 0, v = 0;
+    const n = d.n | 0;
+    for (let i = 0; i < n; i++) { r += d.red[i]; g += d.green[i]; v += d.violet[i]; }
+    if (!n) return;
+    r /= n; g /= n; v /= n;
+    emission[0] = clamp(r / 0.8, 0, 1); emission[1] = clamp(g / 0.9, 0, 1); emission[2] = clamp(v / 0.5, 0, 1);
+    const tot = r + g + v + 1e-6;
+    const mix = [(r * 255 + g * 92 + v * 143) / tot, (r * 107 + g * 242 + v * 123) / tot, (r * 107 + g * 160 + v * 255) / tot];
+    const kk = 0.08;   // ~3 s at 30 Hz: the glow drifts, never flicks
+    glow.r += (mix[0] - glow.r) * kk; glow.g += (mix[1] - glow.g) * kk; glow.b += (mix[2] - glow.b) * kk;
+    glow.a += (clamp(0.04 + 0.12 * tot, 0.04, 0.2) - glow.a) * kk;
+  }
+  let glowShown = 0;
+  function showGlow() {
+    const t = performance.now();
+    if (t - glowShown < 250) return;
+    glowShown = t;
+    const st = $("stage").style;
+    st.setProperty("--glow", `${glow.r | 0}, ${glow.g | 0}, ${glow.b | 0}`);
+    st.setProperty("--glow-a", glow.a.toFixed(3));
   }
 
-  WT.on("telemetry", (tel) => {
-    S.tel = tel;
-    showSky(tel.sky);
-    showChord(tel.chord);
-    if (tel.autoGain) {
-      const db = 20 * Math.log10(tel.autoGain);
-      $("gain-info").textContent = `auto ${db >= 0 ? "+" : ""}${db.toFixed(1)} dB`;
+  // ---------------------------------------------------------------- the day
+  const DAY_LABELS = {
+    "2024-05-10": "10–11 May 2024 · Gannon storm (Kp 9)",
+    "2025-01-19": "19–20 Jan 2025 · moderate, substorms",
+    "2025-01-25": "25–26 Jan 2025 · quiet",
+  };
+  const WINDS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  const wind = (az) => WINDS[Math.round(((az % 360) + 360) % 360 / 22.5) % 16];
+  const latLon = (lat, lon) => `${Math.abs(lat).toFixed(2)}${lat >= 0 ? "N" : "S"} ${Math.abs(lon).toFixed(2)}${lon >= 0 ? "E" : "W"}`;
+
+  WT.on("day", (day) => {
+    S.day = day;
+    mag.setDay(day);
+    const st = day.station;
+    if (st) {
+      dome.obs = new SKY.Observer({ code: st.code, name: st.name, lat: st.lat, lon: st.lon, elevKm: st.elevKm }, { lat: st.poleLat, lon: st.poleLon });
+      $("ro-station").innerHTML = `${st.code} <b>${latLon(st.lat, st.lon)}</b>`;
+      $("dome-station").textContent = st.code;
+      $("dome-place").textContent = st.name;
+      $("info-station").innerHTML =
+        `<span class="k">station</span><span><b>${st.code}</b> · ${st.name}</span>` +
+        `<span class="k">position</span><span>${Math.abs(st.lat).toFixed(2)}° ${st.lat >= 0 ? "N" : "S"} · ${Math.abs(st.lon).toFixed(2)}° ${st.lon >= 0 ? "E" : "W"} · ${Math.round(st.elevKm * 1000)} m</span>` +
+        `<span class="k">geomag</span><span>${st.mlat.toFixed(1)}° lat · ${st.mlon.toFixed(1)}° lon (dipole)</span>` +
+        `<span class="k">zenith</span><span>rays converge at <b>${st.mzEl.toFixed(0)}°</b> · ${wind(st.mzAz)} (MZ)</span>` +
+        `<span class="k">sky</span><span id="info-astro">—</span>`;
     }
   });
 
-  // ---------- render loop ----------
-  function frame() {
-    for (const v of views) v.draw(S);
+  // ---------------------------------------------------------------- chord readout
+  const FN = ["home", "tension", "awe", "borrowed"];
+  const FN_RGB = { home: "92, 242, 160", tension: "143, 123, 255", awe: "201, 211, 230", borrowed: "255, 107, 107" };
+  const FN_TITLE = { home: "home", tension: "tension", awe: "the awe move", borrowed: "borrowed chord" };
+  const FN_REASON = { home: "quiet → home", tension: "growth → tension", awe: "onset → chromatic mediant", borrowed: "recovery → borrowed" };
+  let chordSig = "", chordChanges = -1, chordTimer = 0;
+  const ut = (utc) => new Date(utc * 1000).toISOString().slice(11, 16);
+
+  function showChord(c, sky) {
+    if (!c) return;
+    voicing.setChord(c.notes);
+    const fn = FN[c.function] || "home";
+    const sig = `${c.label}|${c.roman}|${c.latched}`;
+    if (sig !== chordSig) {
+      const first = chordSig === "";
+      chordSig = sig;
+      const text = $("chord-text");
+      const apply = () => {
+        text.textContent = c.label || "—";
+        $("chord-roman").textContent = c.roman || "";
+        text.classList.remove("out");
+      };
+      clearTimeout(chordTimer);
+      if (first) apply(); else { text.classList.add("out"); chordTimer = setTimeout(apply, 900); }
+      $("chord-card").style.setProperty("--fn", FN_RGB[fn]);
+      $("chord-why").innerHTML = c.latched ? `<b>held on MIDI</b><br>the sky keeps listening` : `<b>${FN_TITLE[fn]}</b><br>${FN_REASON[fn]}`;
+      if (!first && chordChanges >= 0 && sky)
+        ticker.push(`<span class="t">${ut(sky.utc)} UT</span>${c.latched ? "MIDI" : FN_REASON[fn]} → <b>${c.label}</b> <span class="faint">${c.roman}</span>`);
+    }
+    chordChanges = c.changes;
+    const pill = $("chord-state");
+    const hold = !c.latched && WT.get("progression") < 0.005;
+    pill.className = "pill" + (c.latched ? " midi" : hold ? " hold" : "");
+    pill.innerHTML = `<i></i><span>${c.latched ? "MIDI HOLD" : hold ? "HOLD" : "THE SKY WRITES"}</span>` + (c.pending ? `<span class="next">next chord waiting</span>` : "");
+    $("chord-count").textContent = c.changes ? `${c.changes} change${c.changes === 1 ? "" : "s"} so far` : "";
+  }
+
+  // ---------------------------------------------------------------- sky readouts and events
+  let lastPhase = "", started = false, textShown = 0;
+  const KIND = { loaded: "energy released", forced: "data-forced", pseudo: "pseudo-breakup" };
+
+  function showSky(sky, d) {
+    if (!sky) return;
+    if (S.journeyFrom === undefined) S.journeyFrom = sky.utc;
+    if (!started && S.day) {
+      // open with what the day has already done: the last two onsets before now, then the start
+      started = true;
+      for (const e of S.day.onsets.filter((o) => o.utc < sky.utc - 30).slice(-2))
+        ticker.push(`<span class="t">${ut(e.utc)} UT</span><span class="faint">substorm onset · ${KIND[e.kind] || e.kind}</span>`);
+      ticker.push(`<span class="t">${ut(sky.utc)} UT</span>journey · ${DAY_LABELS[sky.day] || sky.day} · ${Math.round(sky.speed)}×`);
+    }
+    for (const e of sky.newOnsets || [])
+      ticker.push(`<span class="t">${ut(e.utc)} UT</span><b class="${e.kind === "pseudo" ? "" : "c-green"}">substorm onset</b> · ${KIND[e.kind] || e.kind} · ${e.strength.toFixed(2)}`);
+    if (lastPhase && sky.phase !== lastPhase && sky.phase !== "onset")
+      ticker.push(`<span class="t">${ut(sky.utc)} UT</span>${sky.phase} begins`);
+    lastPhase = sky.phase;
+
+    phaseTrack.set(sky.phase, sky.progress);
+
+    const t = performance.now();
+    if (t - textShown < 250) return;   // text at 4 Hz is plenty
+    textShown = t;
+    const date = new Date(sky.utc * 1000);
+    $("ro-date").innerHTML = `<b>${date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</b>`;
+    $("ro-ut").innerHTML = `<b>${ut(sky.utc)}</b> UT`;
+    $("ro-kp").innerHTML = `Kp <b>${sky.kp.toFixed(1)}</b>`;
+    $("ro-kp").classList.toggle("storm", sky.kp >= 5);
+    $("ro-bz").innerHTML = `Bz <b>${sky.bz >= 0 ? "+" : "−"}${Math.abs(sky.bz).toFixed(1)}</b> nT`;
+    $("ro-bz").classList.toggle("south", sky.bz < 0);
+    $("ro-v").innerHTML = `v <b>${Math.round(sky.wind)}</b> km/s`;
+    const frozen = (sky.speed || 0) < 0.01;
+    $("mode").innerHTML = `<i></i>${frozen ? "FROZEN" : "JOURNEY"} <b id="mode-speed">${frozen ? "" : Math.round(sky.speed) + "×"}</b>`;
+
+    const e = clamp(sky.energy / 1.5, 0, 1);
+    $("sky-row").innerHTML =
+      `<span>ΔH <b>${Math.round(sky.dh)}</b> nT <span class="faint">model ${Math.round(sky.dhModel)}</span></span>` +
+      `<span>E <b>${(sky.coupling || 0).toFixed(1)}</b> mV/m</span>` +
+      `<span>energy<span class="bar"><i style="width:${(e * 100).toFixed(1)}%"></i><u style="left:${(100 / 1.5).toFixed(1)}%"></u></span><b>${sky.energy.toFixed(2)}</b></span>` +
+      `<span>activity <b>${sky.activity.toFixed(2)}</b></span>` +
+      `<span>whistlers <b>${sky.whistlers}</b></span>`;
+    $("sky-note").textContent = { quiet: "quiet: the arc rests low", growth: "growth: loading from the solar wind", onset: "onset: the reservoir lets go", recovery: "recovery: patchy, pulsating" }[sky.phase] || "";
+    $("sky-onsets").textContent = `${sky.onsets} onset${sky.onsets === 1 ? "" : "s"}`;
+    if (d) {
+      $("dome-astro").innerHTML = `sun <b>${d.sunEl >= 0 ? "+" : "−"}${Math.abs(d.sunEl).toFixed(1)}°</b> · ${wind(d.sunAz)}<br>moon <b>${Math.round(d.moonIllum * 100)} %</b> · ${d.moonEl >= 0 ? "+" : "−"}${Math.abs(d.moonEl).toFixed(0)}°`;
+      if ($("info-astro")) $("info-astro").innerHTML = `sun ${d.sunEl.toFixed(1)}° el · moon ${Math.round(d.moonIllum * 100)} % lit, ${d.moonEl.toFixed(0)}° el`;
+    }
+    $("dome-oval").innerHTML = `arc <b>${sky.arcLat.toFixed(1)}°</b> mlat<br>MLT <b>${sky.mlt.toFixed(1)} h</b>`;
+    if (tab === "sky") showJourney(sky);
+  }
+
+  function showJourney(sky) {
+    const day = S.day;
+    $("info-journey").innerHTML =
+      `<span class="k">day</span><span><b>${DAY_LABELS[sky.day] || sky.day}</b></span>` +
+      `<span class="k">speed</span><span><b>${Math.round(sky.speed)}×</b> · ${sky.speed > 0 ? (24 / sky.speed).toFixed(sky.speed >= 24 ? 1 : 0) + " h of listening per day" : "frozen"}</span>` +
+      `<span class="k">now</span><span><b>${new Date(sky.utc * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} ${ut(sky.utc)} UT</b> · MLT ${sky.mlt.toFixed(1)} h</span>`;
+    if (!day) return;
+    const span = day.phase.length * day.step;
+    const f = clamp((sky.utc - day.t0) / span, 0, 1);
+    $("journey-bar").querySelector("i").style.width = (f * 100).toFixed(2) + "%";
+    if (S.journeyFrom === undefined) S.journeyFrom = sky.utc;   // where this session joined the day
+    $("journey-bar").querySelector("u").style.left = (clamp((S.journeyFrom - day.t0) / span, 0, 1) * 100).toFixed(2) + "%";
+    const leftS = (day.t0 + span - sky.utc) / Math.max(1e-6, sky.speed);
+    const past = day.onsets.filter((o) => o.utc <= sky.utc).length;
+    $("info-journey-2").innerHTML =
+      `<span class="k">left</span><span><b>${sky.speed > 0 ? Math.round(leftS / 60) + " min" : "—"}</b> of listening to the end of the recording</span>` +
+      `<span class="k">onsets</span><span><b>${past}</b> of ${day.onsets.length} in this day</span>` +
+      `<span class="k">choice</span><span class="faint">day and speed arrive with the autopilot (M4)</span>`;
+  }
+
+  // ---------------------------------------------------------------- telemetry
+  let env = 0;
+  WT.on("telemetry", (tel) => {
+    S.tel = tel;
+    if (tel.sky && tel.dome && tel.dome.n) {
+      target = { sky: tel.sky, dome: tel.dome, at: performance.now() / 1000 };
+      measureEmission(tel.dome);
+    }
+    showSky(tel.sky, tel.dome);
+    showChord(tel.chord, tel.sky);
+    env += (Math.max(tel.peakL || 0, tel.peakR || 0) - env) * 0.05;
+    if (tel.autoGain) {
+      const db = 20 * Math.log10(tel.autoGain);
+      $("out-note").textContent = `auto ${db >= 0 ? "+" : "−"}${Math.abs(db).toFixed(1)} dB`;
+    }
+  });
+
+  // ---------------------------------------------------------------- render loop
+  const P = (id) => WT.get(id);
+  let last = 0;
+  function frame(tms) {
     requestAnimationFrame(frame);
+    if (document.hidden) return;
+    const t = tms / 1000;
+    if (t - last < (reduced ? 1 / 15 : 1 / 30) - 0.002) return;
+    const dt = Math.min(0.2, t - last);
+    last = t;
+    const tel = S.tel;
+
+    if (target) {
+      easeSnap(dt);
+      // Breath swells the whole sky a little; the sound's own level adds a faint glow (spec/06).
+      const breath = (tel.breath || 0) * P("macro_breath");
+      dome.options.exposure = 1.6 * (1 + 0.16 * breath) * (1 + 0.1 * clamp(env * 3, 0, 1));
+      dome.render(snap, reduced ? t * 0.35 : t);
+      S.frames++;
+      showGlow();
+    }
+
+    voicing.setEmission(emission, [P("red_level"), P("green_level"), P("violet_level")]);
+    voicing.draw();
+    if (tel.sky) mag.draw(tel.sky.utc);
+    hmeter.draw(tel.peakL || 0, tel.peakR || 0, P("lim_ceiling"));
+
+    // macro rings: what each macro is shaping right now
+    const m = (id) => P(id);
+    if (knobs.macro_storm) knobs.macro_storm.setLive(((tel.sky && tel.sky.activity) || 0) * (0.4 + 1.2 * m("macro_storm")) / 1.6);
+    if (knobs.macro_breath) knobs.macro_breath.setLive((tel.breath || 0) * clamp(m("macro_breath") * 1.6, 0, 1));
+    if (knobs.macro_glow) knobs.macro_glow.setLive(emission[2] * (0.5 + m("macro_glow")) / 1.5);
+    if (knobs.macro_space) knobs.macro_space.setLive(clamp((tel.verb || 0) * 2.2, 0, 1));
+    if (knobs.macro_drift) knobs.macro_drift.setLive(m("macro_drift"), (t * 360 / (48 / (0.4 + m("macro_drift")))) % 360);
+
+    if (tab === "sound") layers.draw([P("red_level"), P("green_level"), P("violet_level")], [P("red_decay"), P("green_decay"), P("violet_decay")]);
+    if (tab === "fx") {
+      const peak = Math.max(tel.peakL || 0, tel.peakR || 0);
+      fx.drive.draw(P("drive"), peak);
+      fx.phaser.draw(t, { rate: P("ph_rate"), depth: P("ph_depth"), fb: P("ph_feedback"), stages: P("ph_stages"), mix: P("ph_mix") }, tel.spectrum);
+      fx.chorus.draw(t, { rate: P("ch_rate"), depth: P("ch_depth"), mix: P("ch_mix") });
+      fx.delay.draw({ time: P("dly_time"), fb: P("dly_fb"), tone: P("dly_tone"), mix: P("dly_mix"), ping: P("dly_pingpong") });
+      fx.reverb.draw({ size: P("rev_size"), decay: P("rev_decay"), damp: P("rev_damp"), pre: P("rev_predelay"), shimmer: P("rev_shimmer"), mix: P("rev_mix") }, tel.verb || 0);
+      fx.output.draw(tel.peakL || 0, tel.peakR || 0, tel.gr || 1, P("lim_ceiling"));
+      $("verb-note").textContent = `${P("rev_decay").toFixed(1)} s · size ${Math.round(P("rev_size") * 100)} %`;
+    }
   }
   requestAnimationFrame(frame);
 

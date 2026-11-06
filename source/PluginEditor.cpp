@@ -26,6 +26,9 @@ juce::String mimeFor (const juce::String& path)
     if (ext == "svg")  return "image/svg+xml";
     if (ext == "png")  return "image/png";
     if (ext == "json") return "application/json";
+    if (ext == "woff2") return "font/woff2";
+    if (ext == "woff") return "font/woff";
+    if (ext == "ttf")  return "font/ttf";
     return "application/octet-stream";
 }
 
@@ -36,6 +39,18 @@ std::vector<std::byte> toBytes (const void* data, size_t size)
 }
 
 double round3 (float v) { return std::round (static_cast<double> (v) * 1000.0) / 1000.0; }
+
+juce::var floats (const std::vector<float>& values, double scale)
+{
+    juce::Array<juce::var> a;
+    a.ensureStorageAllocated (static_cast<int> (values.size()));
+    for (auto v : values)
+        a.add (std::round (static_cast<double> (v) * scale) / scale);
+    return a;
+}
+
+constexpr std::array<const char*, 4> kPhaseNames { "quiet", "growth", "onset", "recovery" };
+constexpr std::array<const char*, 3> kOnsetKindNames { "loaded", "forced", "pseudo" };
 } // namespace
 
 PluginEditor::PluginEditor (PluginProcessor& p)
@@ -108,6 +123,8 @@ void PluginEditor::onPageReady()
         for (auto& a : attachments)   // page reloaded: resend everything
             a->sendInitialUpdate();
     }
+
+    daySent = 0;   // the page needs the day chart again
 
     pageReady = true;
 }
@@ -219,10 +236,8 @@ juce::var PluginEditor::makeSkyTelemetry()
     if (! haveSkyFrame)
         return {};
 
-    static constexpr std::array<const char*, 4> phaseNames { "quiet", "growth", "onset", "recovery" };
-    static constexpr std::array<const char*, 3> kindNames { "loaded", "forced", "pseudo" };
     const auto& s = skyFrame;
-    const auto phaseName = phaseNames[static_cast<size_t> (s.phase) & 3u];
+    const auto phaseName = kPhaseNames[static_cast<size_t> (s.phase) & 3u];
 
     auto* o = new juce::DynamicObject();
     o->setProperty ("day", wtProcessor.getSkyFeed().dayId());
@@ -238,6 +253,9 @@ juce::var PluginEditor::makeSkyTelemetry()
     o->setProperty ("energy", round3 (s.energy));
     o->setProperty ("activity", round3 (s.activity));
     o->setProperty ("unloading", round3 (s.unloading));
+    o->setProperty ("gain", round3 (s.gain));
+    o->setProperty ("coupling", round3 (s.couplingMvM));
+    o->setProperty ("density", round3 (s.densityCm3));
     o->setProperty ("mlt", round3 (s.mltHours));
     o->setProperty ("arcLat", round3 (s.ovalLatitudeDeg));
     o->setProperty ("onsets", static_cast<int> (s.onsetCount));
@@ -251,11 +269,103 @@ juce::var PluginEditor::makeSkyTelemetry()
             continue;
         auto* onset = new juce::DynamicObject();
         onset->setProperty ("utc", e.modelTimeUtc);
-        onset->setProperty ("kind", kindNames[static_cast<size_t> (e.onsetKind) % kindNames.size()]);
+        onset->setProperty ("kind", kOnsetKindNames[static_cast<size_t> (e.onsetKind) % kOnsetKindNames.size()]);
         onset->setProperty ("strength", round3 (e.strength));
         news.add (juce::var (onset));
     }
     o->setProperty ("newOnsets", news);
+    return juce::var (o);
+}
+
+juce::var PluginEditor::makeDomeTelemetry() const
+{
+    // What the dome renderer needs each frame (spec/06, T6.1): the curtain nodes' footprints and
+    // emission, the oval, the sun and the moon. The station frame comes once with the "day" event.
+    if (! haveSkyFrame)
+        return {};
+
+    const auto& s = skyFrame;
+    const int n = juce::jlimit (0, sky::SkySnapshot::kMaxNodes, static_cast<int> (s.nodeCount));
+    juce::Array<juce::var> mlat, mlon, green, red, violet;
+    for (auto* a : { &mlat, &mlon, &green, &red, &violet })
+        a->ensureStorageAllocated (n);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto& node = s.nodes[static_cast<size_t> (i)];
+        mlat.add (round3 (node.mlatDeg));
+        mlon.add (round3 (node.mlonDeg));
+        green.add (round3 (node.green));
+        red.add (round3 (node.red));
+        violet.add (round3 (node.violet));
+    }
+
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("n", n);
+    o->setProperty ("mlat", mlat);
+    o->setProperty ("mlon", mlon);
+    o->setProperty ("green", green);
+    o->setProperty ("red", red);
+    o->setProperty ("violet", violet);
+    o->setProperty ("eqLat", round3 (s.eqLatitudeDeg));
+    o->setProperty ("poleLat", round3 (s.poleLatitudeDeg));
+    o->setProperty ("dayShift", round3 (s.dayShiftDeg));
+    o->setProperty ("stormRed", round3 (s.stormRed));
+    o->setProperty ("pcPhase", round3 (s.pcPhase));
+    o->setProperty ("recoveryPulse", round3 (s.recoveryPulse));
+    o->setProperty ("sunAz", round3 (s.astronomy.sunAzDeg));
+    o->setProperty ("sunEl", round3 (s.astronomy.sunElDeg));
+    o->setProperty ("moonAz", round3 (s.astronomy.moonAzDeg));
+    o->setProperty ("moonEl", round3 (s.astronomy.moonElDeg));
+    o->setProperty ("moonIllum", round3 (s.astronomy.moonIllumination));
+    return juce::var (o);
+}
+
+juce::var PluginEditor::makeDayEvent() const
+{
+    // The loaded day at a glance (the magnetogram strip) and the station the dome looks up from.
+    const auto& c = wtProcessor.getSkyFeed().dayChart();
+    const auto& ob = skyFrame.observer;
+
+    auto* station = new juce::DynamicObject();
+    const auto info = data::stationInfo (c.station);
+    station->setProperty ("code", juce::String (info.code));
+    station->setProperty ("name", juce::String::fromUTF8 (info.name));
+    station->setProperty ("lat", round3 (ob.latDeg));
+    station->setProperty ("lon", round3 (ob.lonDeg));
+    station->setProperty ("elevKm", round3 (ob.elevKm));
+    station->setProperty ("mlat", round3 (ob.mlatDeg));
+    station->setProperty ("mlon", round3 (ob.mlonDeg));
+    station->setProperty ("poleLat", round3 (ob.poleLatDeg));
+    station->setProperty ("poleLon", round3 (ob.poleLonDeg));
+    station->setProperty ("mzAz", round3 (ob.magZenithAzDeg));
+    station->setProperty ("mzEl", round3 (ob.magZenithElDeg));
+
+    juce::Array<juce::var> phases, onsets;
+    phases.ensureStorageAllocated (c.size());
+    for (auto p : c.phase)
+        phases.add (static_cast<int> (p));
+    for (const auto& e : c.onsets)
+    {
+        auto* onset = new juce::DynamicObject();
+        onset->setProperty ("utc", e.utc);
+        onset->setProperty ("kind", kOnsetKindNames[static_cast<size_t> (e.kind) % kOnsetKindNames.size()]);
+        onset->setProperty ("strength", round3 (e.strength));
+        onsets.add (juce::var (onset));
+    }
+
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("day", c.dayId);
+    o->setProperty ("sequence", static_cast<juce::int64> (c.sequence));
+    o->setProperty ("t0", c.startUtc);
+    o->setProperty ("step", c.stepSeconds);
+    o->setProperty ("station", juce::var (station));
+    o->setProperty ("dh", floats (c.dhMeasuredNt, 10.0));
+    o->setProperty ("dhModel", floats (c.dhModelNt, 10.0));
+    o->setProperty ("coupling", floats (c.couplingMvM, 100.0));
+    o->setProperty ("energy", floats (c.reservoir, 1000.0));
+    o->setProperty ("threshold", floats (c.threshold, 1000.0));
+    o->setProperty ("phase", phases);
+    o->setProperty ("onsets", onsets);
     return juce::var (o);
 }
 
@@ -306,7 +416,9 @@ juce::var PluginEditor::makeTelemetry()
     o->setProperty ("gr", round3 (t.gainReduction.exchange (1.0f)));
     o->setProperty ("autoGain", round3 (t.autoGain.load()));
     o->setProperty ("verb", round3 (t.reverbLevel.load()));
+    o->setProperty ("breath", round3 (t.breath.load()));
     o->setProperty ("sky", makeSkyTelemetry());
+    o->setProperty ("dome", makeDomeTelemetry());
     o->setProperty ("chord", makeChordTelemetry());
 
     juce::Array<juce::var> spec;
@@ -324,6 +436,15 @@ void PluginEditor::timerCallback()
 
     updateAnalyzer();
     browser->emitEventIfBrowserIsVisible ("telemetry", makeTelemetry());
+
+    // The day chart once per page load and per loaded day, after the first sky frame (it carries
+    // the station frame).
+    const auto daySequence = wtProcessor.getSkyFeed().dayChart().sequence;
+    if (haveSkyFrame && daySequence != 0 && daySequence != daySent)
+    {
+        browser->emitEventIfBrowserIsVisible ("day", makeDayEvent());
+        daySent = daySequence;
+    }
 }
 
 } // namespace worldtable

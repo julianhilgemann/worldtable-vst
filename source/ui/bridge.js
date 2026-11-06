@@ -2,7 +2,7 @@
  *
  * Inside the plug-in, JUCE injects window.__JUCE__; parameters travel over the
  * WebSliderRelay protocol ("__juce__slider<ID>" events carrying real values), and
- * the editor pushes "telemetry", "table" and "status" events.
+ * the editor pushes "telemetry" (30 Hz) and "day" (the loaded day's chart, once) events.
  * In a plain browser there is no backend: a mock animates fake telemetry and a
  * synthetic table so the UI can be developed and reviewed without a DAW. */
 (function () {
@@ -102,7 +102,9 @@
     if (u === "dB") return (v > 0 ? "+" : "") + v.toFixed(1) + " dB";
     if (u === "dB/oct") return (v > 0 ? "+" : "") + v.toFixed(1) + " dB/oct";
     if (u === "BPM") return v.toFixed(1) + " BPM";
-    if (u === "oct") return v + " oct";
+    if (u === "oct") return v.toFixed(1) + " oct";
+    if (u === "ct") return v.toFixed(1) + " ct";
+    if (u === "st") return (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v) + " st";
     if (m.type === "int") return (m.min < 0 && v > 0 ? "+" : "") + v;
     if (m.min < 0) return (v > 0 ? "+" : "") + Math.round(v * 100) + "%";
     if (m.max === 1 && m.min === 0) return Math.round(v * 100) + "%";
@@ -124,7 +126,7 @@
       const r = pending.get(pid);
       if (r) { pending.delete(pid); r(result); }
     });
-    for (const name of ["telemetry", "table", "status"])
+    for (const name of ["telemetry", "day", "status"])
       juce.backend.addEventListener(name, (payload) => dispatch(name, payload));
   }
 
