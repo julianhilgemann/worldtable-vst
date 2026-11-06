@@ -29,6 +29,7 @@ struct Telemetry
     std::atomic<float> gainReduction { 1.0f };   ///< the limiter's minimum gain this block, linear
     std::atomic<float> autoGain { 1.0f };
     std::atomic<float> reverbLevel { 0.0f };
+    std::atomic<float> breath { 0.0f };        ///< the Breath cycle 0 … 1 (SkySound::breathCycle)
 };
 
 /** Single-producer/single-consumer ring of the post-limiter mono mix for the analyzer. */

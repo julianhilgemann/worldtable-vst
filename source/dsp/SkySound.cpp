@@ -58,6 +58,7 @@ void SkySound::prepare (double rate, int nodes, uint32_t soundSeed, const Settin
 
     cur = 0;
     xf = 1.0;
+    breath01 = 0.0;
     xfStart = xfEnd = 0.0;
     dampStart = -1.0;
     applied = start;
@@ -216,8 +217,9 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
 
     const double gainK = 1.0 - std::exp (-kTick / s.gainSlewSeconds);
     const double breathPhase = 2.0 * kPi * kBreathHz * realS;
-    const double breath = 1.0 - 0.35 * s.breathDepth * (0.5 - 0.5 * std::cos (breathPhase));
-    const double breathViolet = breath * (1.0 - 0.15 * s.breathDepth * (0.5 - 0.5 * std::cos (breathPhase)));
+    breath01 = 0.5 - 0.5 * std::cos (breathPhase);
+    const double breath = 1.0 - 0.35 * s.breathDepth * breath01;
+    const double breathViolet = breath * (1.0 - 0.15 * s.breathDepth * breath01);
     std::array<double, kNumLayers> radius {}, norm {};
     for (size_t l = 0; l < kNumLayers; ++l)
     {

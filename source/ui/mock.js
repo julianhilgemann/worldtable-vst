@@ -1,89 +1,131 @@
-/* Browser-only mock backend: a synthetic Sky Model replay and a chord cycle, so
- * the UI can be developed and reviewed without a DAW. Inactive inside the plug-in. */
+/* Browser-only mock backend (spec/06 "Mock first", T6.1): the T1.2/T1.3 sketch *is* the mock.
+ * It imports the sketch's Sky Model and Harmony from prototype/sky/, replays a recorded day on
+ * real time and posts the same "telemetry" and "day" events the plug-in's editor sends. Inside
+ * the plug-in the mock is inactive and nothing is imported.
+ *
+ * Serve the repo root (python3 -m http.server 8765) and open /source/ui/. The URL hash picks the
+ * moment, like the sketch: #day=2024-05-10&t=2024-05-11T08:00&speed=24 */
 (function () {
   "use strict";
-  if (!window.WT.isMock) return;
   const WT = window.WT;
+  if (!WT || !WT.isMock) return;
 
-  const STORM_UTC = Date.UTC(2024, 4, 10, 17, 20, 0) / 1000;
-  const SPEEDS = 24;
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const DAY = hash.get("day") || "2024-05-10";
+  const START = { "2024-05-10": "2024-05-10T17:20", "2025-01-19": "2025-01-19T09:30", "2025-01-25": "2025-01-25T09:00" };
+  const SPEED = Number(hash.get("speed")) || 24;
+  const base = new URL("../../prototype/sky/", location.href).href;
 
-  // a few chords of the bright vocabulary, voiced roughly like SkySound voices them
-  const CHORDS = [
-    { label: "Dmaj7sus2", roman: "I", root: 50, tones: [0, 2, 7, 11] },
-    { label: "B♭maj7", roman: "♭VI", root: 58, tones: [0, 4, 7, 11] },
-    { label: "Gm add9", roman: "iv", root: 55, tones: [0, 3, 7, 14] },
-    { label: "Aadd9", roman: "V", root: 57, tones: [0, 4, 7, 14] },
-  ];
+  Promise.all(["data.js", "model.js", "observer.js", "sound/harmony.js"].map((f) => import(base + f)))
+    .then((mods) => start(...mods))
+    .catch((e) => console.warn("mock: the sketch modules are not reachable (serve the repo root)", e));
 
-  function voicesOf(chord, l) {
+  async function start(D, M, O, H) {
+    const observer = new O.Observer();
+    const track = await D.loadDay(DAY);
+    const startMs = Date.parse((hash.get("t") || START[DAY] || START["2024-05-10"]) + "Z");
+    const model = new M.SkyModel(track, { seed: 1, startMs, speed: SPEED, observer });
+
+    // ---- the day chart, as SkyFeed builds it from the timeline
+    const trace = M.runSlow(track, { seed: 1, observer });
+    const st = observer.station;
+    WT.dispatch("day", {
+      day: DAY, sequence: 1, t0: track.startMs / 1000, step: 60,
+      station: { code: st.code, name: st.name, lat: st.lat, lon: st.lon, elevKm: st.elevKm, mlat: observer.mlat, mlon: observer.mlon,
+        poleLat: O.DIPOLE_POLE.lat, poleLon: O.DIPOLE_POLE.lon, mzAz: observer.magZenith.az, mzEl: observer.magZenith.el },
+      dh: Array.from(trace.dh), dhModel: Array.from(trace.dhModel), coupling: Array.from(trace.coupling),
+      energy: Array.from(trace.energy), threshold: Array.from(trace.threshold), phase: Array.from(trace.phase),
+      onsets: trace.events.filter((e) => e.type === "onset").map((e) => ({ utc: e.t / 1000, kind: e.kind, strength: e.strength })),
+    });
+
+    // ---- harmony: the sketch's progression, voiced like SkySound (5 slots per layer)
+    const FN = ["home", "tension", "awe", "borrowed"];
+    const harmony = new H.Harmony({ seed: 1, mood: H.MOODS[Math.round(WT.get("mood"))], key: Math.round(WT.get("key")), progression: WT.get("progression") });
+    harmony.start(model.snapshot().phase);
+    let chord = harmony.chord(), changes = 0, lastTake = 0, slots = null, notes = [[], [], []];
+    function voice(c) {
+      const reg = WT.get("register_semis") + WT.get("transpose"), spread = WT.get("spread");
+      const next = H.LAYERS.map((L) => H.layerSlots(c, c.key, L));
+      slots = slots ? next.map((s, l) => H.leadSlots(slots[l], s).slots) : next;
+      notes = H.LAYERS.map((L, l) => {
+        const [lo, hi] = H.layerRange(L, reg, spread), centre = Math.round((lo + hi) / 2);
+        const prev = notes[l];
+        return slots[l].map((pc, k) => H.nearestNote(pc, prev[k] ?? centre, lo, hi));
+      });
+    }
+    voice(chord);
+    WT.onParam("key", (v) => harmony.setKey(Math.round(v)));
+    WT.onParam("mood", (v) => harmony.setMood(H.MOODS[Math.round(v)]));
+    WT.onParam("progression", (v) => harmony.setProgression(v));
+
+    // ---- real time → model ticks (10 ms), 30 telemetry frames a second
+    const t0 = performance.now();
+    let ticks = 0;
+    const realS = () => (performance.now() - t0) / 1000;
+    setInterval(() => {
+      const want = Math.floor(realS() * 100);
+      const newOnsets = [];
+      for (let n = 0; ticks < want && n < 50; n++, ticks++) {
+        model.step();
+        for (const e of model.takeEvents()) {
+          const minute = Math.floor(e.t / 60000);
+          if (e.type === "phase") harmony.onPhase(e.phase, minute);
+          else if (e.type === "onset") { harmony.onOnset(e.strength, minute); newOnsets.push({ utc: e.t / 1000, kind: e.kind, strength: e.strength }); }
+        }
+      }
+      ticks = Math.max(ticks, want - 50);
+      const r = realS();
+      harmony.update(r);
+      if (harmony.pending && r - lastTake > (harmony.pending.urgent ? 1.5 : 6)) {
+        harmony.take(r);
+        chord = harmony.chord();
+        voice(chord);
+        changes += 1;
+        lastTake = r;
+      }
+      WT.dispatch("telemetry", telemetry(model.snapshot(), newOnsets, r));
+    }, 33);
+
+    function telemetry(s, newOnsets, r) {
+      const nd = s.nodes, n = s.nodeCount;
+      const act = s.activity, breath = 0.5 - 0.5 * Math.cos(2 * Math.PI * (5 / 60) * r);
+      const level = 0.14 + 0.22 * act + 0.05 * Math.sin(r * 0.7);
+      return {
+        peakL: level * (1 + 0.04 * Math.sin(r * 3.1)), peakR: level * (1 + 0.04 * Math.cos(r * 2.7)),
+        gr: level > 0.3 ? 0.96 : 1, autoGain: 1.4, verb: 0.18 + 0.14 * act, breath,
+        spectrum: spectrumFor(notes, act),
+        sky: {
+          day: DAY, utc: s.modelTimeUtc / 1000, speed: SPEED, phase: M.PHASE_NAMES[s.phase], progress: s.phaseProgress,
+          kp: s.kp, bz: s.bz, wind: s.speed, dh: s.dh, dhModel: s.dhModel, energy: s.energy, activity: act,
+          unloading: s.unloading, gain: s.gain, coupling: s.coupling, density: s.density, mlt: s.mlt, arcLat: s.ovalLatitude,
+          onsets: s.onsetCount, whistlers: s.whistlerCount, newOnsets,
+        },
+        dome: {
+          n, mlat: Array.from(nd.mlat.subarray(0, n)), mlon: Array.from(nd.mlon.subarray(0, n)),
+          green: Array.from(nd.green.subarray(0, n)), red: Array.from(nd.red.subarray(0, n)), violet: Array.from(nd.violet.subarray(0, n)),
+          eqLat: s.eqLat, poleLat: s.poleLat, dayShift: s.dayShiftDeg, stormRed: s.stormRed,
+          sunAz: s.sky.sunAz, sunEl: s.sky.sunEl, moonAz: s.sky.moonAz, moonEl: s.sky.moonEl, moonIllum: s.sky.moonIllum,
+        },
+        chord: {
+          label: chord.label, roman: chord.roman, key: chord.key, function: FN.indexOf(chord.fn), shape: chord.index,
+          voices: notes[0].length, bank: changes % 2, latched: false, pending: !!harmony.pending, changes, tick: 0, notes,
+        },
+      };
+    }
+  }
+
+  /** A plausible analyser picture: a soft slope plus the voiced partials. */
+  function spectrumFor(notes, act) {
     const out = [];
-    const lo = [31, 50, 72][l], hi = [49, 74, 90][l];
-    const tones = l === 0 ? [chord.tones[0], chord.tones[2] ?? 7] : chord.tones;
-    for (let i = 0; i < 8; i++) {
-      const t = tones[i % tones.length];
-      let n = chord.root + t + 12 * Math.floor(i / tones.length);
-      while (n < lo) n += 12;
-      while (n > hi) n -= 12;
-      out.push(n);
+    for (let b = 0; b < 120; b++) {
+      const f = 20 * Math.pow(1000, b / 120);
+      let db = -78 + 10 * Math.exp(-(Math.log2(f / 300) ** 2) / 6) + 8 * act;
+      for (const layer of notes) for (const n of layer) {
+        const fn = 440 * Math.pow(2, (n - 69) / 12);
+        db = Math.max(db, -34 - 6 * Math.abs(Math.log2(f / fn)) * 12);
+      }
+      out.push(Math.round(db * 10) / 10);
     }
     return out;
   }
-
-  function dispatchTelemetry(t, chord, phase) {
-    const spectrum = [];
-    for (let b = 0; b < 120; b++) {
-      const f = 20 * Math.pow(1000, b / 120);
-      let db = -34 - 15 * Math.log10(f / 200) * (f > 200 ? 1 : -0.4) + 5 * Math.sin(b * 0.7 + t * 0.7) * 0.5;
-      if (Math.abs(f - 220) < 30 || Math.abs(f - 330) < 40 || Math.abs(f - 440) < 50) db += 13;
-      if (phase === 2) db += 3 * Math.exp(-Math.pow((b - 80) / 18, 2));
-      spectrum.push(Math.max(-100, db));
-    }
-    const env = 0.6 + 0.25 * Math.sin(t * 0.8);
-    WT.dispatch("telemetry", {
-      peakL: env * (0.75 + 0.1 * Math.sin(t * 2.7)),
-      peakR: env * (0.73 + 0.1 * Math.sin(t * 2.3)),
-      gr: 0.94 + 0.06 * Math.sin(t * 1.1),
-      autoGain: 0.9,
-      verb: 0.18 + 0.08 * Math.sin(t * 0.9),
-      spectrum,
-      sky: {
-        day: "2024-05-10",
-        utc: STORM_UTC + (t * SPEEDS),
-        speed: SPEEDS,
-        phase: ["quiet", "growth", "onset", "recovery"][phase],
-        kp: 5.2 + 1.6 * Math.sin(t * 0.05),
-        onsets: 3,
-        energy: 0.4 + 0.4 * Math.sin(t * 0.1),
-        activity: 0.5,
-      },
-      chord: {
-        label: chord.label,
-        roman: chord.roman,
-        latched: false,
-        pending: false,
-        voices: 8,
-        changes: Math.floor(t / 8),
-        notes: [voicesOf(chord, 0), voicesOf(chord, 1), voicesOf(chord, 2)],
-      },
-    });
-  }
-
-  let mockStatus = "live";
-  for (const kv of (location.hash || "").slice(1).split("&")) {
-    const [k, v] = kv.split("=");
-    if (k === "status") mockStatus = v;
-    else if (k && WT.META[k] !== undefined) WT.set(k, parseFloat(v));
-  }
-
-  const t0 = performance.now();
-  function tick() {
-    const t = (performance.now() - t0) / 1000;
-    const phase = Math.floor((t / 8) % 4);
-    const chordIndex = Math.floor(t / 8) % CHORDS.length;
-    dispatchTelemetry(t, CHORDS[chordIndex], phase);
-    requestAnimationFrame(tick);
-  }
-
-  window.addEventListener("load", () => requestAnimationFrame(tick));
 })();

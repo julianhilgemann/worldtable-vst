@@ -1,269 +1,488 @@
-/* Canvas visualisations. Each view exposes draw(state); app.js calls them per frame. */
+/* The instrument layer's live pictures (spec/06, T6.1). Each view redraws only when what it shows
+ * has changed (or, for the moving ones, only while its tab is visible), and every change glides. */
 (function () {
   "use strict";
-  const WT = window.WT, UI = window.UI, C = UI.COLORS;
+  const UI = window.UI, C = UI.C, rgba = UI.rgba, MONO = UI.MONO;
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const LAYERS = ["red", "green", "violet"];
+  const now = () => performance.now() / 1000;
 
-  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-  const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  UI.noteName = (n) => NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor (n / 12) - 1);
+  // ================================================================ voicing
+  /** Every resonator voice on a pitch axis, one lane per layer. On a chord change the new voices
+   *  glide in from the nearest old ones (the voice-leading, made visible) while the old fade. */
+  function VoicingView(canvas) {
+    const LO = 24, HI = 108, GLIDE = 3.2;
+    let marks = [];
+    let signature = "";
+    let emission = [0.5, 0.5, 0.5], drawnEmission = [-1, -1, -1];
+    let levels = [1, 0.7, 0.4];
+    let animating = true, lastW = 0;
 
-  function fmtUtc(utc, withDate) {
-    const d = new Date(utc * 1000);
-    const hh = String(d.getUTCHours()).padStart(2, "0"), mm = String(d.getUTCMinutes()).padStart(2, "0");
-    if (!withDate) return `${hh}:${mm}`;
-    const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()];
-    return `${d.getUTCDate()} ${mon} ${hh}:${mm}`;
-  }
-  UI.fmtTime = fmtUtc;
-
-  const LAYER_COLORS = ["#ff7a5c", "#6be3a4", "#a98bff"];
-  const LAYER_NAMES = ["RED", "GREEN", "VIOLET"];
-
-  // ======================================================================
-  // Chord + voices — the big display of the harmony panel (T3.6)
-  // ======================================================================
-  function ChordView(canvas) {
-    return {
-      draw(S) {
-        const { ctx, w, h } = UI.fit(canvas);
-        ctx.clearRect(0, 0, w, h);
-        const chord = S.tel.chord;
-
-        // pitch axis: MIDI 24 … 100, octave grid
-        const pad = 12, lo = 24, hi = 100;
-        const X = (note) => pad + ((note - lo) / (hi - lo)) * (w - 2 * pad);
-
-        ctx.font = "8px -apple-system, sans-serif";
-        ctx.textAlign = "center";
-        for (let n = 24; n <= 96; n += 12) {
-          const x = X(n);
-          ctx.strokeStyle = C.grid;
-          ctx.beginPath(); ctx.moveTo(x, 60); ctx.lineTo(x, h - 10); ctx.stroke();
-          ctx.fillStyle = C.faint;
-          ctx.fillText(UI.noteName(n), x, h - 2);
+    function setChord(notes) {
+      if (!notes) return;
+      const sig = notes.map((l) => [...new Set(l)].sort((a, b) => a - b).join(",")).join("|");
+      if (sig === signature) return;
+      signature = sig;
+      const t = now();
+      const old = marks.filter((m) => !m.dying);
+      for (const m of old) { m.pos = posOf(m, t); m.alpha = alphaOf(m, t); m.from = m.pos; m.to = m.pos; m.a0 = m.alpha; m.a1 = 0; m.t0 = t; m.dying = true; }
+      const fresh = [];
+      notes.forEach((layerNotes, l) => {
+        const counts = new Map();
+        for (const n of layerNotes) counts.set(n, (counts.get(n) || 0) + 1);
+        const total = layerNotes.length || 1;
+        for (const [n, c] of counts) {
+          let from = n, best = 8;
+          for (const m of old) if (m.layer === l && Math.abs(m.to - n) < best) { best = Math.abs(m.to - n); from = m.to; }
+          fresh.push({ layer: l, from, to: n, a0: 0, a1: 0.55 + 0.45 * Math.min(1, (c / total) * 3), t0: t, dying: false });
         }
-        ctx.textAlign = "left";
+      });
+      marks = marks.filter((m) => m.dying && alphaOf(m, t) > 0.01).concat(fresh);
+      animating = true;
+    }
+    const k = (m, t) => ease(clamp((t - m.t0) / GLIDE, 0, 1));
+    const posOf = (m, t) => m.from + (m.to - m.from) * k(m, t);
+    const alphaOf = (m, t) => m.a0 + (m.a1 - m.a0) * k(m, t);
 
-        // the chord itself
-        ctx.fillStyle = C.accentHot;
-        ctx.font = "700 26px -apple-system, sans-serif";
-        ctx.fillText(chord && chord.label ? chord.label : "—", pad, 34);
-        if (chord && chord.roman) {
-          ctx.fillStyle = C.text;
-          ctx.font = "11px -apple-system, sans-serif";
-          ctx.fillText(chord.roman, pad, 50);
-        }
-        if (chord && (chord.latched || chord.pending)) {
-          const badge = chord.latched ? "MIDI" : "→ NEXT";
-          const bw = ctx.measureText(badge).width + 12;
-          ctx.fillStyle = chord.latched ? "rgba(95,184,255,0.16)" : "rgba(255,201,60,0.14)";
-          ctx.strokeStyle = chord.latched ? "rgba(95,184,255,0.5)" : "rgba(255,201,60,0.45)";
-          ctx.fillRect(w - pad - bw, 14, bw, 18);
-          ctx.strokeRect(w - pad - bw, 14, bw, 18);
-          ctx.fillStyle = chord.latched ? C.blue : C.accent;
-          ctx.font = "9px -apple-system, sans-serif";
-          ctx.fillText(badge, w - pad - bw + 6, 27);
-        }
+    function setEmission(e, lv) {
+      emission = e;
+      levels = lv;
+    }
 
-        if (!chord || !chord.notes || !chord.notes.length) {
-          ctx.fillStyle = C.faint;
-          ctx.font = "10px -apple-system, sans-serif";
-          ctx.fillText("waiting for the sky…", pad, h / 2 + 20);
-          return;
-        }
+    function draw() {
+      const t = now();
+      const moved = emission.some((e, i) => Math.abs(e - drawnEmission[i]) > 0.02);
+      if (!animating && !moved && canvas.clientWidth === lastW) return;
+      lastW = canvas.clientWidth;
+      drawnEmission = emission.slice();
+      const { ctx, w, h } = UI.fit(canvas);
+      ctx.clearRect(0, 0, w, h);
+      const x0 = 16, x1 = w - 4;
+      const x = (n) => x0 + (x1 - x0) * (n - LO) / (HI - LO);
+      const lane = [[35, 48], [19, 32], [3, 16]];   // red low, green, violet high
 
-        // the three layers: one lane per emission colour, a bar per voice at its pitch
-        const laneTop = 74, laneGap = Math.max(20, (h - laneTop - 24) / 3);
-        for (let l = 0; l < 3; l++) {
-          const notes = chord.notes[l] || [];
-          const y = laneTop + l * laneGap;
-          ctx.strokeStyle = C.grid;
-          ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
-
-          ctx.fillStyle = LAYER_COLORS[l];
-          ctx.globalAlpha = 0.35;
-          ctx.font = "7.5px -apple-system, sans-serif";
-          ctx.fillText(LAYER_NAMES[l], pad, y - 3);
-          ctx.globalAlpha = 1;
-
-          for (let i = 0; i < notes.length; i++) {
-            const note = notes[i];
-            const x = X(note);
-            const a = 0.25 + 0.65 * (1 - i / Math.max(1, notes.length - 1));
-            ctx.globalAlpha = a;
-            ctx.fillStyle = LAYER_COLORS[l];
-            ctx.fillRect(x - 1, y - 7, 2.2, 13);
-          }
-          ctx.globalAlpha = 1;
-        }
-
-        // chord tones as faint vertical bands over the lanes
-        if (chord.label && chord.notes[0]) {
-          const lane = chord.notes[0];
-          for (let i = 0; i < lane.length; i++) {
-            const pc = ((lane[i] % 12) + 12) % 12;
-            ctx.fillStyle = (pc === 0 || pc === 7) ? "rgba(255,201,60,0.07)" : "rgba(255,201,60,0.035)";
-            ctx.fillRect(X(lane[i]) - 3, 60, 6, h - 70);
-          }
-        }
-      },
-    };
-  }
-
-  // ======================================================================
-  // Delay taps
-  // ======================================================================
-  function DelayView(canvas) {
-    return {
-      draw() {
-        const { ctx, w, h } = UI.fit(canvas);
-        ctx.clearRect(0, 0, w, h);
-        const t = Math.max (0.02, WT.get("dly_time"));
-        const fb = WT.get("dly_fb"), mix = WT.get("dly_mix"), pp = WT.get("dly_pingpong") > 0.5;
-        const tone = WT.get("dly_tone");
-        const span = Math.max (4 * t, t * 8.5);
-        const mid = h / 2, pad = 8, amp = h / 2 - 12;
-        const X = (sec) => pad + (sec / span) * (w - 2 * pad);
-
-        ctx.strokeStyle = C.gridStrong;
-        ctx.beginPath(); ctx.moveTo(pad, mid); ctx.lineTo(w - pad, mid); ctx.stroke();
-
-        ctx.fillStyle = "rgba(95,184,255,0.7)";
-        ctx.fillRect(X(0) - 1, mid - amp * 0.9, 2, amp * 1.8);
-
-        let level = 1;
-        ctx.globalAlpha = 0.35 + 0.65 * Math.min(1, mix * 2);
-        for (let k = 1; k <= 24 && t * k < span; k++) {
-          const up = !pp || k % 2 === 1;
-          const hgt = level * amp * 0.9 * Math.max(0.2, 1 - 0.05 * (1 - tone) * k);
-          if (hgt < 0.5) break;
-          const x = X(t * k);
-          ctx.shadowColor = C.accentGlow; ctx.shadowBlur = 8;
-          ctx.fillStyle = C.accent;
-          if (pp) ctx.fillRect(x - 1.5, up ? mid - hgt : mid, 3, hgt);
-          else ctx.fillRect(x - 1.5, mid - hgt, 3, hgt * 2);
-          ctx.shadowBlur = 0;
-          level *= fb;
-        }
-        ctx.globalAlpha = 1;
-        ctx.font = "9px -apple-system, sans-serif";
-        ctx.fillStyle = C.text;
-        ctx.fillText(`${(t * 1000).toFixed(0)} ms · ${fb.toFixed(2)} fb`, pad + 2, 12);
-        if (pp) { ctx.fillStyle = C.faint; ctx.fillText("L", w - 14, 12); ctx.fillText("R", w - 14, h - 5); }
-      },
-    };
-  }
-
-  // ======================================================================
-  // Space (reverb) — decay time over frequency, shimmer sparks
-  // ======================================================================
-  function ReverbView(canvas) {
-    const sparks = [];
-    const fMin = 30, fMax = 20000, tMin = 0.2, tMax = 40;
-    const xOf = (f, w) => (Math.log (f / fMin) / Math.log (fMax / fMin)) * w;
-    const yOf = (t, h) => h - 14 - (Math.log (t / tMin) / Math.log (tMax / tMin)) * (h - 26);
-
-    return {
-      draw(S) {
-        const { ctx, w, h } = UI.fit(canvas);
-        ctx.clearRect(0, 0, w, h);
-        const decay = WT.get("rev_decay"), damp = WT.get("rev_damp"), shimmer = WT.get("rev_shimmer");
-        const mix = WT.get("rev_mix");
-        const fd = 1200 * Math.pow (15, 1 - damp);
-        const level = clamp ((S.tel.verb || 0) * 4, 0, 1);
-
-        ctx.font = "8.5px -apple-system, sans-serif";
-        for (const f of [100, 1000, 10000]) {
-          const x = xOf(f, w);
-          ctx.strokeStyle = C.grid; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-          ctx.fillStyle = C.faint; ctx.fillText(f >= 1000 ? f / 1000 + "k" : String(f), x + 3, h - 3);
-        }
-        for (const t of [1, 10]) {
-          const y = yOf(t, h);
-          ctx.strokeStyle = C.grid; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-          ctx.fillStyle = C.faint; ctx.fillText(t + " s", 4, y - 3);
-        }
-
-        const rt = (f) => decay / Math.sqrt (1 + Math.pow (f / fd, 2)) * (1 + 0.15 * Math.exp (-f / 200));
-        const top = ctx.createLinearGradient(0, 0, 0, h);
-        top.addColorStop(0, `rgba(255,201,60,${(0.22 + 0.25 * level * mix).toFixed(3)})`);
-        top.addColorStop(1, "rgba(255,201,60,0.0)");
-        ctx.beginPath(); ctx.moveTo(0, h);
-        for (let x = 0; x <= w; x += 2) ctx.lineTo(x, yOf(clamp (rt(fMin * Math.pow (fMax / fMin, x / w)), tMin, tMax), h));
-        ctx.lineTo(w, h); ctx.closePath();
-        ctx.fillStyle = top; ctx.fill();
-        ctx.shadowColor = C.accentGlow; ctx.shadowBlur = 12;
-        ctx.strokeStyle = C.accent; ctx.lineWidth = 2;
+      // semitone ruler and octave lines
+      ctx.font = MONO(8);
+      ctx.textBaseline = "alphabetic";
+      for (let n = LO; n <= HI; n++) {
+        const isC = n % 12 === 0, xx = Math.round(x(n)) + 0.5;
+        ctx.strokeStyle = isC ? C.hair : C.hairSoft;
         ctx.beginPath();
-        for (let x = 0; x <= w; x += 2) { const y = yOf(clamp (rt(fMin * Math.pow (fMax / fMin, x / w)), tMin, tMax), h); x ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+        if (isC) { ctx.moveTo(xx, 2); ctx.lineTo(xx, 50); } else { ctx.moveTo(xx, 49); ctx.lineTo(xx, 51); }
         ctx.stroke();
-        ctx.shadowBlur = 0;
+        if (isC && n < HI) { ctx.fillStyle = C.faint; ctx.fillText("C" + (n / 12 - 1), xx + 3, h - 1); }
+      }
+      LAYERS.forEach((name, l) => {
+        const yy = Math.round((lane[l][0] + lane[l][1]) / 2) + 0.5;
+        ctx.strokeStyle = rgba(name, 0.07);
+        ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x1, yy); ctx.stroke();
+        ctx.fillStyle = rgba(name, 0.7);
+        ctx.beginPath(); ctx.arc(5, (lane[l][0] + lane[l][1]) / 2, 1.8, 0, 2 * Math.PI); ctx.fill();
+      });
 
-        if (shimmer > 0.01) {
-          const rate = shimmer * (0.4 + 2.5 * level);
-          if (Math.random() < rate) {
-            const f = 600 * Math.pow (20, Math.random());
-            sparks.push({ x: xOf(f, w), y: yOf(clamp (rt(f), tMin, tMax), h), vy: -0.25 - Math.random() * 0.5, vx: 0.25 + Math.random() * 0.4, life: 1 });
-          }
-        }
-        for (let i = sparks.length - 1; i >= 0; i--) {
-          const s = sparks[i];
-          s.x += s.vx; s.y += s.vy; s.life -= 0.012;
-          if (s.life <= 0 || s.y < 0) { sparks.splice(i, 1); continue; }
-          ctx.fillStyle = `rgba(255,236,170,${(s.life * 0.9).toFixed(3)})`;
-          ctx.beginPath(); ctx.arc(s.x, s.y, 1.2 + s.life, 0, Math.PI * 2); ctx.fill();
-        }
+      // the voices
+      let busy = false;
+      ctx.lineCap = "round";
+      for (const m of marks) {
+        const kk = k(m, t);
+        if (kk < 1) busy = true;
+        const a = alphaOf(m, t) * (0.3 + 0.7 * emission[m.layer]) * (0.35 + 0.65 * levels[m.layer]);
+        if (a < 0.01) continue;
+        const name = LAYERS[m.layer], xx = x(posOf(m, t)), [y0, y1] = lane[m.layer];
+        ctx.shadowColor = rgba(name, Math.min(1, a * 1.4));
+        ctx.shadowBlur = 10;
+        ctx.strokeStyle = rgba(name, clamp(a * 1.15, 0, 1));
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(xx, y0 + 1); ctx.lineTo(xx, y1 - 1); ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+      marks = marks.filter((m) => !(m.dying && k(m, t) >= 1));
+      animating = busy;
+    }
 
-        ctx.fillStyle = C.text; ctx.font = "9px -apple-system, sans-serif";
-        ctx.textAlign = "right";
-        ctx.fillText(`${decay.toFixed(1)} s · size ${Math.round(WT.get("rev_size") * 100)}% · pre ${WT.get("rev_predelay").toFixed(0)} ms`, w - 6, 12);
-        ctx.textAlign = "left";
+    return { setChord, setEmission, draw };
+  }
+
+  // ================================================================ phase track and ticker
+  function PhaseTrack(root) {
+    const cells = [...root.children];
+    const NAMES = ["quiet", "growth", "onset", "recovery"];
+    let current = "";
+    return {
+      set(phase, progress) {
+        if (phase !== current) {
+          cells.forEach((c, i) => c.classList.toggle("on", NAMES[i] === phase));
+          current = phase;
+        }
+        const i = NAMES.indexOf(phase);
+        if (i >= 0) cells[i].querySelector("i").style.width = (clamp(progress, 0, 1) * 100).toFixed(1) + "%";
       },
     };
   }
 
-  // ======================================================================
-  // Output meters
-  // ======================================================================
-  function MeterView(canvas) {
-    let holdL = 0, holdR = 0;
-    const dbFloor = -48;
+  function Ticker(ol, max = 3) {
     return {
-      draw(S) {
+      push(html) {
+        const li = document.createElement("li");
+        li.className = "fresh";
+        li.innerHTML = html;
+        ol.insertBefore(li, ol.firstChild);
+        while (ol.children.length > max) ol.removeChild(ol.lastChild);
+      },
+    };
+  }
+
+  // ================================================================ magnetogram
+  const PHASE_FILL = ["rgba(138,150,173,0.22)", "rgba(143,123,255,0.55)", "rgba(92,242,160,0.95)", "rgba(92,242,160,0.38)"];
+
+  function MagnetogramView(canvas) {
+    const base = document.createElement("canvas");
+    let day = null, dirty = true, lastX = -1, lastW = 0, lastK = 0;
+    const L = 118, PAD_R = 10;
+    const lanes = { mag: [6, 37], load: [40, 48], phase: [51, 56] };
+
+    function setDay(d) { day = d; dirty = true; }
+
+    function drawBase(w, h, k) {
+      base.width = Math.round(w * k); base.height = Math.round(h * k);
+      const ctx = base.getContext("2d");
+      ctx.setTransform(k, 0, 0, k, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      const R = w - PAD_R, n = day.phase.length;
+      const x = (i) => L + (R - L) * (i / Math.max(1, n - 1));
+
+      ctx.font = MONO(8);
+      ctx.textBaseline = "alphabetic";
+      // 6-hour grid
+      for (let m = 0; m < n; m += 360) {
+        const xx = Math.round(x(m)) + 0.5;
+        ctx.strokeStyle = C.hairSoft; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(xx, 3); ctx.lineTo(xx, h - 3); ctx.stroke();
+        const d = new Date((day.t0 + m * day.step) * 1000);
+        const label = m === 0 ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : d.toISOString().slice(11, 16);
+        ctx.fillStyle = C.faint; ctx.fillText(label, xx + 3, 12);
+      }
+
+      // magnetogram: measured (green) over the model (violet), symmetric scale
+      let max = 50;
+      for (let i = 0; i < n; i++) max = Math.max(max, Math.abs(day.dh[i]), Math.abs(day.dhModel[i]));
+      const [m0, m1] = lanes.mag, mid = (m0 + m1) / 2, sy = (m1 - m0) / 2 / max;
+      ctx.strokeStyle = C.hair;
+      ctx.beginPath(); ctx.moveTo(L, mid + 0.5); ctx.lineTo(R, mid + 0.5); ctx.stroke();
+      const line = (arr, color, width) => {
+        ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
+        for (let i = 0; i < n; i++) { const y = mid - arr[i] * sy; i ? ctx.lineTo(x(i), y) : ctx.moveTo(x(i), y); }
+        ctx.stroke();
+      };
+      line(day.dhModel, "rgba(143,123,255,0.8)", 1);
+      line(day.dh, C.green, 1);
+
+      // load: coupling (red area), reservoir (ink) against its threshold
+      const [l0, l1] = lanes.load;
+      let emax = 2, wmax = 1.5;
+      for (let i = 0; i < n; i++) { emax = Math.max(emax, day.coupling[i]); wmax = Math.max(wmax, day.energy[i], day.threshold[i]); }
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) { const y = l1 - (day.coupling[i] / emax) * (l1 - l0); i ? ctx.lineTo(x(i), y) : ctx.moveTo(x(i), y); }
+      ctx.lineTo(R, l1); ctx.lineTo(L, l1); ctx.closePath();
+      ctx.fillStyle = "rgba(255,107,107,0.26)"; ctx.fill();
+      const lane = (arr, color) => {
+        ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.beginPath();
+        for (let i = 0; i < n; i++) { const y = l1 - (arr[i] / wmax) * (l1 - l0); i ? ctx.lineTo(x(i), y) : ctx.moveTo(x(i), y); }
+        ctx.stroke();
+      };
+      lane(day.threshold, "rgba(201,211,230,0.22)");
+      lane(day.energy, "rgba(201,211,230,0.8)");
+
+      // phase band and onsets
+      const [p0, p1] = lanes.phase, cw = (R - L) / n + 0.6;
+      for (let i = 0; i < n; i++) { ctx.fillStyle = PHASE_FILL[day.phase[i]] || PHASE_FILL[0]; ctx.fillRect(x(i), p0, cw, p1 - p0); }
+      for (const e of day.onsets) {
+        const i = (e.utc - day.t0) / day.step;
+        if (i < 0 || i > n) continue;
+        ctx.fillStyle = e.kind === "forced" ? C.red : e.kind === "pseudo" ? C.muted : C.green;
+        ctx.beginPath(); ctx.moveTo(x(i), p0 - 0.5); ctx.lineTo(x(i) - 2.6, p0 - 4.5); ctx.lineTo(x(i) + 2.6, p0 - 4.5); ctx.fill();
+      }
+
+      // labels
+      ctx.font = MONO(9);
+      ctx.fillStyle = C.ink; ctx.fillText("MAGNETOGRAM", 10, 14);
+      ctx.font = MONO(8.5);
+      ctx.fillStyle = C.muted; ctx.fillText(`ΔH ±${Math.round(max)} nT`, 10, 26);
+      ctx.fillStyle = C.green; ctx.fillText("— " + (day.station ? day.station.code : "CMO"), 10, 37);
+      ctx.fillStyle = C.violet; ctx.fillText("— model", 52, 37);
+      ctx.fillStyle = C.ink; ctx.fillText("energy", 10, 48);
+      ctx.fillStyle = C.red; ctx.fillText("· E", 44, 48);
+      ctx.fillStyle = C.muted; ctx.fillText("phase", 10, 58);
+      dirty = false;
+    }
+
+    function draw(nowUtc) {
+      if (!day) return;
+      const w = canvas.clientWidth, h = canvas.clientHeight, k = Math.min(3, UI.dpr * UI.scale);
+      if (dirty || w !== lastW || k !== lastK) { drawBase(w, h, k); lastW = w; lastK = k; lastX = -1; }
+      const R = w - PAD_R, n = day.phase.length;
+      const xNow = L + (R - L) * clamp((nowUtc - day.t0) / day.step / Math.max(1, n - 1), 0, 1);
+      if (Math.abs(xNow - lastX) < 0.25) return;
+      lastX = xNow;
+      const { ctx } = UI.fit(canvas);
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(base, 0, 0, w, h);
+      // what is still ahead in the replayed day, dimmed
+      ctx.fillStyle = "rgba(5,7,13,0.55)";
+      ctx.fillRect(xNow, 2, R - xNow + 2, h - 4);
+      ctx.strokeStyle = C.red; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(Math.round(xNow) + 0.5, 3); ctx.lineTo(Math.round(xNow) + 0.5, h - 3); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    return { setDay, draw };
+  }
+
+  // ================================================================ layers: level and ring-out
+  function LayersView(canvas) {
+    let key = "";
+    return {
+      draw(levels, t60) {
+        const k = levels.map((v) => v.toFixed(3)).join() + t60.map((v) => v.toFixed(2)).join() + canvas.clientWidth + UI.scale;
+        if (k === key) return;
+        key = k;
         const { ctx, w, h } = UI.fit(canvas);
         ctx.clearRect(0, 0, w, h);
-        const top = 4, bottom = h - 14;
-        const Y = (db) => top + (clamp (db, dbFloor, 0) / dbFloor) * (bottom - top);
-        const toDb = (g) => 20 * Math.log10(Math.max(1e-6, g));
-        const l = toDb(S.tel.peakL || 0), r = toDb(S.tel.peakR || 0);
-        holdL = Math.max(l, holdL - 0.4); holdR = Math.max(r, holdR - 0.4);
-        const gr = -toDb(S.tel.gr || 1);
-
-        const bars = [[6, l, holdL], [18, r, holdR]];
-        for (const [x, db, hold] of bars) {
-          ctx.fillStyle = "#081322"; ctx.fillRect(x, top, 9, bottom - top);
-          const grad = ctx.createLinearGradient(0, bottom, 0, top);
-          grad.addColorStop(0, "#2b6fb3"); grad.addColorStop(0.7, C.blue); grad.addColorStop(0.92, C.accent); grad.addColorStop(1, C.red);
-          ctx.fillStyle = grad;
-          ctx.fillRect(x, Y(db), 9, bottom - Y(db));
-          ctx.fillStyle = C.accentHot; ctx.fillRect(x, Y(hold), 9, 1.5);
+        const x0 = 4, x1 = w - 4, top = 6, bot = h - 14, SPAN = 30;
+        const xt = (t) => x0 + (x1 - x0) * Math.sqrt(t / SPAN);
+        const yd = (db) => top + (bot - top) * clamp(-db / 60, 0, 1);
+        ctx.font = MONO(8); ctx.fillStyle = C.faint; ctx.strokeStyle = C.hairSoft;
+        for (const t of [1, 5, 10, 30]) {
+          const xx = Math.round(xt(t)) + 0.5;
+          ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke();
+          ctx.fillText(t + (t === 30 ? " s" : ""), xx - (t === 30 ? 14 : 2), h - 2);
         }
-        ctx.fillStyle = "#081322"; ctx.fillRect(32, top, 7, bottom - top);
-        const grH = clamp (gr / 12, 0, 1) * (bottom - top);
-        ctx.shadowColor = C.accentGlow; ctx.shadowBlur = 6;
-        ctx.fillStyle = C.accent; ctx.fillRect(32, top, 7, grH);
-        ctx.shadowBlur = 0;
-
-        const ceil = WT.get("lim_ceiling");
-        ctx.strokeStyle = "rgba(255,99,99,0.8)";
-        ctx.beginPath(); ctx.moveTo(4, Y(ceil)); ctx.lineTo(29, Y(ceil)); ctx.stroke();
-
-        ctx.font = "8px -apple-system, sans-serif"; ctx.fillStyle = C.faint;
-        for (const db of [0, -12, -24, -36]) ctx.fillText(String(db), 42, Y(db) + 3);
-        ctx.fillText("L R GR", 4, h - 3);
+        ctx.strokeStyle = C.hair;
+        ctx.beginPath(); ctx.moveTo(x0, bot + 0.5); ctx.lineTo(x1, bot + 0.5); ctx.stroke();
+        [0, 1, 2].forEach((l) => {
+          const name = LAYERS[l], L0 = 20 * Math.log10(Math.max(1e-3, levels[l]));
+          const db = (t) => L0 - 60 * t / t60[l];
+          ctx.beginPath();
+          for (let i = 0; i <= 60; i++) { const t = SPAN * (i / 60) ** 2; const y = yd(db(t)); i ? ctx.lineTo(xt(t), y) : ctx.moveTo(xt(t), y); }
+          ctx.lineWidth = 1.25; ctx.strokeStyle = rgba(name, 0.9); ctx.stroke();
+          ctx.lineTo(xt(SPAN), bot); ctx.lineTo(x0, bot); ctx.closePath();
+          ctx.fillStyle = rgba(name, 0.07); ctx.fill();
+          const tEnd = Math.min(SPAN, t60[l] * (L0 + 60) / 60);
+          ctx.fillStyle = rgba(name, 1);
+          ctx.beginPath(); ctx.arc(xt(tEnd), yd(-60), 1.8, 0, 2 * Math.PI); ctx.fill();
+        });
       },
     };
   }
 
-  Object.assign(UI, { ChordView, DelayView, ReverbView, MeterView });
+  // ================================================================ FX pictures
+  function cache(canvas) {
+    let key = "";
+    return (k, paint) => {
+      const kk = k + "|" + canvas.clientWidth + "|" + UI.scale;
+      if (kk === key) return;
+      key = kk;
+      const { ctx, w, h } = UI.fit(canvas);
+      ctx.clearRect(0, 0, w, h);
+      paint(ctx, w, h);
+    };
+  }
+
+  function DriveView(canvas) {
+    const paint = cache(canvas);
+    return {
+      draw(drive, level) {
+        paint(drive.toFixed(3) + (level * 40 | 0), (ctx, w, h) => {
+          const cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 - 3;
+          ctx.strokeStyle = C.hairSoft;
+          ctx.beginPath(); ctx.moveTo(cx - r, cy + 0.5); ctx.lineTo(cx + r, cy + 0.5); ctx.moveTo(cx + 0.5, cy - r); ctx.lineTo(cx + 0.5, cy + r); ctx.stroke();
+          ctx.setLineDash([2, 3]); ctx.strokeStyle = C.hair;
+          ctx.beginPath(); ctx.moveTo(cx - r, cy + r); ctx.lineTo(cx + r, cy - r); ctx.stroke(); ctx.setLineDash([]);
+          const g = 0.4 + 7 * drive, f = (x) => Math.tanh(g * x) / Math.tanh(g);
+          ctx.beginPath();
+          for (let i = 0; i <= 40; i++) { const x = -1 + i / 20; const px = cx + x * r, py = cy - f(x) * r; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+          ctx.strokeStyle = C.red; ctx.lineWidth = 1.25; ctx.stroke();
+          const lx = clamp(level, 0, 1);
+          ctx.shadowColor = C.red; ctx.shadowBlur = 6; ctx.fillStyle = C.red;
+          ctx.beginPath(); ctx.arc(cx + lx * r, cy - f(lx) * r, 2, 0, 2 * Math.PI); ctx.fill();
+          ctx.shadowBlur = 0;
+        });
+      },
+    };
+  }
+
+  const LOGF = (f, w) => (Math.log2(f / 20) / Math.log2(1000)) * w;
+
+  function PhaserView(canvas) {
+    return {
+      draw(t, p, spectrum) {
+        const { ctx, w, h } = UI.fit(canvas);
+        ctx.clearRect(0, 0, w, h);
+        const top = 3, bot = h - 3;
+        if (spectrum && spectrum.length) {
+          ctx.beginPath(); ctx.moveTo(0, bot);
+          spectrum.forEach((db, i) => ctx.lineTo((i / (spectrum.length - 1)) * w, bot - clamp((db + 90) / 80, 0, 1) * (bot - top)));
+          ctx.lineTo(w, bot); ctx.closePath(); ctx.fillStyle = "rgba(201,211,230,0.07)"; ctx.fill();
+        }
+        for (const f of [100, 1000, 10000]) { const xx = Math.round(LOGF(f, w)) + 0.5; ctx.strokeStyle = C.hairSoft; ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke(); }
+        const notches = Math.max(1, Math.round(p.stages / 2));
+        const sweep = 0.5 + 0.5 * p.depth * Math.sin(2 * Math.PI * p.rate * t);
+        const c0 = Math.log2(120) + sweep * Math.log2(30), width = 0.55 - 0.4 * p.fb;
+        ctx.beginPath();
+        for (let i = 0; i <= 120; i++) {
+          const x = (i / 120) * w, lf = Math.log2(20) + (i / 120) * Math.log2(1000);
+          let r = 1;
+          for (let k = 0; k < notches; k++) {
+            const c = c0 + k * 1.3;
+            r *= 1 - 0.92 * p.mix * Math.exp(-(((lf - c) / width) ** 2));
+            r += 0.35 * p.fb * p.mix * Math.exp(-(((lf - c - 0.65) / width) ** 2));
+          }
+          const y = top + (bot - top) * (1 - clamp(r, 0, 1.3) / 1.3);
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        }
+        ctx.strokeStyle = C.violet; ctx.lineWidth = 1.25; ctx.stroke();
+      },
+    };
+  }
+
+  function ChorusView(canvas) {
+    return {
+      draw(t, p) {
+        const { ctx, w, h } = UI.fit(canvas);
+        ctx.clearRect(0, 0, w, h);
+        const mid = h / 2, amp = (p.depth / 10) * (h / 2 - 5) + 1;
+        ctx.strokeStyle = C.hair; ctx.beginPath(); ctx.moveTo(0, mid + 0.5); ctx.lineTo(w, mid + 0.5); ctx.stroke();
+        for (let v = 0; v < 3; v++) {
+          ctx.beginPath();
+          for (let i = 0; i <= 48; i++) {
+            const x = (i / 48) * w;
+            const y = mid + amp * Math.sin(2 * Math.PI * (p.rate * t + (i / 48) * 0.9 + v / 3));
+            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+          }
+          ctx.strokeStyle = rgba("violet", 0.25 + 0.6 * p.mix * (1 - v * 0.22));
+          ctx.lineWidth = 1.1; ctx.stroke();
+        }
+      },
+    };
+  }
+
+  function DelayView(canvas) {
+    const paint = cache(canvas);
+    return {
+      draw(p) {
+        paint([p.time, p.fb, p.tone, p.mix, p.ping].map((v) => (+v).toFixed(3)).join(), (ctx, w, h) => {
+          const mid = h / 2, x0 = 6, x1 = w - 14, span = Math.max(2, Math.min(16, p.time * 7));
+          const x = (t) => x0 + (x1 - x0) * (t / span);
+          ctx.strokeStyle = C.hair; ctx.beginPath(); ctx.moveTo(x0, mid + 0.5); ctx.lineTo(x1, mid + 0.5); ctx.stroke();
+          ctx.font = MONO(8); ctx.fillStyle = C.faint; ctx.fillText("L", w - 9, 9); ctx.fillText("R", w - 9, h - 3);
+          ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(x(0) + 0.5, mid - (mid - 4)); ctx.lineTo(x(0) + 0.5, mid + (mid - 4)); ctx.stroke();
+          let a = 1;
+          for (let n = 1; n * p.time <= span && a > 0.02; n++) {
+            const xx = Math.round(x(n * p.time)) + 0.5, len = (mid - 4) * a;
+            ctx.strokeStyle = rgba("green", clamp(0.35 + 0.65 * p.mix, 0, 1) * (0.4 + 0.6 * a));
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            if (p.ping) { const up = n % 2 === 1; ctx.moveTo(xx, mid); ctx.lineTo(xx, up ? mid - len : mid + len); }
+            else { ctx.moveTo(xx, mid - len); ctx.lineTo(xx, mid + len); }
+            ctx.stroke();
+            a *= p.fb * (0.75 + 0.25 * p.tone);
+          }
+        });
+      },
+    };
+  }
+
+  function ReverbView(canvas) {
+    const paint = cache(canvas);
+    return {
+      draw(p, wet) {
+        paint([p.size, p.decay, p.damp, p.pre, p.shimmer, p.mix].map((v) => v.toFixed(3)).join() + (wet * 30 | 0), (ctx, w, h) => {
+          const x0 = 4, x1 = w - 12, top = 4, bot = h - 4, span = Math.max(1.5, p.decay * 1.15 + p.pre / 1000);
+          const x = (t) => x0 + (x1 - x0) * (t / span);
+          const y = (db) => top + (bot - top) * clamp(-db / 60, 0, 1);
+          const t0 = p.pre / 1000;
+          ctx.strokeStyle = C.hairSoft;
+          for (let s = 1; s < span; s *= 2) { const xx = Math.round(x(s)) + 0.5; ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke(); }
+          // early reflections: denser with size
+          const er = 6 + Math.round(18 * p.size);
+          ctx.strokeStyle = "rgba(201,211,230,0.35)"; ctx.lineWidth = 1;
+          for (let i = 0; i < er; i++) {
+            const tt = t0 + (0.004 + 0.09 * (0.4 + p.size) * (i / er) ** 1.4), yy = y(-6 - 30 * (i / er));
+            const xx = Math.round(x(tt)) + 0.5;
+            ctx.beginPath(); ctx.moveTo(xx, bot); ctx.lineTo(xx, yy); ctx.stroke();
+          }
+          const tail = (t60, color, fill) => {
+            ctx.beginPath(); ctx.moveTo(x(t0), y(0));
+            ctx.lineTo(x(t0 + t60), y(-60));
+            ctx.strokeStyle = color; ctx.lineWidth = 1.25; ctx.stroke();
+            if (fill) { ctx.lineTo(x(t0), bot); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); }
+          };
+          tail(p.decay, "rgba(201,211,230,0.85)", `rgba(201,211,230,${0.04 + 0.08 * p.mix})`);
+          tail(p.decay * (1 - 0.75 * p.damp), C.violet, null);
+          // shimmer: the octave and the fifth, rising out of the tail
+          const sh = Math.round(14 * p.shimmer);
+          for (let i = 0; i < sh; i++) {
+            const tt = t0 + span * (0.1 + 0.8 * ((i * 0.618) % 1)), yy = y(-12 - 40 * ((i * 0.381) % 1));
+            ctx.fillStyle = rgba("violet", 0.35 + 0.5 * p.shimmer);
+            ctx.beginPath(); ctx.arc(x(tt), yy, 1.1, 0, 2 * Math.PI); ctx.fill();
+          }
+          // live wet level
+          ctx.fillStyle = C.hair; ctx.fillRect(w - 5, top, 2, bot - top);
+          const lv = clamp(wet * 2, 0, 1);
+          ctx.fillStyle = C.violet; ctx.fillRect(w - 5, bot - lv * (bot - top), 2, lv * (bot - top));
+        });
+      },
+    };
+  }
+
+  const dbOf = (g) => (g > 1e-5 ? 20 * Math.log10(g) : -100);
+
+  function OutputView(canvas) {
+    return {
+      draw(peakL, peakR, gr, ceiling) {
+        const { ctx, w, h } = UI.fit(canvas);
+        ctx.clearRect(0, 0, w, h);
+        const x0 = 12, x1 = w - 4, MIN = -48;
+        const x = (db) => x0 + (x1 - x0) * clamp((db - MIN) / -MIN, 0, 1);
+        ctx.font = MONO(8); ctx.fillStyle = C.faint;
+        for (const db of [-36, -24, -12, 0]) { const xx = Math.round(x(db)) + 0.5; ctx.fillStyle = C.faint; ctx.fillText(String(db).replace("-", "−"), xx - (db === 0 ? 5 : 8), h - 1); ctx.strokeStyle = C.hairSoft; ctx.beginPath(); ctx.moveTo(xx, 3); ctx.lineTo(xx, h - 10); ctx.stroke(); }
+        const bar = (y, g, label) => {
+          ctx.fillStyle = C.faint; ctx.fillText(label, 1, y + 5);
+          ctx.fillStyle = C.hair; ctx.fillRect(x0, y, x1 - x0, 4);
+          const xx = x(dbOf(g));
+          const grad = ctx.createLinearGradient(x0, 0, x1, 0);
+          grad.addColorStop(0, "rgba(143,123,255,0.7)"); grad.addColorStop(0.75, C.green); grad.addColorStop(1, C.green);
+          ctx.fillStyle = grad; ctx.fillRect(x0, y, Math.max(0, xx - x0), 4);
+        };
+        bar(6, peakL, "L"); bar(16, peakR, "R");
+        const grDb = -dbOf(gr);
+        if (grDb > 0.05) { const xc = x(ceiling); ctx.fillStyle = rgba("red", 0.8); ctx.fillRect(xc - (x1 - x0) * Math.min(1, grDb / 12), 26, (x1 - x0) * Math.min(1, grDb / 12), 3); }
+        const xc = Math.round(x(ceiling)) + 0.5;
+        ctx.strokeStyle = C.red; ctx.beginPath(); ctx.moveTo(xc, 3); ctx.lineTo(xc, 30); ctx.stroke();
+      },
+    };
+  }
+
+  function HeaderMeter(canvas) {
+    let hold = [0, 0], holdT = [0, 0];
+    return {
+      draw(peakL, peakR, ceiling) {
+        const { ctx, w, h } = UI.fit(canvas);
+        ctx.clearRect(0, 0, w, h);
+        const MIN = -48, x = (db) => w * clamp((db - MIN) / -MIN, 0, 1), t = now();
+        [peakL, peakR].forEach((g, i) => {
+          const y = 8 + i * 6, db = dbOf(g);
+          if (db > hold[i] || t - holdT[i] > 1.5) { hold[i] = db; holdT[i] = t; }
+          ctx.fillStyle = C.hair; ctx.fillRect(0, y, w, 2);
+          ctx.fillStyle = db > ceiling - 0.5 ? C.red : C.green; ctx.fillRect(0, y, x(db), 2);
+          ctx.fillStyle = C.ink; ctx.fillRect(Math.max(0, x(hold[i]) - 1), y - 1, 1, 4);
+        });
+        ctx.fillStyle = C.red; ctx.fillRect(Math.round(x(ceiling)), 5, 1, 12);
+      },
+    };
+  }
+
+  Object.assign(UI, { VoicingView, PhaseTrack, Ticker, MagnetogramView, LayersView, DriveView, PhaserView, ChorusView, DelayView, ReverbView, OutputView, HeaderMeter, dbOf });
 })();

@@ -9,205 +9,267 @@
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
-      <radialGradient id="knobFace" cx="50%" cy="30%" r="75%">
-        <stop offset="0%" stop-color="#20395b"/>
-        <stop offset="100%" stop-color="#0a1626"/>
-      </radialGradient>
+      <linearGradient id="g-drift" x1="0" y1="1" x2="1" y2="0">
+        <stop offset="0%" stop-color="#ff6b6b"/>
+        <stop offset="100%" stop-color="#8f7bff"/>
+      </linearGradient>
     </defs>
   </svg>
 
-  <div id="ambient" aria-hidden="true"></div>
-
   <div id="stage">
+    <!-- ============================================================ header -->
     <header>
       <div class="brand">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffc93c" stroke-width="1.4">
-          <circle cx="12" cy="12" r="9.5"/>
-          <path d="M2.5 12h19M12 2.5c3 3 3 16 0 19M12 2.5c-3 3-3 16 0 19" stroke-opacity="0.55"/>
-          <path d="M3.5 15.5c2.2-2 3.6 1.8 5.8 0s3.6-4.5 5.8-2.5 3.4 2.6 5.4 1" stroke-width="1.6"/>
+        <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+          <circle cx="13" cy="13" r="11.5" stroke="#c9d3e6" stroke-opacity="0.55" stroke-width="1"/>
+          <circle cx="13" cy="13" r="6" stroke="#c9d3e6" stroke-opacity="0.16" stroke-width="1"/>
+          <path d="M3.4 17.2 C7 11.6, 12 15.8, 15.6 11.4 S21.4 8.6, 22.8 10.4" stroke="#5cf2a0" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M5 19.6 C8.6 15.2, 13 18.2, 17 14.6" stroke="#ff6b6b" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round"/>
         </svg>
-        <div>
-          <div class="name">WORLD<b>TABLE</b></div>
-          <div class="ver">SKY MODEL · v1</div>
+        <div class="stack">
+          <div class="word">WORLDTABLE</div>
+          <div class="sub">magnetosphere · drone</div>
         </div>
       </div>
 
-      <div class="sky" id="sky" hidden title="The Sky Model replaying a recorded day. It writes the chords.">
-        <span class="lbl">SKY</span>
-        <span id="sky-text"></span>
+      <div class="readouts" id="readouts">
+        <span id="ro-station" title="The observatory the dome looks up from">CMO <b>64.87N 147.86W</b></span>
+        <span class="sep"></span>
+        <span id="ro-date"><b>—</b></span>
+        <span class="ut" id="ro-ut" title="Model time (Journey: the replayed day)"><b>--:--</b> UT</span>
+        <span class="sep"></span>
+        <span id="ro-kp" title="Planetary K index">Kp <b>—</b></span>
+        <span id="ro-bz" title="Interplanetary field, north–south: southward couples the solar wind in">Bz <b>—</b> nT</span>
+        <span id="ro-v" title="Solar-wind speed">v <b>—</b> km/s</span>
       </div>
 
-      <div class="chord" id="chord" title="The chord that is sounding: the sky's, or the one held on MIDI.">
-        <span class="lbl">CHORD</span>
-        <span id="chord-text">—</span>
-        <span id="chord-roman"></span>
-        <span id="chord-state"></span>
-      </div>
+      <div class="mode" id="mode" title="Journey: a recorded day, time-lapsed. Live and Freeze arrive with the autopilot (M4)."><i></i>JOURNEY <b id="mode-speed">24×</b></div>
+      <canvas id="cv-hmeter" title="Output level"></canvas>
     </header>
 
-    <!-- Row A: harmony (with the voices view) + layers -->
-    <div class="row row-a2">
-      <section class="panel">
-        <div class="panel-head">
-          <span class="panel-title">HARMONY</span>
-          <span class="spacer"></span>
-          <span class="info">the sky writes · the hold wins</span>
+    <!-- ============================================================ the sky -->
+    <main id="top">
+      <section id="dome-wrap" aria-label="All-sky view">
+        <canvas id="dome"></canvas>
+        <canvas id="dome-ov"></canvas>
+        <div class="corner tl">ALL-SKY · <b id="dome-station">CMO</b><br><span id="dome-place">College, Alaska</span></div>
+        <div class="corner tr" id="dome-astro">sun —<br>moon —</div>
+        <div class="corner bl legend">
+          <span><i style="background:#ff6b6b"></i>630.0 nm · O · 250 km</span>
+          <span><i style="background:#5cf2a0"></i>557.7 nm · O · 110 km</span>
+          <span><i style="background:#8f7bff"></i>427.8 nm · N₂⁺ · 100 km</span>
         </div>
-        <div class="harmony-body">
-          <div class="display chord-body"><canvas id="cv-chord"></canvas></div>
-          <div class="harmony-controls">
-            <div class="seq-line">
-              <div data-select="key" data-caption="KEY"></div>
-              <div data-select="mood"></div>
-              <div data-select="scale"></div>
-              <div data-select="chord_shape" data-caption="SHAPE"></div>
+        <div class="corner br" id="dome-oval">arc —<br>MLT —</div>
+      </section>
+
+      <section id="right">
+        <div id="chord-card" class="frame">
+          <div class="head">
+            <span class="cap">Chord</span>
+            <span id="chord-state" class="pill"><i></i><span>THE SKY WRITES</span></span>
+            <span class="spacer"></span>
+            <span class="note" id="chord-count"></span>
+          </div>
+          <div class="chord-main">
+            <span id="chord-text">—</span>
+            <span id="chord-roman"></span>
+            <span class="chord-why" id="chord-why"></span>
+          </div>
+          <canvas id="cv-voicing" title="The voicing: every resonator voice on a pitch axis, red low, green body, violet high. Voices glide to the next chord by the smallest steps."></canvas>
+        </div>
+
+        <div id="sky-card" class="frame">
+          <div class="head">
+            <span class="cap">Sky</span>
+            <span class="note" id="sky-note">substorm cycle</span>
+            <span class="spacer"></span>
+            <span class="note" id="sky-onsets"></span>
+          </div>
+          <div class="phase-track" id="phase-track">
+            <div class="quiet">QUIET<i></i></div>
+            <div class="growth">GROWTH<i></i></div>
+            <div class="onset">ONSET<i></i></div>
+            <div class="recovery">RECOVERY<i></i></div>
+          </div>
+          <div class="sky-row" id="sky-row"></div>
+          <ol id="ticker" aria-live="polite"></ol>
+        </div>
+
+        <div id="macros" class="frame">
+          <div class="head">
+            <span class="cap">Macros</span>
+            <span class="spacer"></span>
+            <span class="note">centre is neutral · double-click resets</span>
+          </div>
+          <div class="macro-row">
+            <div data-knob="macro_storm" data-label="Storm" data-size="macro" data-color="red" data-live="storm"></div>
+            <div data-knob="macro_breath" data-label="Breath" data-size="macro" data-color="green" data-live="breath"></div>
+            <div data-knob="macro_glow" data-label="Glow" data-size="macro" data-color="violet" data-live="glow"></div>
+            <div data-knob="macro_space" data-label="Space" data-size="macro" data-color="ink" data-live="space"></div>
+            <div data-knob="macro_drift" data-label="Drift" data-size="macro" data-color="drift" data-live="drift"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============================================================ magnetogram -->
+    <section id="mag" class="frame" aria-label="Magnetogram">
+      <canvas id="cv-mag"></canvas>
+    </section>
+
+    <!-- ============================================================ tabs -->
+    <nav id="tabs">
+      <button type="button" data-tab="sound" class="on">Sound</button>
+      <button type="button" data-tab="fx">Space FX</button>
+      <button type="button" data-tab="sky">Sky</button>
+      <span class="chain" id="tab-hint">harmony · layers</span>
+    </nav>
+
+    <section id="pages">
+      <!-- ---------------------------------------------------------- Sound -->
+      <div class="page on" data-page="sound">
+        <div class="module frame" style="flex: 0 0 770px">
+          <div class="head"><span class="cap"><b>Harmony</b></span><span class="note">the sky writes the progression · MIDI holds a chord</span></div>
+          <div class="harmony-grid">
+            <div class="choice-stack">
+              <div class="choice-line"><span class="cap">key</span><div data-keys="key"></div></div>
+              <div class="choice-line"><span class="cap">mood</span><div data-seg="mood"></div></div>
+              <div class="choice-line"><span class="cap">scale</span><div data-seg="scale" data-labels="Major,Lydian,Penta maj,Minor,Dorian,Penta min"></div></div>
+              <div class="choice-line"><span class="cap">shape</span><div data-seg="chord_shape" data-labels="1,2,3"></div><span class="note">used when Progression is 0</span></div>
             </div>
-            <div class="knob-row">
-              <div data-knob="progression" data-label="PROGRESSION"></div>
-              <div data-knob="transpose" data-label="TRANSPOSE" data-small="1"></div>
-              <div data-knob="register_semis" data-label="REGISTER" data-small="1"></div>
-            </div>
-            <div class="knob-row">
-              <div data-knob="spread" data-label="SPREAD" data-small="1"></div>
-              <div data-knob="detune" data-label="DETUNE" data-small="1"></div>
-              <div data-knob="drift" data-label="DRIFT" data-small="1"></div>
+            <div class="knobs">
+              <div data-knob="progression" data-label="PROGRESSION" data-color="green"></div>
+              <div data-knob="transpose" data-label="TRANSPOSE" data-color="ink"></div>
+              <div data-knob="register_semis" data-label="REGISTER" data-color="ink"></div>
+              <div data-knob="spread" data-label="SPREAD" data-color="ink"></div>
+              <div data-knob="detune" data-label="DETUNE" data-color="violet"></div>
+              <div data-knob="drift" data-label="DRIFT" data-color="red"></div>
             </div>
           </div>
         </div>
-      </section>
 
-      <section class="panel">
-        <div class="panel-head">
-          <span class="panel-title">LAYERS <b>·</b> COLOUR</span>
-          <span class="spacer"></span>
-          <span class="info">red · green · violet</span>
-        </div>
-        <div class="layer-body">
-          <div class="layer-row">
-            <span class="layer-dot red"></span>
-            <div data-knob="red_level" data-label="RED" data-small="1"></div>
-            <div data-knob="red_decay" data-label="DECAY" data-small="1"></div>
-          </div>
-          <div class="layer-row">
-            <span class="layer-dot green"></span>
-            <div data-knob="green_level" data-label="GREEN" data-small="1"></div>
-            <div data-knob="green_decay" data-label="DECAY" data-small="1"></div>
-          </div>
-          <div class="layer-row">
-            <span class="layer-dot violet"></span>
-            <div data-knob="violet_level" data-label="VIOLET" data-small="1"></div>
-            <div data-knob="violet_decay" data-label="DECAY" data-small="1"></div>
-          </div>
-          <div class="knob-row" style="margin-top:2px">
-            <div data-knob="width" data-label="WIDTH" data-small="1"></div>
+        <div class="module frame" style="flex: 1">
+          <div class="head"><span class="cap"><b>Layers</b></span><span class="note">red · green · violet</span></div>
+          <div class="layers-grid">
+            <canvas id="cv-layers" title="Each layer's level and ring-out time"></canvas>
+            <div class="layer-knobs">
+              <div data-knob="red_level" data-label="RED" data-color="red"></div>
+              <div data-knob="green_level" data-label="GREEN" data-color="green"></div>
+              <div data-knob="violet_level" data-label="VIOLET" data-color="violet"></div>
+              <div data-knob="red_decay" data-label="DECAY" data-color="red"></div>
+              <div data-knob="green_decay" data-label="DECAY" data-color="green"></div>
+              <div data-knob="violet_decay" data-label="DECAY" data-color="violet"></div>
+            </div>
+            <div class="knobs" style="flex-direction: column; justify-content: center;">
+              <div data-knob="width" data-label="WIDTH" data-color="ink"></div>
+            </div>
           </div>
         </div>
-      </section>
-    </div>
+      </div>
 
-    <!-- Row B: macros + output -->
-    <div class="row row-b">
-      <section class="panel">
-        <div class="panel-head">
-          <span class="panel-title">MACROS</span>
-          <span class="spacer"></span>
-          <span class="info">0.5 is neutral</span>
+      <!-- ---------------------------------------------------------- Space FX -->
+      <div class="page" data-page="fx">
+        <div class="module frame" style="flex: 0 0 96px">
+          <div class="head"><span class="cap"><b>Drive</b></span></div>
+          <canvas class="view" id="cv-drive"></canvas>
+          <div class="knobs tight"><div data-knob="drive" data-label="DRIVE" data-color="red"></div></div>
         </div>
-        <div class="knob-row macro-row">
-          <div data-knob="macro_storm" data-label="STORM"></div>
-          <div data-knob="macro_breath" data-label="BREATH"></div>
-          <div data-knob="macro_glow" data-label="GLOW"></div>
-          <div data-knob="macro_space" data-label="SPACE"></div>
-          <div data-knob="macro_drift" data-label="DRIFT"></div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <span class="panel-title">OUTPUT</span>
-          <span class="spacer"></span>
-          <span class="info" id="gain-info"></span>
-        </div>
-        <div class="out-body">
-          <div class="display"><canvas id="cv-meter"></canvas></div>
-          <div class="out-knobs">
-            <div data-knob="lim_ceiling" data-label="CEILING" data-small="1"></div>
-            <div data-knob="lim_release" data-label="REL" data-small="1"></div>
-            <div data-knob="master" data-label="OUT" data-small="1"></div>
+        <div class="module frame" style="flex: 0 0 236px">
+          <div class="head"><span class="cap"><b>Phaser</b></span><span class="spacer"></span><span class="arrow">→</span></div>
+          <canvas class="view" id="cv-phaser"></canvas>
+          <div class="knobs">
+            <div data-knob="ph_rate" data-label="RATE" data-color="violet"></div>
+            <div data-knob="ph_depth" data-label="DEPTH" data-color="violet"></div>
+            <div data-knob="ph_feedback" data-label="FEED" data-color="violet"></div>
+            <div data-knob="ph_stages" data-label="STAGES" data-color="ink"></div>
+            <div data-knob="ph_mix" data-label="MIX" data-color="ink"></div>
           </div>
         </div>
-      </section>
-    </div>
+        <div class="module frame" style="flex: 0 0 150px">
+          <div class="head"><span class="cap"><b>Chorus</b></span><span class="spacer"></span><span class="arrow">→</span></div>
+          <canvas class="view" id="cv-chorus"></canvas>
+          <div class="knobs">
+            <div data-knob="ch_rate" data-label="RATE" data-color="violet"></div>
+            <div data-knob="ch_depth" data-label="DEPTH" data-color="violet"></div>
+            <div data-knob="ch_mix" data-label="MIX" data-color="ink"></div>
+          </div>
+        </div>
+        <div class="module frame" style="flex: 0 0 196px">
+          <div class="head"><span class="cap"><b>Delay</b></span><span class="spacer"></span><div data-toggle="dly_pingpong" data-label="PING-PONG"></div></div>
+          <canvas class="view" id="cv-delay"></canvas>
+          <div class="knobs">
+            <div data-knob="dly_time" data-label="TIME" data-color="green"></div>
+            <div data-knob="dly_fb" data-label="FEED" data-color="green"></div>
+            <div data-knob="dly_tone" data-label="TONE" data-color="ink"></div>
+            <div data-knob="dly_mix" data-label="MIX" data-color="ink"></div>
+          </div>
+        </div>
+        <div class="module frame" style="flex: 1">
+          <div class="head"><span class="cap"><b>Reverb</b> · shimmer</span><span class="spacer"></span><span class="note" id="verb-note"></span><span class="arrow">→</span></div>
+          <canvas class="view" id="cv-reverb"></canvas>
+          <div class="knobs">
+            <div data-knob="rev_size" data-label="SIZE" data-color="violet"></div>
+            <div data-knob="rev_decay" data-label="DECAY" data-color="violet"></div>
+            <div data-knob="rev_damp" data-label="DAMP" data-color="ink"></div>
+            <div data-knob="rev_predelay" data-label="PRE" data-color="ink"></div>
+            <div data-knob="rev_shimmer" data-label="SHIMMER" data-color="violet"></div>
+            <div data-knob="rev_mod" data-label="MOD" data-color="ink"></div>
+            <div data-knob="rev_mix" data-label="MIX" data-color="ink"></div>
+          </div>
+        </div>
+        <div class="module frame" style="flex: 0 0 150px">
+          <div class="head"><span class="cap"><b>Output</b></span><span class="spacer"></span><span class="note" id="out-note"></span></div>
+          <canvas class="view" id="cv-output"></canvas>
+          <div class="knobs">
+            <div data-knob="lim_ceiling" data-label="CEIL" data-color="red"></div>
+            <div data-knob="lim_release" data-label="REL" data-color="ink"></div>
+            <div data-knob="master" data-label="OUT" data-color="ink"></div>
+          </div>
+        </div>
+      </div>
 
-    <!-- Row C: the FX chain in the spec's order -->
-    <div class="row row-c">
-      <section class="panel">
-        <div class="panel-head">
-          <span class="panel-title">DRIVE <b>·</b> PHASER</span>
+      <!-- ---------------------------------------------------------- Sky -->
+      <div class="page" data-page="sky">
+        <div class="module frame" style="flex: 0 0 330px">
+          <div class="head"><span class="cap"><b>Observer</b></span><span class="note">the station is the point of view</span></div>
+          <div class="info-grid" id="info-station"></div>
         </div>
-        <div class="knob-row">
-          <div data-knob="drive" data-label="DRIVE" data-small="1"></div>
-          <div data-knob="ph_rate" data-label="RATE" data-small="1"></div>
-          <div data-knob="ph_depth" data-label="DEPTH" data-small="1"></div>
-          <div data-knob="ph_feedback" data-label="FEED" data-small="1"></div>
-          <div data-knob="ph_mix" data-label="MIX" data-small="1"></div>
-          <div data-knob="ph_stages" data-label="STAGES" data-small="1"></div>
+        <div class="module frame" style="flex: 1">
+          <div class="head"><span class="cap"><b>Journey</b></span><span class="note">a recorded day, time-lapsed</span></div>
+          <div class="info-grid" id="info-journey"></div>
+          <div class="journey-bar" id="journey-bar"><i></i><u></u></div>
+          <div class="info-grid" id="info-journey-2" style="margin-top: 2px"></div>
         </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <span class="panel-title">CHORUS</span>
+        <div class="module frame" style="flex: 0 0 196px">
+          <div class="head"><span class="cap"><b>View</b></span></div>
+          <div class="toggle-stack">
+            <div class="toggle on" data-view="stars"><i></i><span>STARS AND MOON</span></div>
+            <div class="toggle on" data-view="dayNight"><i></i><span>DAY / NIGHT</span></div>
+            <div class="toggle" data-view="gradientsOnly"><i></i><span>GRADIENTS ONLY</span></div>
+          </div>
         </div>
-        <div class="knob-row">
-          <div data-knob="ch_rate" data-label="RATE" data-small="1"></div>
-          <div data-knob="ch_depth" data-label="DEPTH" data-small="1"></div>
-          <div data-knob="ch_mix" data-label="MIX" data-small="1"></div>
+        <div class="module frame" style="flex: 0 0 236px">
+          <div class="head"><span class="cap"><b>Data</b></span><span class="note">bundled · offline</span></div>
+          <div class="info-grid" style="grid-template-columns: auto minmax(0,1fr)">
+            <span class="k">H</span><span>USGS Geomagnetism · <b>CMO</b></span>
+            <span class="k">Kp</span><span>GFZ Potsdam · NOAA SWPC</span>
+            <span class="k">wind</span><span>NASA OMNI · NOAA SWPC</span>
+            <span class="k">stars</span><span>Yale Bright Star Catalogue</span>
+          </div>
         </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <span class="panel-title">DELAY</span><span class="spacer"></span>
-          <div data-toggle="dly_pingpong" data-label="PING"></div>
-        </div>
-        <div class="display delay-body"><canvas id="cv-delay"></canvas></div>
-        <div class="knob-row">
-          <div data-knob="dly_time" data-label="TIME" data-small="1"></div>
-          <div data-knob="dly_fb" data-label="FEEDBACK" data-small="1"></div>
-          <div data-knob="dly_tone" data-label="TONE" data-small="1"></div>
-          <div data-knob="dly_mix" data-label="MIX" data-small="1"></div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <span class="panel-title">SPACE <b>·</b> SHIMMER</span>
-        </div>
-        <div class="display space-body"><canvas id="cv-space"></canvas></div>
-        <div class="knob-row">
-          <div data-knob="rev_size" data-label="SIZE" data-small="1"></div>
-          <div data-knob="rev_decay" data-label="DECAY" data-small="1"></div>
-          <div data-knob="rev_damp" data-label="DAMP" data-small="1"></div>
-          <div data-knob="rev_predelay" data-label="PRE" data-small="1"></div>
-        </div>
-        <div class="knob-row">
-          <div data-knob="rev_shimmer" data-label="SHIMMER" data-small="1"></div>
-          <div data-knob="rev_mod" data-label="MOD" data-small="1"></div>
-          <div data-knob="rev_mix" data-label="MIX" data-small="1"></div>
-        </div>
-      </section>
-    </div>
+      </div>
+    </section>
   </div>
 
   <div class="tooltip" id="tooltip"></div>
 
   <script src="params.js"></script>
   <script src="bridge.js"></script>
-  <script src="mock.js"></script>
+  <script src="sky.js"></script>
+  <script src="dome.js"></script>
   <script src="widgets.js"></script>
   <script src="views.js"></script>
   <script src="app.js"></script>
-  <script src="ambient.js"></script>
+  <script src="mock.js"></script>
 </body>
 </html>
