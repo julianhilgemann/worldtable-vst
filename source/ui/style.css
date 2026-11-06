@@ -344,9 +344,9 @@ nav#tabs .chain { margin-left: auto; align-self: center; font-family: var(--mono
 .knob .dot { fill: var(--kc); }
 .knob .zero { stroke: rgba(201, 211, 230, 0.35); }
 .knob .live { stroke: var(--kc); fill: none; }
-/* label and value are centred under the arc but take no width, so a changing value never
-   resizes the knob and never pushes its neighbours */
-.knob .label, .knob .value { width: 0; display: flex; justify-content: center; }
+/* the value is centred under the arc but takes no width, so a changing value never resizes the
+   knob and never pushes its neighbours; the label (static) keeps its width so labels never collide */
+.knob .value { width: 0; display: flex; justify-content: center; }
 .knob .label { font-family: var(--mono); font-size: 10px; line-height: 12px; color: var(--muted); white-space: nowrap; }
 .knob .value { font-family: var(--mono); font-size: 10px; line-height: 12px; color: var(--faint); white-space: nowrap; transition: color 0.2s; }
 .knob:hover .value, .knob.active .value { color: var(--ink); }
