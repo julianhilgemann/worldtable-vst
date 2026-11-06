@@ -4,7 +4,7 @@
 (function () {
   "use strict";
   const WT = window.WT, UI = window.UI, SKY = window.SKY;
-  const BASE_W = 1200, BASE_H = 800;
+  const BASE_W = 1350, BASE_H = 900;
   const $ = (id) => document.getElementById(id);
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -27,22 +27,23 @@
   for (const n of document.querySelectorAll("[data-keys]")) UI.Keys(n, n.dataset.keys);
   for (const n of document.querySelectorAll("[data-toggle]")) UI.Toggle(n, n.dataset.toggle, n.dataset.label || "");
 
-  // ---------------------------------------------------------------- tabs
-  const HINTS = { sound: "harmony, layers", fx: "drive → phaser → chorus → delay → reverb → output", sky: "observer, journey, view" };
+  // ---------------------------------------------------------------- details popover
+  // One page (T6.5); observer, journey and data sources open over it from the header.
   const hash = new URLSearchParams(location.hash.slice(1));
   // #shot: no CSS transitions (headless review screenshots run on virtual time, which they ignore)
   if (hash.has("shot")) document.documentElement.classList.add("shot");
-  let tab = hash.get("tab") || store.get("tab", "sound");
-  function showTab(t) {
-    if (!HINTS[t]) t = "sound";
-    tab = t;
-    document.querySelectorAll("nav#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
-    document.querySelectorAll(".page").forEach((p) => p.classList.toggle("on", p.dataset.page === t));
-    $("tab-hint").textContent = HINTS[t];
-    store.set("tab", t);
+  let detailsOpen = false;
+  function showDetails(open) {
+    detailsOpen = open;
+    $("details").hidden = !open;
+    $("details-btn").setAttribute("aria-expanded", String(open));
+    if (open && S.tel.sky) showJourney(S.tel.sky);
   }
-  document.querySelectorAll("nav#tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
-  showTab(tab);
+  $("details-btn").addEventListener("click", (e) => { e.stopPropagation(); showDetails(!detailsOpen); });
+  $("details").addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => { if (detailsOpen) showDetails(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && detailsOpen) showDetails(false); });
+  if (hash.has("details")) showDetails(true);   // for review screenshots
 
   // ---------------------------------------------------------------- scaling
   function rescale() {
@@ -204,7 +205,7 @@
       clearTimeout(chordTimer);
       if (first) apply(); else { text.classList.add("out"); chordTimer = setTimeout(apply, 900); }
       $("chord-card").style.setProperty("--fn", FN_RGB[fn]);
-      $("chord-why").innerHTML = c.latched ? `<b>held on MIDI</b><br>the sky keeps listening` : `<b>${FN_TITLE[fn]}</b><br>${FN_REASON[fn]}`;
+      $("chord-why").innerHTML = c.latched ? `<b>held on MIDI</b><span class="gap">the sky keeps listening</span>` : `<b>${FN_TITLE[fn]}</b><span class="gap">${FN_REASON[fn]}</span>`;
       if (!first && chordChanges >= 0 && sky)
         ticker.push(`<span class="t">${ut(sky.utc)} UT</span>${c.latched ? "MIDI" : FN_REASON[fn]} → <b>${c.label}</b> <span class="faint">${c.roman}</span>`);
     }
@@ -266,7 +267,7 @@
       if ($("info-astro")) $("info-astro").innerHTML = `sun ${d.sunEl.toFixed(1)}° el, moon ${Math.round(d.moonIllum * 100)} % lit, ${d.moonEl.toFixed(0)}° el`;
     }
     $("dome-oval").innerHTML = `arc ${num(sky.arcLat.toFixed(1) + "°", 5)} mlat<br>MLT ${num(sky.mlt.toFixed(1) + " h", 6)}`;
-    if (tab === "sky") showJourney(sky);
+    if (detailsOpen) showJourney(sky);
   }
 
   function showJourney(sky) {
@@ -341,8 +342,8 @@
     if (knobs.macro_space) knobs.macro_space.setLive(clamp((tel.verb || 0) * 2.2, 0, 1));
     if (knobs.macro_drift) knobs.macro_drift.setLive(m("macro_drift"), (t * 360 / (48 / (0.4 + m("macro_drift")))) % 360);
 
-    if (tab === "sound") layers.draw([P("red_level"), P("green_level"), P("violet_level")], [P("red_decay"), P("green_decay"), P("violet_decay")]);
-    if (tab === "fx") {
+    layers.draw([P("red_level"), P("green_level"), P("violet_level")], [P("red_decay"), P("green_decay"), P("violet_decay")]);
+    {
       const peak = Math.max(tel.peakL || 0, tel.peakR || 0);
       fx.drive.draw(P("drive"), peak);
       fx.phaser.draw(t, { rate: P("ph_rate"), depth: P("ph_depth"), fb: P("ph_feedback"), stages: P("ph_stages"), mix: P("ph_mix") }, tel.spectrum);
