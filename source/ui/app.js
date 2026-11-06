@@ -209,7 +209,7 @@
     const pill = $("chord-state");
     const hold = !c.latched && WT.get("progression") < 0.005;
     pill.className = "pill" + (c.latched ? " midi" : hold ? " hold" : "");
-    pill.innerHTML = `<i></i><span>${c.latched ? "MIDI HOLD" : hold ? "HOLD" : "THE SKY WRITES"}</span>` + (c.pending ? `<span class="next">next chord waiting</span>` : "");
+    pill.innerHTML = `<i></i><span>${c.latched ? "MIDI hold" : hold ? "Hold" : "The sky writes"}</span>` + (c.pending ? `<span class="next">next chord waiting</span>` : "");
     $("chord-count").textContent = c.changes ? `${c.changes} change${c.changes === 1 ? "" : "s"} so far` : "";
   }
 
@@ -247,7 +247,7 @@
     $("ro-bz").classList.toggle("south", sky.bz < 0);
     $("ro-v").innerHTML = `v <b>${Math.round(sky.wind)}</b> km/s`;
     const frozen = (sky.speed || 0) < 0.01;
-    $("mode").innerHTML = `<i></i>${frozen ? "FROZEN" : "JOURNEY"} <b id="mode-speed">${frozen ? "" : Math.round(sky.speed) + "×"}</b>`;
+    $("mode").innerHTML = `<i></i>${frozen ? "Frozen" : "Journey"} <b id="mode-speed">${frozen ? "" : Math.round(sky.speed) + "×"}</b>`;
 
     const e = clamp(sky.energy / 1.5, 0, 1);
     $("sky-row").innerHTML =

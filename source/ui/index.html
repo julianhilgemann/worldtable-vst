@@ -27,7 +27,7 @@
           <path d="M5 19.6 C8.6 15.2, 13 18.2, 17 14.6" stroke="#ff6b6b" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round"/>
         </svg>
         <div class="stack">
-          <div class="word">WORLDTABLE</div>
+          <div class="word">Worldtable</div>
           <div class="sub">magnetosphere · drone</div>
         </div>
       </div>
@@ -43,7 +43,7 @@
         <span id="ro-v" title="Solar-wind speed">v <b>—</b> km/s</span>
       </div>
 
-      <div class="mode" id="mode" title="Journey: a recorded day, time-lapsed. Live and Freeze arrive with the autopilot (M4)."><i></i>JOURNEY <b id="mode-speed">24×</b></div>
+      <div class="mode" id="mode" title="Journey: a recorded day, time-lapsed. Live and Freeze arrive with the autopilot (M4)."><i></i>Journey <b id="mode-speed">24×</b></div>
       <canvas id="cv-hmeter" title="Output level"></canvas>
     </header>
 
@@ -52,7 +52,7 @@
       <section id="dome-wrap" aria-label="All-sky view">
         <canvas id="dome"></canvas>
         <canvas id="dome-ov"></canvas>
-        <div class="corner tl">ALL-SKY · <b id="dome-station">CMO</b><br><span id="dome-place">College, Alaska</span></div>
+        <div class="corner tl">All-sky · <b id="dome-station">CMO</b><br><span id="dome-place">College, Alaska</span></div>
         <div class="corner tr" id="dome-astro">sun —<br>moon —</div>
         <div class="corner bl legend">
           <span><i style="background:#ff6b6b"></i>630.0 nm · O · 250 km</span>
@@ -66,7 +66,7 @@
         <div id="chord-card" class="frame">
           <div class="head">
             <span class="cap">Chord</span>
-            <span id="chord-state" class="pill"><i></i><span>THE SKY WRITES</span></span>
+            <span id="chord-state" class="pill"><i></i><span>The sky writes</span></span>
             <span class="spacer"></span>
             <span class="note" id="chord-count"></span>
           </div>
@@ -86,10 +86,10 @@
             <span class="note" id="sky-onsets"></span>
           </div>
           <div class="phase-track" id="phase-track">
-            <div class="quiet">QUIET<i></i></div>
-            <div class="growth">GROWTH<i></i></div>
-            <div class="onset">ONSET<i></i></div>
-            <div class="recovery">RECOVERY<i></i></div>
+            <div class="quiet">Quiet<i></i></div>
+            <div class="growth">Growth<i></i></div>
+            <div class="onset">Onset<i></i></div>
+            <div class="recovery">Recovery<i></i></div>
           </div>
           <div class="sky-row" id="sky-row"></div>
           <ol id="ticker" aria-live="polite"></ol>
@@ -138,12 +138,12 @@
               <div class="choice-line"><span class="cap">shape</span><div data-seg="chord_shape" data-labels="1,2,3"></div><span class="note">used when Progression is 0</span></div>
             </div>
             <div class="knobs">
-              <div data-knob="progression" data-label="PROGRESSION" data-color="green"></div>
-              <div data-knob="transpose" data-label="TRANSPOSE" data-color="ink"></div>
-              <div data-knob="register_semis" data-label="REGISTER" data-color="ink"></div>
-              <div data-knob="spread" data-label="SPREAD" data-color="ink"></div>
-              <div data-knob="detune" data-label="DETUNE" data-color="violet"></div>
-              <div data-knob="drift" data-label="DRIFT" data-color="red"></div>
+              <div data-knob="progression" data-label="Progression" data-color="green"></div>
+              <div data-knob="transpose" data-label="Transpose" data-color="ink"></div>
+              <div data-knob="register_semis" data-label="Register" data-color="ink"></div>
+              <div data-knob="spread" data-label="Spread" data-color="ink"></div>
+              <div data-knob="detune" data-label="Detune" data-color="violet"></div>
+              <div data-knob="drift" data-label="Drift" data-color="red"></div>
             </div>
           </div>
         </div>
@@ -153,15 +153,15 @@
           <div class="layers-grid">
             <canvas id="cv-layers" title="Each layer's level and ring-out time"></canvas>
             <div class="layer-knobs">
-              <div data-knob="red_level" data-label="RED" data-color="red"></div>
-              <div data-knob="green_level" data-label="GREEN" data-color="green"></div>
-              <div data-knob="violet_level" data-label="VIOLET" data-color="violet"></div>
-              <div data-knob="red_decay" data-label="DECAY" data-color="red"></div>
-              <div data-knob="green_decay" data-label="DECAY" data-color="green"></div>
-              <div data-knob="violet_decay" data-label="DECAY" data-color="violet"></div>
+              <div data-knob="red_level" data-label="Red" data-color="red"></div>
+              <div data-knob="green_level" data-label="Green" data-color="green"></div>
+              <div data-knob="violet_level" data-label="Violet" data-color="violet"></div>
+              <div data-knob="red_decay" data-label="Decay" data-color="red"></div>
+              <div data-knob="green_decay" data-label="Decay" data-color="green"></div>
+              <div data-knob="violet_decay" data-label="Decay" data-color="violet"></div>
             </div>
             <div class="knobs" style="flex-direction: column; justify-content: center;">
-              <div data-knob="width" data-label="WIDTH" data-color="ink"></div>
+              <div data-knob="width" data-label="Width" data-color="ink"></div>
             </div>
           </div>
         </div>
@@ -172,58 +172,58 @@
         <div class="module frame" style="flex: 0 0 96px">
           <div class="head"><span class="cap"><b>Drive</b></span></div>
           <canvas class="view" id="cv-drive"></canvas>
-          <div class="knobs tight"><div data-knob="drive" data-label="DRIVE" data-color="red"></div></div>
+          <div class="knobs tight"><div data-knob="drive" data-label="Drive" data-color="red"></div></div>
         </div>
         <div class="module frame" style="flex: 0 0 236px">
           <div class="head"><span class="cap"><b>Phaser</b></span><span class="spacer"></span><span class="arrow">→</span></div>
           <canvas class="view" id="cv-phaser"></canvas>
           <div class="knobs">
-            <div data-knob="ph_rate" data-label="RATE" data-color="violet"></div>
-            <div data-knob="ph_depth" data-label="DEPTH" data-color="violet"></div>
-            <div data-knob="ph_feedback" data-label="FEED" data-color="violet"></div>
-            <div data-knob="ph_stages" data-label="STAGES" data-color="ink"></div>
-            <div data-knob="ph_mix" data-label="MIX" data-color="ink"></div>
+            <div data-knob="ph_rate" data-label="Rate" data-color="violet"></div>
+            <div data-knob="ph_depth" data-label="Depth" data-color="violet"></div>
+            <div data-knob="ph_feedback" data-label="Feed" data-color="violet"></div>
+            <div data-knob="ph_stages" data-label="Stages" data-color="ink"></div>
+            <div data-knob="ph_mix" data-label="Mix" data-color="ink"></div>
           </div>
         </div>
         <div class="module frame" style="flex: 0 0 150px">
           <div class="head"><span class="cap"><b>Chorus</b></span><span class="spacer"></span><span class="arrow">→</span></div>
           <canvas class="view" id="cv-chorus"></canvas>
           <div class="knobs">
-            <div data-knob="ch_rate" data-label="RATE" data-color="violet"></div>
-            <div data-knob="ch_depth" data-label="DEPTH" data-color="violet"></div>
-            <div data-knob="ch_mix" data-label="MIX" data-color="ink"></div>
+            <div data-knob="ch_rate" data-label="Rate" data-color="violet"></div>
+            <div data-knob="ch_depth" data-label="Depth" data-color="violet"></div>
+            <div data-knob="ch_mix" data-label="Mix" data-color="ink"></div>
           </div>
         </div>
         <div class="module frame" style="flex: 0 0 196px">
-          <div class="head"><span class="cap"><b>Delay</b></span><span class="spacer"></span><div data-toggle="dly_pingpong" data-label="PING-PONG"></div></div>
+          <div class="head"><span class="cap"><b>Delay</b></span><span class="spacer"></span><div data-toggle="dly_pingpong" data-label="Ping-pong"></div></div>
           <canvas class="view" id="cv-delay"></canvas>
           <div class="knobs">
-            <div data-knob="dly_time" data-label="TIME" data-color="green"></div>
-            <div data-knob="dly_fb" data-label="FEED" data-color="green"></div>
-            <div data-knob="dly_tone" data-label="TONE" data-color="ink"></div>
-            <div data-knob="dly_mix" data-label="MIX" data-color="ink"></div>
+            <div data-knob="dly_time" data-label="Time" data-color="green"></div>
+            <div data-knob="dly_fb" data-label="Feed" data-color="green"></div>
+            <div data-knob="dly_tone" data-label="Tone" data-color="ink"></div>
+            <div data-knob="dly_mix" data-label="Mix" data-color="ink"></div>
           </div>
         </div>
         <div class="module frame" style="flex: 1">
           <div class="head"><span class="cap"><b>Reverb</b> · shimmer</span><span class="spacer"></span><span class="note" id="verb-note"></span><span class="arrow">→</span></div>
           <canvas class="view" id="cv-reverb"></canvas>
           <div class="knobs">
-            <div data-knob="rev_size" data-label="SIZE" data-color="violet"></div>
-            <div data-knob="rev_decay" data-label="DECAY" data-color="violet"></div>
-            <div data-knob="rev_damp" data-label="DAMP" data-color="ink"></div>
-            <div data-knob="rev_predelay" data-label="PRE" data-color="ink"></div>
-            <div data-knob="rev_shimmer" data-label="SHIMMER" data-color="violet"></div>
-            <div data-knob="rev_mod" data-label="MOD" data-color="ink"></div>
-            <div data-knob="rev_mix" data-label="MIX" data-color="ink"></div>
+            <div data-knob="rev_size" data-label="Size" data-color="violet"></div>
+            <div data-knob="rev_decay" data-label="Decay" data-color="violet"></div>
+            <div data-knob="rev_damp" data-label="Damp" data-color="ink"></div>
+            <div data-knob="rev_predelay" data-label="Pre" data-color="ink"></div>
+            <div data-knob="rev_shimmer" data-label="Shimmer" data-color="violet"></div>
+            <div data-knob="rev_mod" data-label="Mod" data-color="ink"></div>
+            <div data-knob="rev_mix" data-label="Mix" data-color="ink"></div>
           </div>
         </div>
         <div class="module frame" style="flex: 0 0 150px">
           <div class="head"><span class="cap"><b>Output</b></span><span class="spacer"></span><span class="note" id="out-note"></span></div>
           <canvas class="view" id="cv-output"></canvas>
           <div class="knobs">
-            <div data-knob="lim_ceiling" data-label="CEIL" data-color="red"></div>
-            <div data-knob="lim_release" data-label="REL" data-color="ink"></div>
-            <div data-knob="master" data-label="OUT" data-color="ink"></div>
+            <div data-knob="lim_ceiling" data-label="Ceil" data-color="red"></div>
+            <div data-knob="lim_release" data-label="Rel" data-color="ink"></div>
+            <div data-knob="master" data-label="Out" data-color="ink"></div>
           </div>
         </div>
       </div>
@@ -243,9 +243,9 @@
         <div class="module frame" style="flex: 0 0 196px">
           <div class="head"><span class="cap"><b>View</b></span></div>
           <div class="toggle-stack">
-            <div class="toggle on" data-view="stars"><i></i><span>STARS AND MOON</span></div>
-            <div class="toggle on" data-view="dayNight"><i></i><span>DAY / NIGHT</span></div>
-            <div class="toggle" data-view="gradientsOnly"><i></i><span>GRADIENTS ONLY</span></div>
+            <div class="toggle on" data-view="stars"><i></i><span>Stars and moon</span></div>
+            <div class="toggle on" data-view="dayNight"><i></i><span>Day / night</span></div>
+            <div class="toggle" data-view="gradientsOnly"><i></i><span>Gradients only</span></div>
           </div>
         </div>
         <div class="module frame" style="flex: 0 0 236px">

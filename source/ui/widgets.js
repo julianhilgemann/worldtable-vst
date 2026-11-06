@@ -219,7 +219,7 @@
   }
 
   const C = {
-    night: "#05070d", ink: "#c9d3e6", muted: "#8a96ad", faint: "#566079",
+    night: "#05070d", ink: "#c9d3e6", muted: "#8a96ad", faint: "#6e7991",
     green: "#5cf2a0", red: "#ff6b6b", violet: "#8f7bff",
     hair: "rgba(201,211,230,0.12)", hairSoft: "rgba(201,211,230,0.06)", hairStrong: "rgba(201,211,230,0.22)",
     rgb: { green: [92, 242, 160], red: [255, 107, 107], violet: [143, 123, 255], ink: [201, 211, 230] },
