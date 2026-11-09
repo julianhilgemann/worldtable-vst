@@ -385,6 +385,8 @@ juce::var PluginEditor::makeChordTelemetry()
     o->setProperty ("voices", c.voices);
     o->setProperty ("bank", c.bank);
     o->setProperty ("latched", c.latched);
+    o->setProperty ("play", c.play);
+    o->setProperty ("held", c.held);
     o->setProperty ("pending", c.pending);
     o->setProperty ("changes", static_cast<int> (c.changes));
     o->setProperty ("tick", static_cast<juce::int64> (c.tick));
@@ -398,6 +400,24 @@ juce::var PluginEditor::makeChordTelemetry()
         layers.add (juce::var (notes));
     }
     o->setProperty ("notes", layers);
+    return juce::var (o);
+}
+
+juce::var PluginEditor::makePlayTelemetry()
+{
+    auto& instrument = wtProcessor.getInstrument();
+    instrument.readPlay (playFrame);
+
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("mix", round3 (instrument.getTelemetry().playMix.load()));
+    juce::Array<juce::var> voices;
+    for (int i = 0; i < std::min (playFrame.count, dsp::PlayState::kMax); ++i)
+    {
+        const auto k = static_cast<size_t> (i);
+        voices.add (juce::Array<juce::var> { static_cast<int> (playFrame.notes[k]), round3 (playFrame.levels[k]),
+                                             playFrame.held[k] != 0 });
+    }
+    o->setProperty ("voices", voices);
     return juce::var (o);
 }
 
@@ -420,6 +440,14 @@ juce::var PluginEditor::makeTelemetry()
     o->setProperty ("sky", makeSkyTelemetry());
     o->setProperty ("dome", makeDomeTelemetry());
     o->setProperty ("chord", makeChordTelemetry());
+    o->setProperty ("play", makePlayTelemetry());
+    {
+        auto* low = new juce::DynamicObject();
+        low->setProperty ("note", t.lowNote.load());
+        low->setProperty ("level", round3 (t.lowLevel.load()));
+        o->setProperty ("low", juce::var (low));
+    }
+    o->setProperty ("filterHz", std::round (static_cast<double> (t.filterHz.load())));
 
     juce::Array<juce::var> spec;
     for (auto b : bands)

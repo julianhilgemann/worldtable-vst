@@ -27,6 +27,16 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& apvts)
     jassert (detune != nullptr);
     drift = apvts.getRawParameterValue (id::drift);
     jassert (drift != nullptr);
+    play = apvts.getRawParameterValue (id::play);
+    jassert (play != nullptr);
+    play_attack = apvts.getRawParameterValue (id::play_attack);
+    jassert (play_attack != nullptr);
+    play_release = apvts.getRawParameterValue (id::play_release);
+    jassert (play_release != nullptr);
+    play_velocity = apvts.getRawParameterValue (id::play_velocity);
+    jassert (play_velocity != nullptr);
+    play_drone = apvts.getRawParameterValue (id::play_drone);
+    jassert (play_drone != nullptr);
     red_level = apvts.getRawParameterValue (id::red_level);
     jassert (red_level != nullptr);
     green_level = apvts.getRawParameterValue (id::green_level);
@@ -41,6 +51,12 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& apvts)
     jassert (violet_decay != nullptr);
     width = apvts.getRawParameterValue (id::width);
     jassert (width != nullptr);
+    low_level = apvts.getRawParameterValue (id::low_level);
+    jassert (low_level != nullptr);
+    low_decay = apvts.getRawParameterValue (id::low_decay);
+    jassert (low_decay != nullptr);
+    low_octave = apvts.getRawParameterValue (id::low_octave);
+    jassert (low_octave != nullptr);
     macro_storm = apvts.getRawParameterValue (id::macro_storm);
     jassert (macro_storm != nullptr);
     macro_breath = apvts.getRawParameterValue (id::macro_breath);
@@ -51,6 +67,14 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& apvts)
     jassert (macro_space != nullptr);
     macro_drift = apvts.getRawParameterValue (id::macro_drift);
     jassert (macro_drift != nullptr);
+    flt_type = apvts.getRawParameterValue (id::flt_type);
+    jassert (flt_type != nullptr);
+    flt_cutoff = apvts.getRawParameterValue (id::flt_cutoff);
+    jassert (flt_cutoff != nullptr);
+    flt_reso = apvts.getRawParameterValue (id::flt_reso);
+    jassert (flt_reso != nullptr);
+    flt_sky = apvts.getRawParameterValue (id::flt_sky);
+    jassert (flt_sky != nullptr);
     drive = apvts.getRawParameterValue (id::drive);
     jassert (drive != nullptr);
     ph_rate = apvts.getRawParameterValue (id::ph_rate);
@@ -124,6 +148,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         NormalisableRange<float> (0.0f, 12.0f, 0.0f, 1.0f), 3.0f, AudioParameterFloatAttributes().withLabel ("ct")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::drift, 1 }, "Drift",
         NormalisableRange<float> (0.0f, 20.0f, 0.0f, 1.0f), 4.0f, AudioParameterFloatAttributes().withLabel ("ct")));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { id::play, 1 }, "Play", false));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::play_attack, 1 }, "Play Attack",
+        NormalisableRange<float> (0.001f, 8.0f, 0.0f, 0.21089917388229587f), 0.01f, AudioParameterFloatAttributes().withLabel ("s")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::play_release, 1 }, "Play Release",
+        NormalisableRange<float> (0.02f, 20.0f, 0.0f, 0.29985149125841226f), 2.5f, AudioParameterFloatAttributes().withLabel ("s")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::play_velocity, 1 }, "Play Velocity",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.6f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::play_drone, 1 }, "Play Drone",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::red_level, 1 }, "Red Level",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 1.0f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::green_level, 1 }, "Green Level",
@@ -138,6 +171,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         NormalisableRange<float> (1.0f, 15.0f, 0.0f, 0.3562071871080221f), 2.5f, AudioParameterFloatAttributes().withLabel ("s")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::width, 1 }, "Width",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.9f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::low_level, 1 }, "Low Level",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::low_decay, 1 }, "Low Decay",
+        NormalisableRange<float> (1.0f, 30.0f, 0.0f, 0.48765594719222105f), 8.0f, AudioParameterFloatAttributes().withLabel ("s")));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::low_octave, 1 }, "Low Octave",
+        StringArray { "Sub", "Bass" }, 0));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::macro_storm, 1 }, "Storm",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::macro_breath, 1 }, "Breath",
@@ -148,6 +187,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::macro_drift, 1 }, "Drift",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::flt_type, 1 }, "Filter Type",
+        StringArray { "LP12", "LP24", "BP", "HP" }, 0));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::flt_cutoff, 1 }, "Filter Cutoff",
+        NormalisableRange<float> (20.0f, 20000.0f, 0.0f, 0.22990455846863825f), 20000.0f, AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::flt_reso, 1 }, "Filter Resonance",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.1f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::flt_sky, 1 }, "Filter Sky",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.3f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::drive, 1 }, "Drive",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.15f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ph_rate, 1 }, "Phaser Rate",

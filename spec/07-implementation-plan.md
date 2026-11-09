@@ -5,7 +5,7 @@ a file `spec/tasks/Tx.y-<slug>.md` (template in `08-agentic-workflow.md`).
 Build order from ADR-0002: prototype → C++ Sky Model and resonators →
 plug-in renderer → OSC.
 
-## Where we are (2026-11-06)
+## Where we are (2026-11-09)
 | Work | State |
 |---|---|
 | T0.1 skeleton: CMake + JUCE + Catch2, CI macOS + Windows | merged (#1); Windows CI still red (T0.4), tests not in CI (T0.3) |
@@ -22,6 +22,7 @@ plug-in renderer → OSC.
 | M3: T3.6b raw-field wavetable layer | after T3.4 |
 | M3: T3.4 sparkles/whistlers/Breath | after (needs the owner's design/ear) |
 | M6: T6.4 UI cost pass | open |
+| M3: T3.7 Play mode, the low resonator, the filter (owner, 2026-11-09; ADR-0008) | done |
 
 **Reused from the POC:** CMake/CI, `gen_params.py`, `WorldtableRender`,
 `WorldtableUICheck`, WebView bridge and mock backend, Drive, SVF, LFO, ADSR,
@@ -73,6 +74,8 @@ Exit: owner signs off the look and the sound direction; mapping recorded in
 - T3.6 Retire the POC voice; `dsp::Instrument` (SkySound + FX + MIDI latch) in the
   plug-in; `parameters.yaml` v1; chord readout. (Done; the raw-field wavetable layer moved
   to T3.6b.)
+- T3.7 Play mode (MIDI notes play the resonators, ADR-0008), the low resonator, the filter
+  (owner, 2026-11-09). (Done.)
 **Hear:** the plug-in plays the storm day, in a DAW and in TouchDesigner.
 
 ## M4 — Modulation and autopilot

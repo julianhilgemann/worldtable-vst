@@ -11,14 +11,18 @@ latch, progression), and §7's chain in T3.5a/b. `dsp::Instrument` now runs `Sky
 the chain and the MIDI latch inside `PluginProcessor`, driven by the v1 parameters.
 Sparkles, whistlers and the full Breath cycle are T3.4; the raw-field layer (§5) is
 T3.6b and stays off. The default Journey opens at 17:20 UT on the storm day (the M3
-render window) rather than at 00:00.
+render window) rather than at 00:00. T3.7 (owner, 2026-11-09) adds Play mode (§13,
+ADR-0008), the low resonator (§14) and the filter (§15).
 
 ```
-SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet layers) ─┐
-     │                                ▲ tuning                              │
-     │                    Harmony (chord hold, progression, voice-leading)  ├─► mix ─► Drive ─► Phaser ─► Chorus/Ensemble
-     ├─► Sparkles / whistlers ────────────────────────────────────────────┤        ─► Tape Delay ─► Shimmer Reverb
-     └─► (optional) raw-field wavetable layer ────────────────────────────┘        ─► AutoGain ─► Limiter ─► out
+SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet layers) × drone gain ─┐
+     │                                ▲ tuning                                           │
+     │                    Harmony (chord hold, progression, voice-leading)               │
+     ├─► LowResonator (the bass note, sub or bass octave; §14) ──────────────────────────┤
+     ├─► PlayVoices (Play mode: MIDI notes, the curtain's colours; §13) ─────────────────┼─► mix ─► Filter (§15) ─► Drive
+     ├─► Sparkles / whistlers ───────────────────────────────────────────────────────────┤   ─► Phaser ─► Chorus/Ensemble
+     └─► (optional) raw-field wavetable layer ───────────────────────────────────────────┘   ─► Tape Delay ─► Shimmer Reverb
+                                                                                              ─► AutoGain ─► Limiter ─► out
  Mod sources (sky channels, LFO ×4, random walk ×2, env follower, triggers) ─► ModMatrix (16) ─► any destination
 ```
 
@@ -104,6 +108,7 @@ control, tuned to the chord root.
 ## 7. Effects (fixed order, one tab each)
 | Stage | Notes | POC code |
 |---|---|---|
+| Filter | SVF LP12 / LP24 / BP / HP, the sky opens it (§15, T3.7) | `dsp/Svf.h` (reuse) |
 | Drive | ADAA tanh + asymmetry, gentle | `dsp/Drive.h` (reuse) |
 | Phaser | slow, 4–8 stages, stereo | new |
 | Chorus / Ensemble | 3-voice ensemble, slow | new |
@@ -163,7 +168,8 @@ Journey bounces and A/B them against the references.
 - [ ] Denormals flushed (`juce::ScopedNoDenormals`).
 - [ ] All parameters smoothed; chord changes crossfade.
 - [ ] Sample-rate independent (44.1/48/96 kHz) and block-size independent.
-- [ ] No MIDI, default settings → sound (drone); MIDI only latches the chord.
+- [ ] No MIDI, default settings → sound (drone); MIDI latches the chord, or plays notes in
+      Play mode (§13) at their sample positions.
 
 ## 12. Sketch mapping and constants (T1.3, 2026-11-05)
 Source of truth: `prototype/sky/sound/engine.js` `SOUND_DEFAULTS` and
@@ -211,3 +217,58 @@ on 2026-11-05 ("sounds fine … run with it"), constants unchanged. N = 64 per l
   is heard on the next chord, not immediately. Scale is stored for the sparkles (T3.4) and does
   not change the chords today. A 120 s plug-in render from 17:20: peak −1.0 dBFS, RMS −17.3,
   max step 0.063, 3.3 % of a core in Release (sky + sound 2.0 %, FX 1.3 %).
+
+## 13. Play mode (T3.7, ADR-0008)
+The owner's request (2026-11-09): play the instrument from a MIDI keyboard, a sequencer or an
+Ableton clip. A **Play** button (`play`) switches MIDI from latching the chord to playing notes.
+- **The voices** (`dsp/PlayVoices`): 24 slots, 16 held notes at most (the oldest held note gives
+  way; a stolen voice fades out in 10 ms first; the same note again retriggers its voice). A note
+  sounds from three points of the curtain; each has four resonators, the layers in small: red an
+  octave down (0.7), green the note (1) and its octave (0.45), violet the twelfth (0.35, opened by
+  velocity). Complex one-pole resonators with the layer decays as T60s, excited by a strike at
+  note-on (full up to a 20 ms attack, none from 320 ms: a slow attack bows in) and a bow while the
+  key is down (2.7 × the bed, × (0.5 + activity)). An envelope (linear Attack, exponential Release
+  to −60 dB) shapes the output; Velocity sets how much of a 30 dB range velocity covers.
+- **The sky in the notes:** each point takes its node's pan, presence, detune (displacement) and
+  drift; the node's emission balance weights the partials (0.5 … 1.5: a red-heavy node favours the
+  octave below, a violet one the twelfth); an onset re-strikes the held notes softly (0.35).
+- **The drone** glides over 2 s to `play_drone` (0 by default) and keeps running; leaving Play
+  mode glides it back and releases every note. Entering Play clears the MIDI latch.
+- **Levels:** AutoGain holds unity in Play mode (glides there over 2 s) so dynamics stay the
+  player's. Dry (no delay, reverb, chorus, phaser, low), velocity 100: one note sustains near
+  −27 dBFS RMS, a 4-note chord near −20 (its strike ~5 dB above), an 8-note chord near −17 with
+  its strike peaking at −2.6 dBFS; velocity 40 sits ~8 dB under 100 at the default Velocity.
+- **MIDI:** note on/off at their sample (the block is split per event), sustain pedal (CC64), all
+  notes off (CC123), all sound off (CC120). Transpose applies to played notes. Pitch bend and the
+  mod wheel are not used yet.
+- **Cost:** the Play demo (`WorldtableRender --set play=1 --midi …`) costs 3.3 % of a core in
+  Release with the drone computed underneath.
+
+## 14. The low resonator (T3.7)
+The owner's request: "the sound generally needs some more low end … some resonator around the
+low end that we can set up using the UI". A resonator layer under red (`dsp/LowResonator`), mono:
+- **Tuning:** the chord's root (drone mode) or the lowest held note (Play mode), in the sub octave
+  (C1–B1, `low_octave` Sub, the default) or the bass octave (C2–B2, Bass). A pair of resonators
+  ± 1.5 ct around the note (slow beating) and one an octave up at 0.35 (the body, so it speaks on
+  small speakers).
+- **Excitation:** drone mode, the exciter's bed × (0.5 + activity) plus the onset swell (80 ms
+  attack, τ 6 s); Play mode, a bow (1.4 × the bed) while a note is held and a strike when a new
+  lowest note comes in, through the Play envelope.
+- **Changes:** a new note goes to the other bank and the excitation crossfades over (4 s for a
+  chord change, the attack in Play mode); the old bank is damped to a T60 of at most twice the
+  crossfade.
+- **Level:** `low_level` 0.5 by default; the red emission share nudges it (× 0.7 + 0.3 × the
+  curtain's red weight). On the storm render the 31.5 Hz octave band rises from −41.9 to
+  −28.1 dBFS (level with the 63 and 125 Hz bands); at 1 it is −23.9.
+
+## 15. The filter (T3.7)
+The owner's request: the POC's filter back, in the chain. `fx/Filter`, between the sources and
+Drive, inside the sources' tick so the sky reaches it on the tick grid:
+- Two TPT SVF stages per channel (the POC's `Svf.h`): LP12 = stage 1 low, LP24 = a second stage
+  (k = √2) on it, BP = stage 1 band × k (unity peak), HP = stage 1 high. Resonance 0 … 1 →
+  damping 2 … 0.25 (Q ≤ 4, +12 dB).
+- Nothing jumps: the cutoff glides per sample in log frequency (τ 20 ms) with coefficients per
+  sample; a type change crossfades the outputs over ~20 ms.
+- **Sky:** the activity, slewed 2 s, opens it by up to 3 octaves × `flt_sky` (LP and BP upward, HP
+  downward). Default: LP12 open at 20 kHz, so the drone is unchanged until it is used.
+

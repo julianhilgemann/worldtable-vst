@@ -113,6 +113,50 @@ window.WT_PARAMS = {
     "skew": 1.0,
     "unit": "ct"
   },
+  "play": {
+    "name": "Play",
+    "type": "bool",
+    "group": "play",
+    "default": false
+  },
+  "play_attack": {
+    "name": "Play Attack",
+    "type": "float",
+    "group": "play",
+    "min": 0.001,
+    "max": 8,
+    "default": 0.01,
+    "skew": 0.210899174,
+    "unit": "s"
+  },
+  "play_release": {
+    "name": "Play Release",
+    "type": "float",
+    "group": "play",
+    "min": 0.02,
+    "max": 20,
+    "default": 2.5,
+    "skew": 0.299851491,
+    "unit": "s"
+  },
+  "play_velocity": {
+    "name": "Play Velocity",
+    "type": "float",
+    "group": "play",
+    "min": 0,
+    "max": 1,
+    "default": 0.6,
+    "skew": 1.0
+  },
+  "play_drone": {
+    "name": "Play Drone",
+    "type": "float",
+    "group": "play",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "skew": 1.0
+  },
   "red_level": {
     "name": "Red Level",
     "type": "float",
@@ -179,6 +223,35 @@ window.WT_PARAMS = {
     "default": 0.9,
     "skew": 1.0
   },
+  "low_level": {
+    "name": "Low Level",
+    "type": "float",
+    "group": "layers",
+    "min": 0,
+    "max": 1,
+    "default": 0.5,
+    "skew": 1.0
+  },
+  "low_decay": {
+    "name": "Low Decay",
+    "type": "float",
+    "group": "layers",
+    "min": 1,
+    "max": 30,
+    "default": 8,
+    "skew": 0.487655947,
+    "unit": "s"
+  },
+  "low_octave": {
+    "name": "Low Octave",
+    "type": "choice",
+    "group": "layers",
+    "choices": [
+      "Sub",
+      "Bass"
+    ],
+    "default": 0
+  },
   "macro_storm": {
     "name": "Storm",
     "type": "float",
@@ -222,6 +295,46 @@ window.WT_PARAMS = {
     "min": 0,
     "max": 1,
     "default": 0.5,
+    "skew": 1.0
+  },
+  "flt_type": {
+    "name": "Filter Type",
+    "type": "choice",
+    "group": "filter",
+    "choices": [
+      "LP12",
+      "LP24",
+      "BP",
+      "HP"
+    ],
+    "default": 0
+  },
+  "flt_cutoff": {
+    "name": "Filter Cutoff",
+    "type": "float",
+    "group": "filter",
+    "min": 20,
+    "max": 20000,
+    "default": 20000,
+    "skew": 0.229904558,
+    "unit": "Hz"
+  },
+  "flt_reso": {
+    "name": "Filter Resonance",
+    "type": "float",
+    "group": "filter",
+    "min": 0,
+    "max": 1,
+    "default": 0.1,
+    "skew": 1.0
+  },
+  "flt_sky": {
+    "name": "Filter Sky",
+    "type": "float",
+    "group": "filter",
+    "min": 0,
+    "max": 1,
+    "default": 0.3,
     "skew": 1.0
   },
   "drive": {

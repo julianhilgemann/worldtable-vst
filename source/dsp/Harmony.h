@@ -76,6 +76,12 @@ struct ChordName
 };
 ChordName nameOf (const Chord&) noexcept;
 
+/** Held MIDI notes (bit-masks of notes 0–63 and 64–127) → a chord: the lowest distinct pitch classes
+    (at most Chord::kMaxTones); the lowest note that spells a known shape is the root, else the
+    lowest note. With `requireKnownShape`, an unknown shape gives false. The MIDI latch's rule,
+    shared with Play mode's readout (T3.7). */
+bool chordFromNotes (uint64_t lo, uint64_t hi, bool requireKnownShape, Chord& out) noexcept;
+
 /** The substorm phase, in the sky's order (SkySound.cpp asserts the two agree). */
 enum class Phase : int { quiet = 0, growth = 1, onset = 2, recovery = 3 };
 

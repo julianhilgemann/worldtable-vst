@@ -2,7 +2,11 @@
 //
 //   WorldtableRender --out renders/instrument.wav --seconds 45 [--rate 48000]
 //                    [--set progression=0 --set mood=Bittersweet --set drive=0.3 ...]
+//                    [--midi notes.mid] [--block 512] [--bands]
 //
+// --midi plays a Standard MIDI File into the processor at its sample positions (all tracks, the
+// file's tempo map); with --set play=1 that is Play mode (T3.7). --bands prints the mono mix's
+// octave-band levels (31.5 Hz … 16 kHz), for the low end and the filter.
 // The default path renders the plug-in as it plays: the Sky Model's bundled Journey (10–11 May
 // 2024, 24×), SkySound, the full FX chain, the chord hold and the MIDI latch (T3.6). Values for
 // --set are real parameter values (Hz, s, dB …); choices accept the index or the choice name.
@@ -31,6 +35,7 @@
 #include "sky/SkyFeed.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_dsp/juce_dsp.h>
 
 #include <chrono>
 #include <ctime>
@@ -42,6 +47,49 @@ int fail (const juce::String& message)
 {
     std::cerr << "error: " << message << "\n";
     return 1;
+}
+
+/** Every event of every track, in seconds, in time order. */
+bool loadMidi (const juce::File& file, juce::MidiMessageSequence& out)
+{
+    juce::FileInputStream in (file);
+    juce::MidiFile midi;
+    if (! in.openedOk() || ! midi.readFrom (in))
+        return false;
+    midi.convertTimestampTicksToSeconds();
+    for (int t = 0; t < midi.getNumTracks(); ++t)
+        out.addSequence (*midi.getTrack (t), 0.0);
+    out.sort();
+    return true;
+}
+
+/** Octave-band RMS levels of the mono mix (dBFS), skipping the first `skipSeconds`. */
+void printBands (const juce::AudioBuffer<float>& audio, double rate, double skipSeconds)
+{
+    static constexpr double kCentres[] = { 31.5, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0 };
+    const int total = audio.getNumSamples();
+    const int skip = std::min (total, static_cast<int> (skipSeconds * rate));
+    std::cout << "bands:  ";
+    for (const double fc : kCentres)
+    {
+        if (fc > 0.45 * rate)
+            break;
+        juce::dsp::IIR::Filter<float> a, b;   // two band-passes in series: steeper skirts
+        a.coefficients = juce::dsp::IIR::Coefficients<float>::makeBandPass (rate, static_cast<float> (fc), 1.41f);
+        b.coefficients = a.coefficients;
+        double sum = 0.0;
+        for (int i = 0; i < total; ++i)
+        {
+            const float x = 0.5f * (audio.getSample (0, i) + audio.getSample (1, i));
+            const float y = b.processSample (a.processSample (x));
+            if (i >= skip)
+                sum += static_cast<double> (y) * y;
+        }
+        const double rms = std::sqrt (sum / std::max (1, total - skip));
+        std::cout << (fc < 1000.0 ? juce::String (fc, fc < 100.0 ? 1 : 0) : juce::String (fc / 1000.0, 0) + "k") << " "
+                  << juce::String (juce::Decibels::gainToDecibels (static_cast<float> (rms), -200.0f), 1) << "  ";
+    }
+    std::cout << "\n";
 }
 
 bool setParameter (juce::AudioProcessorValueTreeState& apvts, const juce::String& assignment)
@@ -355,7 +403,9 @@ int main (int argc, char* argv[])
 
     juce::File out = juce::File::getCurrentWorkingDirectory().getChildFile ("renders/render.wav");
     double seconds = 30.0, rate = 48000.0;
-    bool skyMode = false, secondsGiven = false;
+    bool skyMode = false, secondsGiven = false, bands = false;
+    int block = 512;
+    juce::File midiFile;
     juce::StringArray sets;
     SkyRenderOptions sky;
 
@@ -367,6 +417,9 @@ int main (int argc, char* argv[])
         else if (a == "--seconds") { seconds = next().getDoubleValue(); secondsGiven = true; }
         else if (a == "--rate")    rate = next().getDoubleValue();
         else if (a == "--set")     sets.add (next());
+        else if (a == "--midi")    midiFile = juce::File::getCurrentWorkingDirectory().getChildFile (next());
+        else if (a == "--block")   block = juce::jlimit (16, 8192, next().getIntValue());
+        else if (a == "--bands")   bands = true;
         else if (a == "--sky")     skyMode = true;
         else if (a == "--day")     sky.day = next();
         else if (a == "--from")    sky.from = next();
@@ -407,7 +460,10 @@ int main (int argc, char* argv[])
         if (! setParameter (processor.getValueTreeState(), s))
             return fail ("unknown parameter in --set " + s);
 
-    constexpr int block = 512;
+    juce::MidiMessageSequence events;
+    if (midiFile != juce::File() && ! loadMidi (midiFile, events))
+        return fail ("cannot read MIDI file " + midiFile.getFullPathName());
+
     processor.setPlayConfigDetails (0, 2, rate, block);
     processor.prepareToPlay (rate, block);
 
@@ -417,10 +473,20 @@ int main (int argc, char* argv[])
     juce::MidiBuffer midi;
 
     const auto t0 = std::chrono::steady_clock::now();
+    int nextEvent = 0;
     for (int pos = 0; pos < total; pos += block)
     {
         const int n = std::min (block, total - pos);
         buffer.setSize (2, n, false, false, true);
+        midi.clear();
+        for (; nextEvent < events.getNumEvents(); ++nextEvent)
+        {
+            const auto& m = events.getEventPointer (nextEvent)->message;
+            const auto at = static_cast<int> (std::llround (m.getTimeStamp() * rate));
+            if (at >= pos + n)
+                break;
+            midi.addEvent (m, std::max (0, at - pos));
+        }
         processor.processBlock (buffer, midi);
         for (int ch = 0; ch < 2; ++ch)
             result.copyFrom (ch, pos, buffer, ch, 0, n);
@@ -456,6 +522,8 @@ int main (int argc, char* argv[])
               << "maxStep: " << maxDelta << "\n"
               << "nonFinite samples: " << nonFinite << "\n"
               << "cpu:     " << juce::String (100.0 * elapsed / seconds, 2) << " % of real time\n";
+    if (bands)
+        printBands (result, rate, std::min (2.0, 0.25 * seconds));
 
     auto writer = createWav (out, rate);
     if (writer == nullptr)

@@ -2,7 +2,7 @@
 
 Source of truth for direction: the owner's project brief (Claude Docs,
 "Worldtable — project brief", sessions 1–7). Decisions are recorded in
-`spec/decisions/` (ADR-0002, -0005, -0006).
+`spec/decisions/` (ADR-0002, -0005, -0006, -0008).
 
 ## One sentence
 A drone instrument that plays Earth's magnetic field as the sun shakes it:
@@ -12,7 +12,9 @@ live, slow, never repeating, with an interface that *is* the aurora.
 - **One phenomenon:** the magnetosphere (geomagnetic field, solar wind, Kp,
   aurora). Nothing else in v1.
 - **A drone first:** it plays continuously with no input, the way the Earth
-  absorbs the field nonstop. MIDI is optional and only sets root and chord.
+  absorbs the field nonstop. MIDI is optional: it sets root and chord, or, in
+  Play mode (ADR-0008, owner 2026-11-09), plays the resonators note by note
+  from a keyboard, a sequencer or a DAW clip, in the sky's colours.
 - **An eye-candy drone synth:** visuals first, technically useful underneath.
   Esoteric in concept, clean and modern in execution, easy to use (dashboard
   thinking).
@@ -64,8 +66,8 @@ physics-derived palette.
 
 ## Non-goals (v1)
 - Not a general-purpose synth; no wavetable editor.
-- No step sequencer, no Euclid, no melodic MIDI play beyond chord latch,
-  no per-voice editing, no complex preset browser.
+- No step sequencer, no Euclid (the host's sequencer plays Play mode), no
+  per-voice editing, no complex preset browser.
 - No user-built modules or cables (VCV Rack / Cardinal are the place for that).
 - No audio-rate FM, no microtonal tuning (detune = a few cents of thickness).
 - No sources beyond the magnetosphere; no user-written data adapters.
