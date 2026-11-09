@@ -109,6 +109,8 @@ double SkySound::realSeconds() const noexcept
 void SkySound::renderSamples (int offset, int numSamples) noexcept
 {
     resonators.process (outLeft + offset, outRight + offset, numSamples);
+    if (companion != nullptr)
+        companion->renderSamples (outLeft + offset, outRight + offset, numSamples);
 }
 
 //==================================================================================================
@@ -281,6 +283,9 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
     }
     if (tickCount % 100 == 0)
         guardResets += resonators.guard();
+
+    if (companion != nullptr)
+        companion->skyTicked (model, events, *this, tickSamples);
 }
 
 /** Dome azimuth → pan (east left, like the dome); elevation → presence. 10 Hz. */

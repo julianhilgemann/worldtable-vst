@@ -46,6 +46,10 @@
     ph_stages: (v) => v + " st.",
     lim_ceiling: (v) => v.toFixed(1) + " dB",
     master: (v) => (v <= -59.9 ? "−∞" : v.toFixed(1) + " dB"),
+    flt_cutoff: (v) => (v >= 19950 ? "open" : WT.fmt("flt_cutoff", v)),
+    flt_sky: (v) => (v < 0.005 ? "still" : "+" + (3 * v).toFixed(1) + " oct"),
+    play_velocity: (v) => (v < 0.005 ? "fixed" : Math.round(v * 30) + " dB"),
+    play_drone: (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " %"),
   };
   UI.format = (id, v) => (FORMAT[id] ? FORMAT[id](v) : WT.fmt(id, v).replace("-", "−"));
 
@@ -206,6 +210,17 @@
     return root;
   }
 
+  // ---------- Play: the header's mode button (T3.7) ----------
+  function PlayButton(btn, id) {
+    btn.dataset.param = id;
+    WT.onParam(id, (v) => {
+      btn.classList.toggle("on", !!v);
+      btn.setAttribute("aria-pressed", String(!!v));
+    });
+    btn.addEventListener("click", (e) => { e.stopPropagation(); WT.commit(id, WT.get(id) ? 0 : 1); });
+    return btn;
+  }
+
   // ---------- canvas ----------
   /** Sizes a canvas backing store for the stage zoom and the display; returns {ctx, w, h} in CSS px. */
   function fit(canvas) {
@@ -227,5 +242,5 @@
   const rgba = (name, a) => { const c = C.rgb[name]; return `rgba(${c[0]},${c[1]},${c[2]},${a})`; };
   const MONO = (px) => `${px}px "JetBrains Mono", ui-monospace, monospace`;
 
-  Object.assign(UI, { Knob, Seg, Keys, Toggle, fit, el, svg, C, rgba, MONO, KEY_NAMES, defaultValue });
+  Object.assign(UI, { Knob, Seg, Keys, Toggle, PlayButton, fit, el, svg, C, rgba, MONO, KEY_NAMES, defaultValue });
 })();

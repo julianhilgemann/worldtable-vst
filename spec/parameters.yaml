@@ -28,6 +28,14 @@ groups:
     - { id: detune,      name: "Detune",      type: float, min: 0, max: 12, default: 3, unit: ct, modulatable: true }
     - { id: drift,       name: "Drift",       type: float, min: 0, max: 20, default: 4, unit: ct, modulatable: true }
 
+  # Play mode (T3.7, ADR-0008): MIDI notes play the resonators; the drone stays under at play_drone.
+  play:
+    - { id: play,          name: "Play",          type: bool, default: false }
+    - { id: play_attack,   name: "Play Attack",   type: float, min: 0.001, max: 8, default: 0.01, mid: 0.3, unit: s }
+    - { id: play_release,  name: "Play Release",  type: float, min: 0.02, max: 20, default: 2.5, mid: 2, unit: s }
+    - { id: play_velocity, name: "Play Velocity", type: float, min: 0, max: 1, default: 0.6 }
+    - { id: play_drone,    name: "Play Drone",    type: float, min: 0, max: 1, default: 0 }
+
   layers:
     - { id: red_level,    name: "Red Level",    type: float, min: 0, max: 1, default: 1 }
     - { id: green_level,  name: "Green Level",  type: float, min: 0, max: 1, default: 0.7 }
@@ -36,6 +44,10 @@ groups:
     - { id: green_decay,  name: "Green Decay",  type: float, min: 2, max: 30, default: 6, mid: 8, unit: s }
     - { id: violet_decay, name: "Violet Decay", type: float, min: 1, max: 15, default: 2.5, mid: 3, unit: s }
     - { id: width,        name: "Width",        type: float, min: 0, max: 1, default: 0.9 }
+    # the low resonator under red (T3.7): the bass note in the sub (C1–B1) or bass (C2–B2) octave
+    - { id: low_level,    name: "Low Level",    type: float, min: 0, max: 1, default: 0.5 }
+    - { id: low_decay,    name: "Low Decay",    type: float, min: 1, max: 30, default: 8, mid: 8, unit: s }
+    - { id: low_octave,   name: "Low Octave",   type: choice, choices: [Sub, Bass], default: Sub }
 
   macros:
     - { id: macro_storm,  name: "Storm",  type: float, min: 0, max: 1, default: 0.5 }
@@ -43,6 +55,13 @@ groups:
     - { id: macro_glow,   name: "Glow",   type: float, min: 0, max: 1, default: 0.5 }
     - { id: macro_space,  name: "Space",  type: float, min: 0, max: 1, default: 0.5 }
     - { id: macro_drift,  name: "Drift",  type: float, min: 0, max: 1, default: 0.5 }
+
+  # between the sources and Drive (T3.7); the POC's SVF
+  filter:
+    - { id: flt_type,   name: "Filter Type",      type: choice, choices: [LP12, LP24, BP, HP], default: LP12 }
+    - { id: flt_cutoff, name: "Filter Cutoff",    type: float, min: 20, max: 20000, default: 20000, mid: 1000, unit: Hz, modulatable: true }
+    - { id: flt_reso,   name: "Filter Resonance", type: float, min: 0, max: 1, default: 0.1, modulatable: true }
+    - { id: flt_sky,    name: "Filter Sky",       type: float, min: 0, max: 1, default: 0.3 }
 
   drive:
     - { id: drive, name: "Drive", type: float, min: 0, max: 1, default: 0.15, modulatable: true }

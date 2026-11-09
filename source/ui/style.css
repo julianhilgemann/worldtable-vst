@@ -191,6 +191,18 @@ header {
 .details-btn:hover { color: var(--ink); }
 .details-btn[aria-expanded="true"] { color: var(--ink); background: rgba(201, 211, 230, 0.06); }
 .details-btn:focus-visible { outline: 1px solid var(--hair-strong); outline-offset: 2px; }
+/* Play (T3.7): a mode, so a pill like Journey's; violet when on, as MIDI is in the chord pill */
+.play-btn {
+  display: flex; align-items: center; gap: 8px;
+  height: 24px; padding: 0 12px 0 10px; cursor: pointer;
+  background: none; border: 1px solid var(--hair-strong); border-radius: 12px;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  transition: color 0.3s, border-color 0.3s, background-color 0.3s;
+}
+.play-btn svg { display: block; }
+.play-btn:hover { color: var(--ink); }
+.play-btn.on { color: var(--n-violet); border-color: rgba(143, 123, 255, 0.5); background: rgba(143, 123, 255, 0.08); }
+.play-btn:focus-visible { outline: 1px solid var(--hair-strong); outline-offset: 2px; }
 
 /* ---------------------------------------------------------------- rows and columns */
 #row-a { display: grid; grid-template-columns: 770px minmax(0, 1fr); column-gap: 8px; min-height: 0; }
@@ -269,7 +281,7 @@ header {
   color: var(--o-green);
 }
 .pill i { width: 6px; height: 6px; border-radius: 3px; background: currentColor; }
-.pill.midi { color: var(--n-violet); }
+.pill.midi, .pill.play { color: var(--n-violet); }
 .pill.hold { color: var(--muted); }
 .pill .next { color: var(--muted); margin-left: 8px; }
 
@@ -326,17 +338,29 @@ header {
 .module canvas.view { display: block; width: 100%; flex: 1 1 0; height: 0; min-height: 46px; margin: 8px 0 4px; }
 .module .knobs { display: flex; justify-content: space-between; align-items: flex-start; gap: 0; margin-top: auto; }
 .module .knobs.tight { justify-content: space-around; }
+.filter-views { display: flex; gap: 8px; flex: 1 1 0; min-height: 46px; margin: 8px 0 4px; }
+.filter-views canvas.view { height: auto; min-height: 0; margin: 0; }
+.filter-views #cv-filter { flex: 1 1 0; width: auto; }
+.filter-views #cv-drive { flex: 0 0 48px; width: 48px; }
 
 /* harmony and layers */
-.harmony-grid { display: grid; grid-template-columns: 404px minmax(0, 1fr); column-gap: 16px; margin-top: 8px; flex: 1; }
-.harmony-grid .knobs { align-self: end; }
+.harmony-grid { display: grid; grid-template-columns: 404px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: 16px; margin-top: 8px; flex: 1; min-height: 0; }
+.harmony-grid > .knobs { grid-column: 2; grid-row: 1; align-self: end; }
+/* Play mode (T3.7): key, mood, scale and shape steer only the sky's chords, so the keyboard and
+   the Play controls take their place; the six knobs stay */
+.harmony-grid > .choice-stack, .harmony-grid > .play-stack { grid-column: 1; grid-row: 1; transition: opacity 0.6s, visibility 0.6s; }
+.harmony-grid > .play-stack { opacity: 0; visibility: hidden; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+#harmony.is-play .play-stack { opacity: 1; visibility: visible; }
+#harmony.is-play .choice-stack { opacity: 0; visibility: hidden; }
+#cv-keys { display: block; width: 100%; height: 36px; flex: none; }
+.play-stack .knobs { justify-content: flex-start; gap: 16px; margin-top: auto; }
 .choice-stack { display: flex; flex-direction: column; gap: 8px; }
 .choice-line { display: flex; align-items: center; gap: 8px; }
 .choice-line .cap { width: 40px; flex: none; }
 .note { font-family: var(--mono); font-size: 10px; color: var(--faint); white-space: nowrap; }
-.layers-grid { display: grid; grid-template-columns: minmax(0, 1fr) 168px 48px; grid-template-rows: minmax(0, 1fr); column-gap: 12px; margin-top: 8px; flex: 1; min-height: 0; }
+.layers-grid { display: grid; grid-template-columns: minmax(0, 1fr) 192px 44px; grid-template-rows: minmax(0, 1fr); column-gap: 8px; margin-top: 8px; flex: 1; min-height: 0; }
 .layers-grid canvas { width: 100%; height: 100%; display: block; }
-.layer-knobs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 8px; align-content: end; }
+.layer-knobs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 8px; align-content: end; }
 .layers-grid .width-knob { align-self: end; }
 
 /* details popover: observer, journey, data */
@@ -390,6 +414,10 @@ header {
 .seg button:hover { color: var(--ink); }
 .seg button:focus-visible { outline: 1px solid var(--hair-strong); outline-offset: 1px; }
 .seg button.on { color: var(--o-green); border-color: rgba(92, 242, 160, 0.38); background: rgba(92, 242, 160, 0.07); }
+.seg.small { gap: 2px; margin: -2px 0; }
+.head .low-note { overflow: visible; }
+.head .low-note b { font-weight: 500; color: var(--ink); }
+.seg.small button { height: 20px; padding: 0 5px; font-size: 10px; }
 .seg.keys { gap: 2px; }
 .seg.keys button { padding: 0; width: 28px; text-align: center; }
 .seg.keys button.acc { color: var(--faint); }

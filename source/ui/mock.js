@@ -86,11 +86,36 @@
       WT.dispatch("telemetry", telemetry(model.snapshot(), newOnsets, r));
     }, 33);
 
+    // ---- Play mode (T3.7): there is no MIDI in a browser, so a slow demo phrase stands in
+    const PHRASE = [
+      { notes: [50, 57, 61, 64, 66], label: "Dmaj9" }, { notes: [47, 54, 61, 62, 64], label: "Bm11" },
+      { notes: [43, 50, 54, 59, 61], label: "Gmaj7♯11" }, { notes: [45, 52, 59, 64, 69], label: "Asus2" },
+    ];
+    const lowNoteOf = (pc) => 12 * (Math.round(WT.get("low_octave")) + 2) + ((pc % 12) + 12) % 12;
+    function playDemo(r) {
+      const bar = 3, i = Math.floor(r / bar) % PHRASE.length, t = r % bar, held = t < 2.2;
+      const rel = Math.max(0.02, WT.get("play_release"));
+      const fade = (dt) => Math.pow(10, -3 * dt / rel);
+      const cur = PHRASE[i], prev = PHRASE[(i + PHRASE.length - 1) % PHRASE.length];
+      const voices = cur.notes.map((n) => [n, held ? 0.85 : 0.85 * fade(t - 2.2), held]);
+      for (const n of prev.notes) if (!cur.notes.includes(n)) voices.push([n, 0.85 * fade(t + bar - 2.2), false]);
+      const live = voices.filter((v) => v[1] > 0.01);
+      const heldNotes = held ? cur.notes : [];
+      const lay = [heldNotes.flatMap((n) => [n - 12, n - 12]), heldNotes.flatMap((n) => [n, n + 12]), heldNotes.flatMap((n) => [n + 19, n + 19])];
+      return { voices: live, low: lowNoteOf(cur.notes[0]), chord: { play: true, held: heldNotes.length, label: cur.label, roman: "", notes: lay, voices: lay[0].length, changes } };
+    }
+
     function telemetry(s, newOnsets, r) {
       const nd = s.nodes, n = s.nodeCount;
       const act = s.activity, breath = 0.5 - 0.5 * Math.cos(2 * Math.PI * (5 / 60) * r);
       const level = 0.14 + 0.22 * act + 0.05 * Math.sin(r * 0.7);
+      const playing = WT.get("play") ? playDemo(r) : null;
+      const type = Math.round(WT.get("flt_type"));
+      const filterHz = Math.min(20000, WT.get("flt_cutoff") * Math.pow(2, (type === 3 ? -1 : 1) * WT.get("flt_sky") * 3 * Math.min(1, act)));
       return {
+        play: { mix: playing ? 1 : 0, voices: playing ? playing.voices : [] },
+        low: { note: playing ? playing.low : lowNoteOf(chord.key + chord.deg), level: WT.get("low_level") },
+        filterHz,
         peakL: level * (1 + 0.04 * Math.sin(r * 3.1)), peakR: level * (1 + 0.04 * Math.cos(r * 2.7)),
         gr: level > 0.3 ? 0.96 : 1, autoGain: 1.4, verb: 0.18 + 0.14 * act, breath,
         spectrum: spectrumFor(notes, act),
@@ -106,7 +131,7 @@
           eqLat: s.eqLat, poleLat: s.poleLat, dayShift: s.dayShiftDeg, stormRed: s.stormRed,
           sunAz: s.sky.sunAz, sunEl: s.sky.sunEl, moonAz: s.sky.moonAz, moonEl: s.sky.moonEl, moonIllum: s.sky.moonIllum,
         },
-        chord: {
+        chord: playing ? playing.chord : {
           label: chord.label, roman: chord.roman, key: chord.key, function: FN.indexOf(chord.fn), shape: chord.index,
           voices: notes[0].length, bank: changes % 2, latched: false, pending: !!harmony.pending, changes, tick: 0, notes,
         },

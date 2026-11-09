@@ -46,6 +46,9 @@ void Instrument::prepare (double rate, int maximumBlockSize)
     SkySound::Settings settings = settingsFrom (controls);
     settings.voicesPerNode = 1;
     skySound.prepare (sampleRate, numNodes, seed, settings, skySound.harmony().chord());
+    front.prepare (sampleRate, seed, sourcesFrom (controls));
+    skySound.setCompanion (&front);
+    lastPlay = controls.play;
 
     drive.prepare (sampleRate);
     phaser.prepare (sampleRate);
@@ -53,7 +56,12 @@ void Instrument::prepare (double rate, int maximumBlockSize)
     delay.prepare (sampleRate);
     reverb.prepare (sampleRate);
     autoGain.prepare (sampleRate);
-    autoGain.setSettings (dsp::AutoGain::Settings {});   // prepare() resets them (T3.5a)
+    autoGainHeld = controls.play;
+    {
+        dsp::AutoGain::Settings ag;   // prepare() resets them (T3.5a)
+        ag.hold = autoGainHeld;
+        autoGain.setSettings (ag);
+    }
     dcL.prepare (sampleRate);
     dcR.prepare (sampleRate);
     limiter.prepare (sampleRate);
@@ -68,9 +76,15 @@ void Instrument::prepare (double rate, int maximumBlockSize)
     telemetry.autoGain.store (1.0f);
     telemetry.reverbLevel.store (0.0f);
     telemetry.breath.store (0.0f);
+    telemetry.lowNote.store (-1);
+    telemetry.lowLevel.store (0.0f);
+    telemetry.filterHz.store (controls.fltCutoff);
+    telemetry.playMix.store (controls.play ? 1.0f : 0.0f);
 
     prepared = true;
+    publishedPlay = ! controls.play;   // force the first publish
     publishChord();
+    publishPlay();
 }
 
 void Instrument::configureHarmony (const Controls& c) noexcept
@@ -146,6 +160,19 @@ void Instrument::readTarget (Controls& c) const noexcept
     c.ceiling = param (p.lim_ceiling, -1.0f);
     c.release = param (p.lim_release, 200.0f);
     c.masterDb = param (p.master, 0.0f);
+
+    c.play = param (p.play, 0.0f) > 0.5f;
+    c.playAttack = param (p.play_attack, 0.01f);
+    c.playRelease = param (p.play_release, 2.5f);
+    c.playVelocity = param (p.play_velocity, 0.6f);
+    c.playDrone = param (p.play_drone, 0.0f);
+    c.lowLevel = param (p.low_level, 0.5f);
+    c.lowDecay = param (p.low_decay, 8.0f);
+    c.lowOctave = paramInt (p.low_octave, 0);
+    c.fltType = paramInt (p.flt_type, 0);
+    c.fltCutoff = param (p.flt_cutoff, 20000.0f);
+    c.fltReso = param (p.flt_reso, 0.1f);
+    c.fltSky = param (p.flt_sky, 0.3f);
 }
 
 void Instrument::glideControls (const Controls& t, int numSamples) noexcept
@@ -193,6 +220,21 @@ void Instrument::glideControls (const Controls& t, int numSamples) noexcept
     glide (controls.ceiling, t.ceiling);
     glide (controls.release, t.release);
     glide (controls.masterDb, t.masterDb);
+    glide (controls.playAttack, t.playAttack);
+    glide (controls.playRelease, t.playRelease);
+    glide (controls.playVelocity, t.playVelocity);
+    glide (controls.playDrone, t.playDrone);
+    glide (controls.lowLevel, t.lowLevel);
+    glide (controls.lowDecay, t.lowDecay);
+    glide (controls.fltReso, t.fltReso);
+    glide (controls.fltSky, t.fltSky);
+    // the cutoff glides in octaves (the filter glides again per sample); at the target it stays
+    // exactly there, so a still knob is the same at every block size
+    {
+        const float from = std::log2 (std::max (1.0f, controls.fltCutoff));
+        const float to = std::log2 (std::max (1.0f, t.fltCutoff));
+        controls.fltCutoff = std::abs (to - from) < 1.0e-5f ? t.fltCutoff : std::exp2 (from + (to - from) * k);
+    }
 
     // Chord controls snap: Harmony turns a change into a crossfaded chord change.
     controls.key = t.key;
@@ -203,6 +245,10 @@ void Instrument::glideControls (const Controls& t, int numSamples) noexcept
     controls.registerSemis = t.registerSemis;
     controls.phStages = t.phStages;
     controls.dlyPingPong = t.dlyPingPong;
+    // modes and choices snap: Sources glides the mode, the filter crossfades its type
+    controls.play = t.play;
+    controls.lowOctave = t.lowOctave;
+    controls.fltType = t.fltType;
 }
 
 SkySound::Settings Instrument::settingsFrom (const Controls& c) const noexcept
@@ -231,11 +277,46 @@ SkySound::Settings Instrument::settingsFrom (const Controls& c) const noexcept
     return s;
 }
 
+Sources::Settings Instrument::sourcesFrom (const Controls& c) const noexcept
+{
+    const auto sky = settingsFrom (c);
+    Sources::Settings s;
+    s.play = c.play;
+    s.droneUnder = c.playDrone;
+    s.voices.attack = c.playAttack;
+    s.voices.release = c.playRelease;
+    s.voices.velocity = c.playVelocity;
+    s.voices.level = sky.level;
+    s.voices.t60 = sky.t60;
+    s.voices.transpose = c.transpose;
+    s.bed = sky.exciter.bed;
+    s.strike = sky.exciter.strike;
+    s.detuneCents = sky.detuneCents;
+    s.driftCents = sky.driftCents;
+    s.lowLevel = c.lowLevel;
+    s.low.t60 = c.lowDecay;
+    s.low.octave = c.lowOctave + 1;
+    s.filter.type = c.fltType;
+    s.filter.cutoffHz = c.fltCutoff;
+    s.filter.resonance = c.fltReso;
+    s.filterSky = c.fltSky;
+    return s;
+}
+
 void Instrument::applyControls() noexcept
 {
     const float storm = stormGain (controls.storm);
 
     skySound.setSettings (settingsFrom (controls));
+    front.setSettings (sourcesFrom (controls));
+    if (controls.play != autoGainHeld)
+    {
+        // Play mode: the player's dynamics stay theirs; the normaliser glides back to unity.
+        autoGainHeld = controls.play;
+        dsp::AutoGain::Settings ag;
+        ag.hold = autoGainHeld;
+        autoGain.setSettings (ag);
+    }
 
     auto& h = skySound.harmony();
     const float progression = std::clamp (controls.progression * storm, 0.0f, 1.0f);
@@ -302,6 +383,12 @@ void Instrument::handleMidi (const juce::MidiBuffer& midi) noexcept
         else if (m.isAllNotesOff() || m.isAllSoundOff())
             h.allNotesOff();
     }
+    syncLatch();
+}
+
+void Instrument::syncLatch() noexcept
+{
+    auto& h = skySound.harmony();
 
     // The latch and the chord hold reach the sound through the same path (T3.6): a chord that
     // differs from the one sounding is requested, urgent (the player means it). While a sky
@@ -315,11 +402,118 @@ void Instrument::handleMidi (const juce::MidiBuffer& midi) noexcept
     }
 }
 
+void Instrument::playEvent (const juce::MidiMessage& m) noexcept
+{
+    if (m.isNoteOn())
+        front.noteOn (m.getNoteNumber(), m.getFloatVelocity());
+    else if (m.isNoteOff())
+        front.noteOff (m.getNoteNumber());
+    else if (m.isSustainPedalOn())
+        front.sustain (true);
+    else if (m.isSustainPedalOff())
+        front.sustain (false);
+    else if (m.isAllSoundOff())
+        front.allSoundOff();
+    else if (m.isAllNotesOff())
+        front.allNotesOff();
+}
+
+void Instrument::renderPlay (float* left, float* right, int numSamples, const juce::MidiBuffer& midi) noexcept
+{
+    // Each event lands on its sample: render up to it, apply it, go on. The sky's tick grid is
+    // absolute, so the split doesn't change the sound (rule 5).
+    int pos = 0;
+    for (const auto meta : midi)
+    {
+        const int at = std::clamp (meta.samplePosition, pos, numSamples);
+        if (at > pos)
+        {
+            skySound.process (runtime, left + pos, right + pos, at - pos);
+            pos = at;
+        }
+        playEvent (meta.getMessage());
+    }
+    if (pos < numSamples)
+        skySound.process (runtime, left + pos, right + pos, numSamples - pos);
+}
+
+void Instrument::publishPlay() noexcept
+{
+    const int n = front.playVoices().view (playView);
+    PlayState s {};
+    s.count = n;
+    for (int i = 0; i < n; ++i)
+    {
+        const auto& v = playView[static_cast<size_t> (i)];
+        s.notes[static_cast<size_t> (i)] = static_cast<int16_t> (v.note);
+        s.levels[static_cast<size_t> (i)] = v.level;
+        s.held[static_cast<size_t> (i)] = v.held ? 1 : 0;
+    }
+    playBuffer.write (s);
+}
+
 void Instrument::publishChord() noexcept
 {
+    const bool play = controls.play;
+    if (play)
+    {
+        // Play mode: the readout names the held notes (the latch's rule) and the voicing view shows
+        // their partials, the layers in small.
+        std::array<uint64_t, 2> mask {};
+        int held = 0;
+        const int n = front.playVoices().view (playView);
+        for (int i = 0; i < n; ++i)
+        {
+            const auto& v = playView[static_cast<size_t> (i)];
+            if (! v.held || v.note < 0 || v.note > 127)
+                continue;
+            mask[static_cast<size_t> (v.note / 64)] |= uint64_t { 1 } << (v.note % 64);
+            ++held;
+        }
+        if (chordPublished && publishedPlay && mask == publishedHeld)
+            return;
+
+        ChordState s {};
+        s.play = true;
+        s.held = held;
+        s.changes = skySound.chordChanges();
+        s.tick = static_cast<uint32_t> (skySound.ticks());
+        s.key = skySound.harmony().key();
+        Chord c;
+        if (chordFromNotes (mask[0], mask[1], false, c))
+        {
+            const auto name = nameOf (c);
+            s.label = name.label;
+            s.roman = name.roman;
+            s.key = c.key;
+        }
+        int k = 0;
+        for (int note = 0; note < 128 && 2 * k + 1 < ChordState::kMaxNotes; ++note)
+        {
+            if (((mask[static_cast<size_t> (note / 64)] >> (note % 64)) & 1u) == 0)
+                continue;
+            // every layer gets 2 entries per note, so the view weighs them alike
+            const auto put = [&s, k] (int layer, int a, int b)
+            {
+                s.notes[static_cast<size_t> (layer)][static_cast<size_t> (2 * k)] = static_cast<int16_t> (a);
+                s.notes[static_cast<size_t> (layer)][static_cast<size_t> (2 * k + 1)] = static_cast<int16_t> (b);
+            };
+            put (0, note - 12, note - 12);
+            put (1, note, note + 12);
+            put (2, note + 19, note + 19);
+            ++k;
+        }
+        s.voices = 2 * k;
+        chordBuffer.write (s);
+        chordPublished = true;
+        publishedPlay = true;
+        publishedHeld = mask;
+        return;
+    }
+
     const bool latched = skySound.harmony().isLatched();
     const bool pending = skySound.hasPendingChord();
-    if (chordPublished && publishedChanges == skySound.chordChanges()
+    if (chordPublished && ! publishedPlay && publishedChanges == skySound.chordChanges()
         && publishedLatched == latched && publishedPending == pending)
         return;
 
@@ -345,6 +539,7 @@ void Instrument::publishChord() noexcept
 
     chordBuffer.write (s);
     chordPublished = true;
+    publishedPlay = false;
     publishedChanges = s.changes;
     publishedLatched = latched;
     publishedPending = pending;
@@ -368,12 +563,31 @@ void Instrument::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuff
     glideControls (target, n);
 
     applyControls();
-    handleMidi (midi);
 
     float* left = buffer.getWritePointer (0);
     float* right = buffer.getWritePointer (1);
 
-    skySound.process (runtime, left, right, n);
+    // Play mode (T3.7). Entering it lets go of the drone's MIDI latch (the sky's chord returns
+    // under the notes); leaving it releases every played note.
+    if (controls.play != lastPlay)
+    {
+        if (controls.play)
+            skySound.harmony().allNotesOff();
+        else
+            front.allNotesOff();
+        lastPlay = controls.play;
+    }
+
+    if (controls.play)
+    {
+        syncLatch();   // a latch just cleared still hands the sky's chord back to the drone
+        renderPlay (left, right, n, midi);
+    }
+    else
+    {
+        handleMidi (midi);
+        skySound.process (runtime, left, right, n);
+    }
 
     for (int i = 0; i < n; ++i)
     {
@@ -406,9 +620,14 @@ void Instrument::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuff
     telemetry.autoGain.store (autoGain.currentGain());
     telemetry.reverbLevel.store (reverb.getWetLevel());
     telemetry.breath.store (static_cast<float> (skySound.breathCycle()));
+    telemetry.lowNote.store (front.lowResonator().note());
+    telemetry.lowLevel.store (static_cast<float> (front.lowResonator().outputGain()));
+    telemetry.filterHz.store (front.filter().currentHz());
+    telemetry.playMix.store (static_cast<float> (front.playMix()));
     scope.push (left, right, n);
 
     publishChord();
+    publishPlay();
 }
 
 } // namespace worldtable::dsp

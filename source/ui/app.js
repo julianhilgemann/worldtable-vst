@@ -26,6 +26,7 @@
   for (const n of document.querySelectorAll("[data-seg]")) UI.Seg(n, n.dataset.seg, n.dataset.labels ? n.dataset.labels.split(",") : null);
   for (const n of document.querySelectorAll("[data-keys]")) UI.Keys(n, n.dataset.keys);
   for (const n of document.querySelectorAll("[data-toggle]")) UI.Toggle(n, n.dataset.toggle, n.dataset.label || "");
+  for (const n of document.querySelectorAll("[data-play]")) UI.PlayButton(n, n.dataset.play);
 
   // ---------------------------------------------------------------- details popover
   // One page (T6.5); observer, journey and data sources open over it from the header.
@@ -50,6 +51,12 @@
   const details = popover("details-btn", "details", () => { if (S.tel.sky) showJourney(S.tel.sky); });
   const viewPop = popover("view-btn", "view-panel");
   if (hash.has("details")) details.set(true);   // for review screenshots
+  // mock only, for review screenshots: #set=play:1,flt_cutoff:800
+  if (WT.isMock && hash.has("set"))
+    for (const kv of hash.get("set").split(",")) {
+      const [k, v] = kv.split(":");
+      if (WT.META[k]) WT.set(k, Number(v));
+    }
   if (hash.has("view")) viewPop.set(true);
 
   // ---------------------------------------------------------------- scaling
@@ -68,7 +75,9 @@
   const ticker = UI.Ticker($("ticker"));
   const mag = UI.MagnetogramView($("cv-mag"));
   const layers = UI.LayersView($("cv-layers"));
+  const keys = UI.KeysView($("cv-keys"));
   const fx = {
+    filter: UI.FilterView($("cv-filter")),
     drive: UI.DriveView($("cv-drive")), phaser: UI.PhaserView($("cv-phaser")), chorus: UI.ChorusView($("cv-chorus")),
     delay: UI.DelayView($("cv-delay")), reverb: UI.ReverbView($("cv-reverb")), output: UI.OutputView($("cv-output")),
   };
@@ -187,6 +196,21 @@
     }
   });
 
+  // ---------------------------------------------------------------- Play mode (T3.7)
+  // Key, mood, scale and shape only steer the sky's chords; in Play mode the keyboard strip and the
+  // Play controls take their place in the same card.
+  const noteName = (n) => UI.KEY_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
+  let playShown = null;
+  WT.onParam("play", (v) => {
+    const on = !!v;
+    $("harmony").classList.toggle("is-play", on);
+    $("harmony-title").textContent = on ? "Play" : "Harmony";
+    $("harmony-note").textContent = on ? "MIDI plays the resonators, the sky colours them" : "the sky writes the progression, MIDI holds a chord";
+    if (playShown !== null && playShown !== on && S.tel.sky)
+      ticker.push(`<span class="t">${new Date(S.tel.sky.utc * 1000).toISOString().slice(11, 16)} UT</span>${on ? "<b class=\"c-violet\">Play</b>, your notes take over" : "Play off, the sky writes again"}`);
+    playShown = on;
+  });
+
   // ---------------------------------------------------------------- chord readout
   const FN = ["home", "tension", "awe", "borrowed"];
   const FN_RGB = { home: "92, 242, 160", tension: "143, 123, 255", awe: "201, 211, 230", borrowed: "255, 107, 107" };
@@ -198,6 +222,7 @@
   function showChord(c, sky) {
     if (!c) return;
     voicing.setChord(c.notes);
+    if (c.play) { showPlayed(c); return; }
     const fn = FN[c.function] || "home";
     const sig = `${c.label}|${c.roman}|${c.latched}`;
     if (sig !== chordSig) {
@@ -222,6 +247,27 @@
     pill.className = "pill" + (c.latched ? " midi" : hold ? " hold" : "");
     pill.innerHTML = `<i></i><span>${c.latched ? "MIDI hold" : hold ? "Hold" : "The sky writes"}</span>` + (c.pending ? `<span class="next">next chord waiting</span>` : "");
     $("chord-count").textContent = c.changes ? `${c.changes} change${c.changes === 1 ? "" : "s"} so far` : "";
+  }
+
+  /** Play mode: the held notes' name at once (no fade: you are playing), no ticker per chord. */
+  function showPlayed(c) {
+    const sig = `play|${c.label}|${c.held}`;
+    if (sig !== chordSig) {
+      chordSig = sig;
+      clearTimeout(chordTimer);
+      const text = $("chord-text");
+      text.classList.remove("out");
+      text.textContent = c.held ? c.label || "—" : "—";
+      $("chord-roman").textContent = "";
+      $("chord-card").style.setProperty("--fn", "143, 123, 255");
+      const drone = WT.get("play_drone");
+      $("chord-why").innerHTML = (c.held ? `<b>played</b><span class="gap">${c.held} note${c.held === 1 ? "" : "s"} held</span>` : `<b>played</b><span class="gap">waiting for notes</span>`)
+        + `<span class="gap">${drone < 0.005 ? "the drone rests" : "the drone under at " + Math.round(drone * 100) + " %"}</span>`;
+    }
+    const pill = $("chord-state");
+    pill.className = "pill play";
+    pill.innerHTML = `<i></i><span>Play</span>`;
+    $("chord-count").textContent = "";
   }
 
   // ---------------------------------------------------------------- sky readouts and events
@@ -349,9 +395,16 @@
     if (knobs.macro_space) knobs.macro_space.setLive(clamp((tel.verb || 0) * 2.2, 0, 1));
     if (knobs.macro_drift) knobs.macro_drift.setLive(m("macro_drift"), (t * 360 / (48 / (0.4 + m("macro_drift")))) % 360);
 
-    layers.draw([P("red_level"), P("green_level"), P("violet_level")], [P("red_decay"), P("green_decay"), P("violet_decay")]);
+    layers.draw([P("low_level"), P("red_level"), P("green_level"), P("violet_level")], [P("low_decay"), P("red_decay"), P("green_decay"), P("violet_decay")]);
+    const low = tel.low && tel.low.note >= 0 ? tel.low.note : -1;
+    if (low !== S.lowShown) {
+      S.lowShown = low;
+      $("low-note").innerHTML = low >= 0 ? `<b class="num" style="--w:3">${noteName(low)}</b>` : "";
+    }
+    if (P("play") || (tel.play && tel.play.voices && tel.play.voices.length)) keys.draw(tel.play ? tel.play.voices : [], low);
     {
       const peak = Math.max(tel.peakL || 0, tel.peakR || 0);
+      fx.filter.draw({ type: Math.round(P("flt_type")), hz: tel.filterHz || P("flt_cutoff"), base: P("flt_cutoff"), reso: P("flt_reso") }, tel.spectrum);
       fx.drive.draw(P("drive"), peak);
       fx.phaser.draw(t, { rate: P("ph_rate"), depth: P("ph_depth"), fb: P("ph_feedback"), stages: P("ph_stages"), mix: P("ph_mix") }, tel.spectrum);
       fx.chorus.draw(t, { rate: P("ch_rate"), depth: P("ch_depth"), mix: P("ch_mix") });

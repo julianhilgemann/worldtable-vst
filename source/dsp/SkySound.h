@@ -59,6 +59,22 @@ public:
     static constexpr double kDampT60 = 3.0;               ///< s: an urgent change damps the old bank
     static constexpr double kPanAltitudeKm = 110.0;       ///< the green line's altitude, for the pan
 
+    /** Something else that plays on the sky's clock (T3.7: the played notes, the low resonator and
+        the filter after them, dsp::Sources). Ticked after the curtain on every tick, and called
+        right after the bank has written each tick's samples, in place, so it sees the sky at the
+        same samples as the curtain and is as block-size independent. */
+    class Companion
+    {
+    public:
+        virtual ~Companion() = default;
+        virtual void skyTicked (const sky::SkyModel&, std::span<const sky::SkyEvent>, const SkySound&, int tickSamples) noexcept = 0;
+        /** The bank has just written these samples (overwriting): mix in, process in place. */
+        virtual void renderSamples (float* left, float* right, int numSamples) noexcept = 0;
+    };
+
+    /** Audio thread (or before playback): the companion, or nullptr. Not owned. */
+    void setCompanion (Companion* c) noexcept { companion = c; }
+
     /** Message thread. `nodes`: the sky's node count (SkyParams::nodes); nodes × voicesPerNode ≤
         kMaxVoices. Voices the start chord into bank 0 and silences everything. */
     void prepare (double sampleRate, int nodes, uint32_t seed, const Settings&, const Chord& start) noexcept;
@@ -94,6 +110,11 @@ public:
     /** The Breath cycle at the last tick, ½ − ½cos: 0 = out, 1 = full in, whatever the depth (the UI
         mirrors it, spec/06). */
     double breathCycle() const noexcept       { return breath01; }
+    /** The slewed equal-power pan gains and presence of voice v (the curtain's geometry, T3.7). */
+    double voicePanL (int v) const noexcept     { return panL[static_cast<size_t> (v)]; }
+    double voicePanR (int v) const noexcept     { return panR[static_cast<size_t> (v)]; }
+    double voicePresence (int v) const noexcept { return presence[static_cast<size_t> (v)]; }
+    const Settings& getSettings() const noexcept { return settings; }
 
 private:
     void skyTicked (const sky::SkyModel&, std::span<const sky::SkyEvent>, int tickSamples) noexcept override;
@@ -141,6 +162,7 @@ private:
     // output of the block being rendered
     float* outLeft = nullptr;
     float* outRight = nullptr;
+    Companion* companion = nullptr;
 };
 
 } // namespace worldtable::dsp

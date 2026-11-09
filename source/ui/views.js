@@ -256,14 +256,16 @@
         }
         ctx.strokeStyle = C.hair;
         ctx.beginPath(); ctx.moveTo(x0, bot + 0.5); ctx.lineTo(x1, bot + 0.5); ctx.stroke();
-        [0, 1, 2].forEach((l) => {
-          const name = LAYERS[l], L0 = 20 * Math.log10(Math.max(1e-3, levels[l]));
+        // levels/t60: [red, green, violet] or [low, red, green, violet] (T3.7: low in ink, underneath)
+        const names = levels.length > 3 ? ["ink"].concat(LAYERS) : LAYERS;
+        names.forEach((name, l) => {
+          const L0 = 20 * Math.log10(Math.max(1e-3, levels[l]));
           const db = (t) => L0 - 60 * t / t60[l];
           ctx.beginPath();
           for (let i = 0; i <= 60; i++) { const t = SPAN * (i / 60) ** 2; const y = yd(db(t)); i ? ctx.lineTo(xt(t), y) : ctx.moveTo(xt(t), y); }
-          ctx.lineWidth = 1.25; ctx.strokeStyle = rgba(name, 0.9); ctx.stroke();
+          ctx.lineWidth = 1.25; ctx.strokeStyle = rgba(name, name === "ink" ? 0.55 : 0.9); ctx.stroke();
           ctx.lineTo(xt(SPAN), bot); ctx.lineTo(x0, bot); ctx.closePath();
-          ctx.fillStyle = rgba(name, 0.07); ctx.fill();
+          ctx.fillStyle = rgba(name, name === "ink" ? 0.04 : 0.07); ctx.fill();
           const tEnd = Math.min(SPAN, t60[l] * (L0 + 60) / 60);
           ctx.fillStyle = rgba(name, 1);
           ctx.beginPath(); ctx.arc(xt(tEnd), yd(-60), 1.8, 0, 2 * Math.PI); ctx.fill();
@@ -308,6 +310,110 @@
   }
 
   const LOGF = (f, w) => (Math.log2(f / 20) / Math.log2(1000)) * w;
+
+  /** The filter (T3.7): its response now (after the sky) over the spectrum, the knob's cutoff as a
+   *  tick, so the sky's opening shows as the distance between them. The SVF's analog magnitude. */
+  function FilterView(canvas) {
+    const paint = cache(canvas);
+    const DB_TOP = 15, DB_BOT = -39;
+    function mag(type, k, x) {
+      const d = Math.sqrt((1 - x * x) ** 2 + (k * x) ** 2);
+      const lp = 1 / d;
+      if (type === 0) return lp;
+      if (type === 1) return lp / Math.sqrt((1 - x * x) ** 2 + 2 * x * x);
+      if (type === 2) return (k * x) / d;
+      return (x * x) / d;
+    }
+    return {
+      draw(p, spectrum) {
+        const spec = spectrum ? spectrum.length : 0;
+        const sig = [p.type, p.hz.toPrecision(3), p.base.toPrecision(3), p.reso.toFixed(2), spec ? spectrum[20] + spectrum[60] + spectrum[100] : 0].join();
+        paint(sig, (ctx, w, h) => {
+          const top = 3, bot = h - 3;
+          const y = (db) => top + (bot - top) * clamp((DB_TOP - db) / (DB_TOP - DB_BOT), 0, 1);
+          if (spec) {
+            ctx.beginPath(); ctx.moveTo(0, bot);
+            spectrum.forEach((db, i) => ctx.lineTo((i / (spec - 1)) * w, bot - clamp((db + 90) / 80, 0, 1) * (bot - top)));
+            ctx.lineTo(w, bot); ctx.closePath(); ctx.fillStyle = "rgba(201,211,230,0.07)"; ctx.fill();
+          }
+          for (const f of [100, 1000, 10000]) { const xx = Math.round(LOGF(f, w)) + 0.5; ctx.strokeStyle = C.hairSoft; ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke(); }
+          const y0 = Math.round(y(0)) + 0.5;
+          ctx.setLineDash([2, 3]); ctx.strokeStyle = C.hair; ctx.beginPath(); ctx.moveTo(0, y0); ctx.lineTo(w, y0); ctx.stroke(); ctx.setLineDash([]);
+
+          const k = 2 - 1.75 * clamp(p.reso, 0, 1);
+          ctx.beginPath();
+          for (let i = 0; i <= 160; i++) {
+            const f = 20 * Math.pow(1000, i / 160);
+            const db = 20 * Math.log10(Math.max(1e-6, mag(p.type, k, f / p.hz)));
+            i ? ctx.lineTo((i / 160) * w, y(db)) : ctx.moveTo(0, y(db));
+          }
+          ctx.strokeStyle = C.violet; ctx.lineWidth = 1.25; ctx.stroke();
+
+          // the knob's cutoff (green tick) and where the sky has moved it (the violet dot)
+          if (p.base < 19950) {
+            const xb = Math.round(LOGF(p.base, w)) + 0.5;
+            ctx.strokeStyle = rgba("green", 0.7); ctx.beginPath(); ctx.moveTo(xb, bot - 6); ctx.lineTo(xb, bot); ctx.stroke();
+          }
+          if (p.hz < 19950) {
+            const xh = LOGF(p.hz, w), atCut = p.type === 2 ? 0 : 20 * Math.log10(mag(p.type, k, 1));
+            ctx.fillStyle = C.violet; ctx.beginPath(); ctx.arc(xh, y(atCut), 2, 0, 2 * Math.PI); ctx.fill();
+          }
+          ctx.font = MONO(9); ctx.fillStyle = C.faint; ctx.textAlign = "right";
+          ctx.fillText(p.hz >= 19950 ? "open" : p.hz >= 1000 ? (p.hz / 1000).toFixed(2) + " kHz" : Math.round(p.hz) + " Hz", w - 2, top + 9);
+          ctx.textAlign = "left";
+        });
+      },
+    };
+  }
+
+  /** Play mode's keyboard strip (T3.7), C1 to C8 like the voicing view: held notes bright, released
+   *  ones fading with their envelope, the low resonator's note as a dot under its key. */
+  function KeysView(canvas) {
+    const LO = 24, HI = 108;
+    const BLACK = [1, 3, 6, 8, 10];
+    const paint = cache(canvas);
+    return {
+      draw(voices, lowNote) {
+        const sig = (voices || []).map((v) => v[0] + ":" + (v[1] * 20 | 0) + (v[2] ? "h" : "")).join() + "|" + lowNote;
+        paint(sig, (ctx, w, h) => {
+          const kb = h - 9;
+          const whites = [];
+          for (let n = LO; n <= HI; n++) if (!BLACK.includes(n % 12)) whites.push(n);
+          const ww = w / whites.length;
+          const xOfWhite = new Map(whites.map((n, i) => [n, i * ww]));
+          const keyRect = (n) => BLACK.includes(n % 12)
+            ? [xOfWhite.get(n - 1) + ww * 0.68, 0, ww * 0.64, kb * 0.6]
+            : [xOfWhite.get(n), 0, ww, kb];
+          const lit = new Map();
+          for (const [note, level, held] of voices || []) {
+            if (note < LO || note > HI) continue;
+            const a = held ? 0.45 + 0.55 * clamp(level, 0, 1) : 0.6 * clamp(level, 0, 1);
+            lit.set(note, Math.max(lit.get(note) || 0, a));
+          }
+          // white keys, then black keys over them
+          for (const n of whites) {
+            const [x, y0, kw, kh] = keyRect(n);
+            const a = lit.get(n) || 0;
+            if (a > 0.01) { ctx.fillStyle = rgba("violet", a * 0.8); ctx.fillRect(x + 0.5, y0, kw - 1, kh); }
+            ctx.strokeStyle = C.hairSoft; ctx.strokeRect(Math.round(x) + 0.5, 0.5, Math.round(kw), kh - 1);
+          }
+          for (let n = LO; n <= HI; n++) {
+            if (!BLACK.includes(n % 12)) continue;
+            const [x, y0, kw, kh] = keyRect(n);
+            const a = lit.get(n) || 0;
+            ctx.fillStyle = a > 0.01 ? rgba("violet", 0.25 + a * 0.75) : "rgba(201,211,230,0.13)";
+            ctx.fillRect(x, y0, kw, kh);
+          }
+          if (lowNote >= LO && lowNote <= HI) {
+            const [x, , kw] = keyRect(lowNote);
+            ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(x + kw / 2, kb - 4, 1.6, 0, 2 * Math.PI); ctx.fill();
+          }
+          ctx.font = MONO(8); ctx.fillStyle = C.faint;
+          for (let n = LO; n < HI; n += 12) ctx.fillText("C" + (n / 12 - 1), xOfWhite.get(n) + 2, h - 1);
+        });
+      },
+    };
+  }
 
   function PhaserView(canvas) {
     return {
@@ -479,5 +585,5 @@
     };
   }
 
-  Object.assign(UI, { VoicingView, PhaseTrack, Ticker, MagnetogramView, LayersView, DriveView, PhaserView, ChorusView, DelayView, ReverbView, OutputView, HeaderMeter, dbOf });
+  Object.assign(UI, { VoicingView, PhaseTrack, Ticker, MagnetogramView, LayersView, DriveView, FilterView, KeysView, PhaserView, ChorusView, DelayView, ReverbView, OutputView, HeaderMeter, dbOf });
 })();

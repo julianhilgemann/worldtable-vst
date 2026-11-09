@@ -72,6 +72,10 @@ private:
     dsp::ChordState chordFrame {};
     bool haveChord = false;
 
+    // the played notes (T3.7, single reader: this thread)
+    dsp::PlayState playFrame {};
+    juce::var makePlayTelemetry();
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };
 

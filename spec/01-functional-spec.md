@@ -48,6 +48,10 @@ long-form arc. With no network, Live falls back to the newest cached day.
 ## 4. Harmony: a slow progression engine
 - **Chord Hold:** root, scale and chord shape set in the UI, or latched from
   MIDI. Held until changed. 12-TET only.
+- **Play mode** (T3.7, ADR-0008): a Play button switches MIDI from latching
+  the chord to playing the resonators note by note (polyphonic, velocity,
+  sustain pedal, Attack, Release, Velocity, and a Drone level for the sky
+  drone under the notes). The sky keeps colouring and moving every note.
 - **Scales:** bright families by default (major, Lydian, major pentatonic);
   minor and Dorian available.
 - **Voicing:** Voicing spread (octaves), Detune (cents, a few at most),
@@ -113,7 +117,7 @@ Auto-gain, final limiter (ceiling −1 dBFS), slewing on all modulation, table
 and preset crossfades, no clicks on any change. Loudness target ≈ −18 LUFS.
 
 ## 11. Out of v1
-Step sequencer, melodic MIDI beyond chord latch, per-voice editing, ocean
+Step sequencer (Play mode is played from the host), per-voice editing, ocean
 source, complex preset browser, ambisonic/binaural output, fully adaptive
 environment-aware artworks (parked, see HyperAdapted).
 

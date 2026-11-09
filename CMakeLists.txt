@@ -77,6 +77,9 @@ target_sources(WorldtableShared INTERFACE
     source/dsp/ResonatorBank.cpp
     source/dsp/Exciter.cpp
     source/dsp/SkySound.cpp
+    source/dsp/PlayVoices.cpp
+    source/dsp/LowResonator.cpp
+    source/dsp/Sources.cpp
     source/dsp/fx/ShimmerReverb.cpp)
 
 target_include_directories(WorldtableShared INTERFACE source)

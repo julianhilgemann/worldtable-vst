@@ -54,7 +54,10 @@ copy (`SkyModel::current()`), together with the events each `step()` returns:
 every step and then for the samples up to the next tick, so the sound sees each
 tick at its sample whatever the block size (T3.1); the same listener feeds the tick's phase and
 onset events to `dsp/Harmony`, whose progression requests become chord changes through the
-double-banked queue (T3.3).
+double-banked queue (T3.3). SkySound has one companion (T3.7, `dsp/Sources`): the played notes
+(Play mode), the low resonator and the filter, ticked after the curtain and rendered right after
+the bank on the same samples. In Play mode the instrument splits the block at each MIDI event, so
+notes start on their sample and the output stays block-size independent.
 
 ### C. Raw-field table swap — builder → audio (optional layer)
 The POC's `TableExchange`: builder fills a pending `WavetableSet` from a pool,
@@ -78,12 +81,13 @@ sky/        SkyModel (step, reset, seed), Reservoir (loading, substorm phases),
             Assimilation (H, Kp nudging), Observer (station, geomagnetic frame,
             dome projection), Astronomy (sun, moon, stars), Rng, SkySnapshot
 dsp/        SkySound (the curtain → resonators, per tick; chord double-banking),
+            Sources (SkySound's companion: PlayVoices, LowResonator, fx/Filter; T3.7),
             ResonatorBank, Exciter, Voicing (layer slots, ranges, voice-leading),
             Harmony (scales, chords, chord hold, MIDI latch, progression), Sparkles (event voices,
             whistlers), Drift (tape wobble),
             mod/ (SlowLfo, RandomWalk, EnvFollower, ModMatrix, Triggers),
             RawField (POC WavetableOsc + table exchange), AutoGain,
-            fx/ (Drive, Phaser, Chorus, TapeDelay, ShimmerReverb, Limiter)
+            fx/ (Filter, Drive, Phaser, Chorus, TapeDelay, ShimmerReverb, Limiter)
 osc/        OscOut (sender thread, address map below) — juce_osc, no new dependency
 params/     generated from spec/parameters.yaml
 ui/         WebView: dome renderer (WebGL), instrument layer, tabs, mock backend

@@ -371,10 +371,8 @@ int Harmony::heldCount() const noexcept
          + std::popcount (held[1].load (std::memory_order_relaxed));
 }
 
-bool Harmony::relatch (bool requireKnownShape) noexcept
+bool chordFromNotes (uint64_t lo, uint64_t hi, bool requireKnownShape, Chord& out) noexcept
 {
-    const uint64_t lo = held[0].load (std::memory_order_relaxed);
-    const uint64_t hi = held[1].load (std::memory_order_relaxed);
     if ((lo | hi) == 0)
         return false;
 
@@ -424,11 +422,20 @@ bool Harmony::relatch (bool requireKnownShape) noexcept
         count = n;
     }
 
-    latchedData = {};
-    latchedData.key = root;
-    latchedData.degree = 0;
-    latchedData.count = count;
-    latchedData.intervals = intervals;
+    out = {};
+    out.key = root;
+    out.degree = 0;
+    out.count = count;
+    out.intervals = intervals;
+    return true;
+}
+
+bool Harmony::relatch (bool requireKnownShape) noexcept
+{
+    Chord c;
+    if (! chordFromNotes (held[0].load (std::memory_order_relaxed), held[1].load (std::memory_order_relaxed), requireKnownShape, c))
+        return false;
+    latchedData = c;
     latched.store (true, std::memory_order_release);
     return true;
 }
