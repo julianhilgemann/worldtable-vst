@@ -1,5 +1,7 @@
 /* All-sky dome renderer, as a classic script. Ported for T6.1 from prototype/sky/dome.js;
- * the changes for the plug-in are marked "T6.1". */
+ * the changes for the plug-in are marked "T6.1". T6.6 (owner: "smoother, higher resolution, more
+ * and better bloom") departs from the sketch: a spline curtain over lightly smoothed nodes, the fine
+ * rays per pixel in the fragment shader, faded ends, a four-level bloom, dithered output. */
 (function () {
   "use strict";
   const { EARTH_R_KM, STARS, altAz, domeXY, noise1 } = window.SKY;
@@ -14,8 +16,11 @@
 
 
   const D2R = Math.PI / 180;
-  const COLS_PER_NODE = 4;
-  const ROWS = 14;
+  const smoothstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  // T6.6: 8 columns per node on a Catmull-Rom spline (was 4, linear) and 24 rows (was 14)
+  const COLS_PER_NODE = 8;
+  const ROWS = 24;
+  const NOISE_PERIOD = 4096;   // the shader's noise repeats here, so time offsets wrap without a seam
   const H_BOTTOM = 92, H_TOP = 310;
   const C = {
     night: [0.020, 0.027, 0.051], green: [0.36, 0.95, 0.63], red: [1.0, 0.42, 0.42], violet: [0.56, 0.48, 1.0],
@@ -78,9 +83,22 @@
     gl_FragColor = vec4(col * horizon, 1.0);
   }`;
 
-  const VS_MESH = `attribute vec2 a; attribute vec3 c; varying vec3 vc; uniform float uScale;
-  void main(){ vc = c; gl_Position = vec4(a * uScale, 0.0, 1.0); }`;
-  const FS_MESH = `precision mediump float; varying vec3 vc; void main(){ gl_FragColor = vec4(vc, 1.0); }`;
+  // T6.6: s = (position along the chain in nodes, height 0…1). The coarse ray octave is per vertex
+  // (it also stretches the green); the fine striations are per pixel, so they are smooth at any
+  // size and slide without the per-column aliasing the sketch's mesh had.
+  const VS_MESH = `attribute vec2 a; attribute vec3 c; attribute vec2 s; varying vec3 vc; varying vec2 vs; uniform float uScale;
+  void main(){ vc = c; vs = s; gl_Position = vec4(a * uScale, 0.0, 1.0); }`;
+  const FS_MESH = `precision highp float; varying vec3 vc; varying vec2 vs;
+  uniform float uRays, uOff2, uOff3, uSeed;
+  float hash(float i){ return fract(sin(mod(i, ${NOISE_PERIOD}.0) * 12.9898 + uSeed) * 43758.5453); }
+  float vnoise(float x){ float i = floor(x), f = x - i; return mix(hash(i), hash(i + 1.0), f * f * (3.0 - 2.0 * f)) * 2.0 - 1.0; }
+  void main(){
+    float n2 = vnoise(vs.x * 7.6 + uOff2), n3 = vnoise(vs.x * 19.0 + uOff3);
+    float amp = uRays * (0.45 + 0.75 * vs.y);                 // rays stand out toward the top
+    float fine = max(0.15, 1.0 + amp * (0.6 * n2 + 0.2 * n3));
+    float top = 1.0 - smoothstep(0.55 + 0.25 * n2, 1.0, vs.y); // each ray reaches its own height
+    gl_FragColor = vec4(vc * fine * mix(1.0, top, min(1.0, uRays)), 1.0);
+  }`;
 
   const FS_BLUR = `precision highp float; varying vec2 v; uniform sampler2D t; uniform vec2 dir;
   void main(){
@@ -90,13 +108,19 @@
     gl_FragColor = vec4(s, 1.0);
   }`;
 
-  const FS_COMPOSITE = `precision highp float; varying vec2 v; uniform sampler2D sharp, soft, wide; uniform float uScale, uExposure;
+  // T6.6: four bloom levels (½, ¼, ⅛ of the glow buffer, each blurred from the last), bright cores
+  // lean a little toward white like an all-sky camera's, and a dither keeps the dark gradients from
+  // banding in 8 bits.
+  const FS_COMPOSITE = `precision highp float; varying vec2 v; uniform sampler2D sharp, b1, b2, b3; uniform float uScale, uExposure;
   void main(){
     vec2 uv = v * 0.5 + 0.5;
-    vec3 g = texture2D(sharp, uv).rgb * 1.0 + texture2D(soft, uv).rgb * 0.55 + texture2D(wide, uv).rgb * 0.3;
+    vec3 g = texture2D(sharp, uv).rgb * 0.85 + texture2D(b1, uv).rgb * 0.62 + texture2D(b2, uv).rgb * 0.46 + texture2D(b3, uv).rgb * 0.42;
     g = 1.0 - exp(-g * uExposure);
+    float l = max(g.r, max(g.g, g.b));
+    g = mix(g, vec3(l), 0.22 * l * l);
+    g += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
     float rho = length(v / uScale);
-    gl_FragColor = vec4(g * (1.0 - smoothstep(0.99, 1.01, rho)), 1.0);
+    gl_FragColor = vec4(max(g, 0.0) * (1.0 - smoothstep(0.99, 1.01, rho)), 1.0);
   }`;
 
   const VS_STAR = `attribute vec2 a; attribute vec4 c; varying vec4 vc; uniform float uScale, uDpr;
@@ -140,7 +164,7 @@
         if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
         const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
         for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name] = gl.getUniformLocation(p, info.name); }
-        return { p, u, a: gl.getAttribLocation(p, 'a'), c: gl.getAttribLocation(p, 'c') };
+        return { p, u, a: gl.getAttribLocation(p, 'a'), c: gl.getAttribLocation(p, 'c'), s: gl.getAttribLocation(p, 's') };
       };
       this.prog = {
         bg: program(VS_QUAD, FS_BG), oval: program(VS_QUAD, FS_OVAL), mesh: program(VS_MESH, FS_MESH),
@@ -153,7 +177,7 @@
       gl.getExtension('OES_texture_half_float_linear');
       const halfOk = half && gl.getExtension('EXT_color_buffer_half_float');
       this.texType = halfOk ? half.HALF_FLOAT_OES : gl.UNSIGNED_BYTE;
-      this.meshPos = gl.createBuffer(); this.meshCol = gl.createBuffer(); this.meshIdx = gl.createBuffer();
+      this.meshPos = gl.createBuffer(); this.meshCol = gl.createBuffer(); this.meshIdx = gl.createBuffer(); this.meshS = gl.createBuffer();
       this.starPos = gl.createBuffer(); this.starCol = gl.createBuffer();
       this.fbos = null;
     }
@@ -187,18 +211,46 @@
       this.canvas.width = this.canvas.height = px;
       this.overlay.width = this.overlay.height = px;
       if (this.gl) {
-        // T6.1: a small dome (the plug-in's 460 px) keeps the glow at full resolution, or the
-        // curtain's edges show the half-res buffer's steps.
-        const h = px < 900 ? px : px >> 1, q = h >> 1;
-        this.fbos = { glow: this.makeTarget(h, h), tmp: this.makeTarget(h, h), soft: this.makeTarget(h, h),
-          qtmp: this.makeTarget(q, q), wide: this.makeTarget(q, q) };
+        // T6.1: a small dome keeps the glow at full resolution, or the curtain's edges show the
+        // half-res buffer's steps. T6.6: full resolution up to 1400 px (the fine rays live there),
+        // then a bloom chain at ½, ¼, ⅛.
+        const h = px <= 1400 ? px : px >> 1, l1 = Math.max(8, h >> 1), l2 = Math.max(8, h >> 2), l3 = Math.max(8, h >> 3);
+        this.fbos = { glow: this.makeTarget(h, h),
+          t1: this.makeTarget(l1, l1), b1: this.makeTarget(l1, l1), t2: this.makeTarget(l2, l2), b2: this.makeTarget(l2, l2),
+          t3: this.makeTarget(l3, l3), b3: this.makeTarget(l3, l3) };
       }
     }
 
     // ---------------------------------------------------------------- geometry
-    /** Build the curtain mesh: positions (dome xy) and colours for every vertex. */
+    /** T6.6: the node arrays smoothed along the chain, longitudes unwrapped, so the spline has no
+     *  kinks to follow. The model moves the curtain in patches of ~6 nodes: flat runs joined by
+     *  ramps of up to 1° over 3 nodes, which the projection sharpens near the horizon. Position: a
+     *  9-tap binomial (1-4-6-4-1 twice, σ ≈ 1.4 nodes); colour: 1-2-1. Picture only; the sound
+     *  keeps the model's curtain. Returns the scratch arrays. */
+    smoothNodes(snap) {
+      const n = snap.nodeCount, nd = snap.nodes;
+      if (!this.sm || this.sm.n !== n) {
+        const f = () => new Float64Array(n);
+        this.sm = { n, mlat: f(), mlon: f(), green: f(), red: f(), violet: f(), lon: f(), t1: f(), t2: f() };
+      }
+      const sm = this.sm, at = (i) => Math.max(0, Math.min(n - 1, i));
+      sm.lon[0] = nd.mlon[0];
+      for (let i = 1; i < n; i++) sm.lon[i] = sm.lon[i - 1] + ((((nd.mlon[i] - nd.mlon[i - 1]) % 360) + 540) % 360 - 180);
+      const b5 = (src, i) => (src[at(i - 2)] + 4 * src[at(i - 1)] + 6 * src[i] + 4 * src[at(i + 1)] + src[at(i + 2)]) / 16;
+      for (let i = 0; i < n; i++) { sm.t1[i] = b5(nd.mlat, i); sm.t2[i] = b5(sm.lon, i); }
+      for (let i = 0; i < n; i++) { sm.mlat[i] = b5(sm.t1, i); sm.mlon[i] = b5(sm.t2, i); }
+      for (let i = 0; i < n; i++) {
+        const a1 = at(i - 1), b1 = at(i + 1);
+        sm.green[i] = (nd.green[a1] + 2 * nd.green[i] + nd.green[b1]) / 4;
+        sm.red[i] = (nd.red[a1] + 2 * nd.red[i] + nd.red[b1]) / 4;
+        sm.violet[i] = (nd.violet[a1] + 2 * nd.violet[i] + nd.violet[b1]) / 4;
+      }
+      return sm;
+    }
+
+    /** Build the curtain mesh: positions (dome xy), colours and (along, height) for every vertex. */
     buildMesh(snap, tReal) {
-      const n = snap.nodeCount, nd = snap.nodes, obs = this.obs;
+      const n = snap.nodeCount, obs = this.obs;
       const cols = (n - 1) * COLS_PER_NODE + 1;
       if (!this.mesh || this.mesh.cols !== cols) {
         const verts = cols * (ROWS + 1);
@@ -208,46 +260,71 @@
           const a = c * (ROWS + 1) + r, b = a + ROWS + 1;
           idx[k++] = a; idx[k++] = b; idx[k++] = a + 1; idx[k++] = a + 1; idx[k++] = b; idx[k++] = b + 1;
         }
-        this.mesh = { cols, verts, pos: new Float32Array(verts * 2), col: new Float32Array(verts * 3), idx, uploaded: false };
+        // the per-row profile terms that don't depend on the column
+        const rowH = new Float64Array(ROWS + 1), rowV = new Float64Array(ROWS + 1), rowR = new Float64Array(ROWS + 1);
+        for (let r = 0; r <= ROWS; r++) {
+          const h = H_BOTTOM + (H_TOP - H_BOTTOM) * Math.pow(r / ROWS, 1.35);
+          rowH[r] = h;
+          rowV[r] = Math.exp(-(((h - 100) / 9) ** 2));
+          rowR[r] = Math.exp(-(((h - 235) / 55) ** 2)) * (1 - smoothstep(0.72, 1.0, r / ROWS));   // T6.6: the red fades out at the top
+        }
+        this.mesh = { cols, verts, pos: new Float32Array(verts * 2), col: new Float32Array(verts * 3), st: new Float32Array(verts * 2),
+          idx, uploaded: false, stUploaded: false, rowH, rowV, rowR };
       }
-      const { pos, col } = this.mesh;
+      const m = this.mesh, { pos, col, st, rowH, rowV, rowR } = m;
+      const sm = this.smoothNodes(snap);
       const P = obs.pos, E = obs.east, N = obs.north, U = obs.up;
       const raysAmount = this.options.gradientsOnly ? 0 : 0.35 + 0.6 * snap.activity + 0.8 * Math.min(1, snap.unloading);
+      this.raysAmount = raysAmount;
+      const cr = (arr, i, t) => {
+        const p0 = arr[Math.max(0, i - 1)], p1 = arr[i], p2 = arr[Math.min(n - 1, i + 1)], p3 = arr[Math.min(n - 1, i + 2)];
+        return 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t);
+      };
+      const ends = 1.5;   // nodes over which the curtain's ends fade in
+      // hot loop (T6.6): no Math.hypot (slow in JS engines), colour constants in locals
+      const vr = C.violet[0], vg = C.violet[1], vb = C.violet[2], gr = C.green[0], gg = C.green[1], gb = C.green[2];
+      const rr = C.red[0], rg = C.red[1], rb = C.red[2];
+      const E0 = E[0], E1 = E[1], E2 = E[2], N0 = N[0], N1 = N[1], N2 = N[2], U0 = U[0], U1 = U[1], U2 = U[2];
+      const P0 = P[0], P1 = P[1], P2 = P[2];
       for (let c = 0; c < cols; c++) {
         const f = c / COLS_PER_NODE, i0 = Math.min(n - 2, Math.floor(f)), w = f - i0;
-        const lerpN = (arr) => arr[i0] + (arr[i0 + 1] - arr[i0]) * w;
-        const mlat = lerpN(nd.mlat), mlon = lerpN(nd.mlon);
-        const g = lerpN(nd.green), rd = lerpN(nd.red), vi = lerpN(nd.violet);
-        const ray = Math.max(0.12, 1 + raysAmount * (0.9 * noise1(this.seed, 61, c * 0.55 + tReal * 0.35)
-          + 0.6 * noise1(this.seed, 62, c * 1.9 - tReal * 0.8)));
+        const mlat = cr(sm.mlat, i0, w), mlon = cr(sm.mlon, i0, w);
+        const g = Math.max(0, cr(sm.green, i0, w)), rd = Math.max(0, cr(sm.red, i0, w)), vi = Math.max(0, cr(sm.violet, i0, w));
+        // the coarse ray octave, sampled along the chain (T6.6: in node units, not per column)
+        const ray = Math.max(0.12, 1 + raysAmount * 0.9 * noise1(this.seed, 61, f * 2.2 + tReal * 0.35));
         const stretch = 0.8 + 0.5 * Math.max(0, ray - 1);
+        const fade = smoothstep(0, ends, f) * smoothstep(0, ends, (n - 1) - f);
         const base = obs.pointAt(mlat, mlon, H_BOTTOM);
         const up = obs.fieldUp(mlat, mlon);
         const sinI = Math.max(0.2, Math.abs(Math.sin(Math.atan(2 * Math.tan(mlat * D2R)))));
         // sheet normal ≈ horizontal magnetic north–south at the footprint
         const sx = up[0] - base[0] / (EARTH_R_KM + H_BOTTOM) * sinI, sy = up[1] - base[1] / (EARTH_R_KM + H_BOTTOM) * sinI,
           sz = up[2] - base[2] / (EARTH_R_KM + H_BOTTOM) * sinI;
-        const sl = Math.hypot(sx, sy, sz) || 1;
+        const sl = Math.sqrt(sx * sx + sy * sy + sz * sz) || 1;
+        const b0 = base[0], b1 = base[1], b2 = base[2], u0 = up[0], u1 = up[1], u2 = up[2];
+        const kc = 0.42 * ray * fade;
         for (let r = 0; r <= ROWS; r++) {
-          const h = H_BOTTOM + (H_TOP - H_BOTTOM) * Math.pow(r / ROWS, 1.35);
+          const h = rowH[r];
           const L = (h - H_BOTTOM) / sinI;
-          const qx = base[0] + up[0] * L - P[0], qy = base[1] + up[1] * L - P[1], qz = base[2] + up[2] * L - P[2];
-          const e = qx * E[0] + qy * E[1] + qz * E[2], nn = qx * N[0] + qy * N[1] + qz * N[2], u = qx * U[0] + qy * U[1] + qz * U[2];
-          const dist = Math.hypot(qx, qy, qz);
-          const az = Math.atan2(e, nn) / D2R, el = Math.atan2(u, Math.hypot(e, nn)) / D2R;
-          const d = domeXY(az, el);
+          const qx = b0 + u0 * L - P0, qy = b1 + u1 * L - P1, qz = b2 + u2 * L - P2;
+          const e = qx * E0 + qy * E1 + qz * E2, nn = qx * N0 + qy * N1 + qz * N2, u = qx * U0 + qy * U1 + qz * U2;
+          const hor2 = e * e + nn * nn, hor = Math.sqrt(hor2) || 1e-9, dist = Math.sqrt(hor2 + u * u);
+          const el = Math.atan2(u, hor) / D2R;
+          // domeXY without the trig: sin(az) = e / hor, cos(az) = nn / hor (T6.6)
+          const rho = (90 - el) / 90;
           const v = c * (ROWS + 1) + r;
-          pos[2 * v] = d.x; pos[2 * v + 1] = d.y;
-          const edge = 1 / (0.25 + 0.75 * Math.abs((qx * sx + qy * sy + qz * sz) / (sl * dist)));
+          pos[2 * v] = -rho * e / hor; pos[2 * v + 1] = rho * nn / hor;
+          st[2 * v] = f; st[2 * v + 1] = r / ROWS;
+          // edge-on sheets brighten (×2.9 at most; the sketch's ×4 made folds into hot wedges, T6.6)
+          const edge = 1 / (0.35 + 0.65 * Math.abs((qx * sx + qy * sy + qz * sz) / (sl * dist)));
           const ext = Math.max(0, Math.min(1, (el + 1) / 7));
-          const hr = (h - 108) / stretch;
-          const pv = Math.exp(-(((h - 100) / 9) ** 2));
-          const pg = h < 108 ? Math.exp(-(((h - 108) / 7) ** 2)) : Math.exp(-hr / 38);
-          const pr = Math.exp(-(((h - 235) / 55) ** 2));
-          const k = 0.42 * ray * edge * ext;
-          col[3 * v] = k * (vi * pv * C.violet[0] + g * pg * C.green[0] + rd * pr * C.red[0]);
-          col[3 * v + 1] = k * (vi * pv * C.violet[1] + g * pg * C.green[1] + rd * pr * C.red[1]);
-          col[3 * v + 2] = k * (vi * pv * C.violet[2] + g * pg * C.green[2] + rd * pr * C.red[2]);
+          const pg = h < 108 ? Math.exp(-(((h - 108) / 7) ** 2)) : Math.exp(-(h - 108) / stretch / 38);
+          const k = kc * edge * ext;
+          const pv = rowV[r], pr = rowR[r];
+          const a = vi * pv, b = g * pg, cc = rd * pr;
+          col[3 * v] = k * (a * vr + b * gr + cc * rr);
+          col[3 * v + 1] = k * (a * vg + b * gg + cc * rg);
+          col[3 * v + 2] = k * (a * vb + b * gb + cc * rb);
         }
       }
     }
@@ -279,7 +356,9 @@
       this.resize();
       if (!this.gl) { this.render2d(snap, tReal); this.drawOverlay(snap); return; }
       const gl = this.gl, P = this.prog, f = this.fbos;
+      const t0 = performance.now();
       this.buildMesh(snap, tReal);
+      this.meshMs = (this.meshMs || 0) + (performance.now() - t0 - (this.meshMs || 0)) * 0.05;
       const quad = (prog) => {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
         gl.enableVertexAttribArray(prog.a); gl.vertexAttribPointer(prog.a, 2, gl.FLOAT, false, 0, 0);
@@ -306,6 +385,15 @@
 
       gl.useProgram(P.mesh.p);
       gl.uniform1f(P.mesh.u.uScale, this.scale);
+      // the fine rays' drift, wrapped on the noise period in double precision here (T6.6)
+      const wrap = (x) => ((x % NOISE_PERIOD) + NOISE_PERIOD) % NOISE_PERIOD;
+      gl.uniform1f(P.mesh.u.uRays, this.raysAmount || 0);
+      gl.uniform1f(P.mesh.u.uOff2, wrap(-tReal * 0.8));
+      gl.uniform1f(P.mesh.u.uOff3, wrap(tReal * 1.3));
+      gl.uniform1f(P.mesh.u.uSeed, (this.seed * 7.31) % 97);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.meshS);
+      if (!this.mesh.stUploaded) { gl.bufferData(gl.ARRAY_BUFFER, this.mesh.st, gl.STATIC_DRAW); this.mesh.stUploaded = true; }
+      gl.enableVertexAttribArray(P.mesh.s); gl.vertexAttribPointer(P.mesh.s, 2, gl.FLOAT, false, 0, 0);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.meshPos);
       gl.bufferData(gl.ARRAY_BUFFER, this.mesh.pos, gl.DYNAMIC_DRAW);
       gl.enableVertexAttribArray(P.mesh.a); gl.vertexAttribPointer(P.mesh.a, 2, gl.FLOAT, false, 0, 0);
@@ -316,6 +404,7 @@
       if (!this.mesh.uploaded) { gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, this.mesh.idx, gl.STATIC_DRAW); this.mesh.uploaded = true; }
       gl.drawElements(gl.TRIANGLES, this.mesh.idx.length, gl.UNSIGNED_SHORT, 0);
       gl.disableVertexAttribArray(P.mesh.c);
+      gl.disableVertexAttribArray(P.mesh.s);
       gl.disable(gl.BLEND);
 
       // 2. blur: half-res soft, quarter-res wide
@@ -326,12 +415,13 @@
         target(dst); gl.bindTexture(gl.TEXTURE_2D, tmp.tex);
         gl.uniform2f(P.blur.u.dir, 0, px / dst.h); quad(P.blur);
       };
-      // T6.1: blur radii scale with the buffer, so the halo is the same share of the sky at any size
-      // (the sketch's look at its 330-texel glow buffer).
-      const k = f.glow.w / 330;
-      const soft = this.options.gradientsOnly ? 3.5 : 2.0;
-      blur(f.glow, f.tmp, f.soft, soft * k);
-      blur(f.soft, f.qtmp, f.wide, 3.0 * k);
+      // T6.1: blur radii scale with the buffer, so the halo is the same share of the sky at any size.
+      // T6.6: a chain at ½, ¼, ⅛, each from the last: ~10, 25, 55 and 110 px of halo on a 900 px dome.
+      const k = f.glow.w / 900;
+      const soft = this.options.gradientsOnly ? 2.6 : 1.5;
+      blur(f.glow, f.t1, f.b1, soft * k * 2);
+      blur(f.b1, f.t2, f.b2, 1.8 * k * 2);
+      blur(f.b2, f.t3, f.b3, 2.0 * k * 2);
 
       // 3. screen: background, stars, glow
       target(null);
@@ -357,8 +447,9 @@
       }
       gl.useProgram(P.comp.p);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, f.glow.tex); gl.uniform1i(P.comp.u.sharp, 0);
-      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, f.soft.tex); gl.uniform1i(P.comp.u.soft, 1);
-      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, f.wide.tex); gl.uniform1i(P.comp.u.wide, 2);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, f.b1.tex); gl.uniform1i(P.comp.u.b1, 1);
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, f.b2.tex); gl.uniform1i(P.comp.u.b2, 2);
+      gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, f.b3.tex); gl.uniform1i(P.comp.u.b3, 3);
       gl.uniform1f(P.comp.u.uScale, this.scale); gl.uniform1f(P.comp.u.uExposure, this.options.exposure);
       quad(P.comp);
       gl.activeTexture(gl.TEXTURE0);

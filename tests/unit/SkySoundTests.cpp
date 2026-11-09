@@ -1,5 +1,6 @@
 #include "AllocationCounter.h"
 #include "data/SkyDays.h"
+#include "dsp/Exciter.h"
 #include "dsp/Harmony.h"
 #include "dsp/ResonatorBank.h"
 #include "dsp/SkySound.h"
@@ -672,4 +673,32 @@ TEST_CASE ("the sky's progression writes the golden's chord changes", "[sound][p
     CHECK (mixed.changes[0].tick == full.changes[0].tick);
     CHECK (mixed.changes[0].label == full.changes[0].label);
     CHECK (mixed.allocations == 0);
+}
+
+TEST_CASE ("A re-based exciter doesn't read a jump in the sky as a rise", "[sound][exciter][seek]")
+{
+    // T6.6: a seek can brighten the curtain in one tick; without a re-base the exciter would hear a
+    // steep rise and swell the bank for ~0.3 s.
+    const auto excitationAfterJump = [] (bool rebase)
+    {
+        dsp::Exciter ex;
+        ex.prepare (4, 1, {});
+        std::array<double, 4> b { 0.1, 0.1, 0.1, 0.1 };
+        double t = 0.0;
+        for (int i = 0; i < 600; ++i, t += dsp::Exciter::kTickSeconds)   // settle: the start's own rise decays
+            ex.tick (t, 0.5, b.data());
+        b.fill (0.9);   // the jump
+        if (rebase)
+            ex.rebase (b.data());
+        double peak = 0.0;
+        for (int i = 0; i < 100; ++i, t += dsp::Exciter::kTickSeconds)
+        {
+            ex.tick (t, 0.5, b.data());
+            peak = std::max (peak, ex.continuous (0));
+        }
+        return peak;
+    };
+    const double bed = 0.3 * (0.5 + 0.5);
+    CHECK (excitationAfterJump (false) > 2.0 * bed);   // the swell it prevents
+    CHECK_THAT (excitationAfterJump (true), Catch::Matchers::WithinAbs (bed, 1.0e-6));
 }

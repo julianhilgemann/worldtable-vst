@@ -55,6 +55,8 @@ void SkySound::prepare (double rate, int nodes, uint32_t soundSeed, const Settin
     panNode.fill (0.0); presenceNode.fill (0.0);
     panInit = false;
     tickCount = 0;
+    seeksSeen = 0;
+    lastPhase = -1;
 
     cur = 0;
     xf = 1.0;
@@ -125,6 +127,21 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
 
     ++tickCount;
     const double realS = realSeconds();
+
+    // A seek since the last tick (T6.6): the sky jumped rather than moved. Seeks before the first
+    // tick (a Journey's start, the render tool, the goldens) are the start, not a jump.
+    const bool jumped = tickCount > 1 && model.seeks() != seeksSeen;
+    seeksSeen = model.seeks();
+    if (jumped && static_cast<int> (sky.phase) != lastPhase)
+    {
+        // Seeks emit no events: tell the harmony where it landed, so the progression moves there.
+        const int minute = minuteOf (sky.modelTimeUtc);
+        if (sky.phase == sky::SkyPhase::onset)
+            harmonyEngine.onOnset (std::max (0.3f, sky.lastOnset.strength), minute);
+        else
+            harmonyEngine.onPhase (static_cast<Phase> (sky.phase), minute);
+    }
+    lastPhase = static_cast<int> (sky.phase);
 
     for (const auto& e : events)
     {
@@ -215,6 +232,8 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
         const double f = x - static_cast<double> (i0);
         brightness[v] = nd[i0].brightness + (static_cast<double> (nd[i1].brightness) - nd[i0].brightness) * f;
     }
+    if (jumped)
+        exciter.rebase (brightness.data());
     exciter.tick (realS, sky.activity, brightness.data());
 
     const double gainK = 1.0 - std::exp (-kTick / s.gainSlewSeconds);

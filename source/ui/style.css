@@ -342,7 +342,7 @@ header {
 .module .knobs.tight { justify-content: space-around; }
 .filter-views { display: flex; gap: 8px; flex: 1 1 0; min-height: 46px; margin: 8px 0 4px; }
 .filter-views canvas.view { height: auto; min-height: 0; margin: 0; }
-.filter-views #cv-filter { flex: 1 1 0; width: auto; }
+.filter-views #cv-filter { flex: 1 1 0; width: 0; min-width: 0; }   /* never sized by its own pixels (T6.6 fix) */
 .filter-views #cv-drive { flex: 0 0 48px; width: 48px; }
 
 /* harmony and layers */

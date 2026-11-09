@@ -51,6 +51,12 @@ void Exciter::tick (double realSeconds, double activity, const double* brightnes
     }
 }
 
+void Exciter::rebase (const double* brightness) noexcept
+{
+    for (size_t v = 0; v < static_cast<size_t> (numVoices); ++v)
+        prevBrightness[v] = brightness[v];
+}
+
 double Exciter::continuous (int voice) const noexcept
 {
     return bed + settings.rise * rise[static_cast<size_t> (voice)];

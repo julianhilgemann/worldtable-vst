@@ -23,6 +23,7 @@ plug-in renderer → OSC.
 | M3: T3.4 sparkles/whistlers/Breath | after (needs the owner's design/ear) |
 | M6: T6.4 UI cost pass | open |
 | M3: T3.7 Play mode, the low resonator, the filter (owner, 2026-11-09; ADR-0008) | done |
+| M6: T6.6 filter picture, click-to-seek on the magnetogram, a smoother aurora (owner, 2026-11-09) | done |
 
 **Reused from the POC:** CMake/CI, `gen_params.py`, `WorldtableRender`,
 `WorldtableUICheck`, WebView bridge and mock backend, Drive, SVF, LFO, ADSR,
@@ -97,6 +98,7 @@ Pulled forward after M3 on the owner's review of the T3.6 shell (2026-11-06).
 - T6.2 Instrument layer: header readouts, magnetogram, macros, ticker, tabs. (in T6.1)
 - T6.3 Astronomy layer: sun, moon, stars, day shimmer, toggles. (in T6.1)
 - T6.4 UI cost pass (redraw on change, GPU budget).
+- T6.6 The filter's moving slope, seeking from the magnetogram, the dome's fidelity pass. (Done.)
 
 ## M7 — OSC and TouchDesigner
 - T7.1 `OscOut` (address map in `03-architecture.md`).

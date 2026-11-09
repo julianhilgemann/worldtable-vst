@@ -54,6 +54,17 @@
       });
     }
     voice(chord);
+    // T6.6: a click on the magnetogram seeks, as SkyRuntime::seek does in the plug-in
+    window.WT_MOCK_NATIVE = { seek(utc) {
+      const before = model.snapshot().phase;
+      model.seek(utc * 1000);
+      const s = model.snapshot();
+      if (s.phase !== before) {
+        const minute = Math.floor(s.modelTimeUtc / 60000);
+        if (M.PHASE_NAMES[s.phase] === "onset") harmony.onOnset(0.8, minute); else harmony.onPhase(s.phase, minute);
+      }
+      return true;
+    } };
     WT.onParam("key", (v) => harmony.setKey(Math.round(v)));
     WT.onParam("mood", (v) => harmony.setMood(H.MOODS[Math.round(v)]));
     WT.onParam("progression", (v) => harmony.setProgression(v));

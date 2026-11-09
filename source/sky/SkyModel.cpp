@@ -102,6 +102,7 @@ void SkyModel::seek (double modelTimeUtc) noexcept
     }
 
     modelMicros = toMicros (target);
+    ++seekCount;
     writeSnapshot (true);
 }
 

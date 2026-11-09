@@ -83,6 +83,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                      if (safe != nullptr)
                                          safe->onPageReady();
                                  });
+                             })
+        .withNativeFunction ("seek", [this] (const juce::Array<juce::var>& args, auto complete)
+                             {
+                                 // T6.6: a click on the magnetogram jumps the Journey there (UTC
+                                 // seconds). Applied by the audio thread at its next block.
+                                 if (! args.isEmpty())
+                                     if (const double utc = args[0]; std::isfinite (utc))
+                                         wtProcessor.getSky().seek (utc);
+                                 complete (true);
                              });
 
     for (auto* param : wtProcessor.getParameters())

@@ -83,6 +83,24 @@
   };
   const hmeter = UI.HeaderMeter($("cv-hmeter"));
 
+  // T6.6: the magnetogram is the Journey's timeline: hover shows a moment, a click jumps there
+  {
+    const cv = $("cv-mag");
+    const xOf = (e) => (e.clientX - cv.getBoundingClientRect().left) / UI.scale;
+    cv.addEventListener("pointermove", (e) => {
+      const x = xOf(e);
+      mag.setHover(x);
+      cv.style.cursor = mag.utcAt(x) === null ? "default" : "pointer";
+    });
+    cv.addEventListener("pointerleave", () => mag.setHover(null));
+    cv.addEventListener("click", (e) => {
+      const utc = mag.utcAt(xOf(e));
+      if (utc === null) return;
+      WT.native("seek", utc);
+      ticker.push(`<span class="t">${new Date(utc * 1000).toISOString().slice(11, 16)} UT</span>jump to ${mag.phaseAt(utc)}`);
+    });
+  }
+
   // ---------------------------------------------------------------- the dome
   const dome = new SKY.DomeRenderer($("dome"), $("dome-ov"), new SKY.Observer(), 1);
   S.domeMode = dome.mode;
@@ -114,22 +132,37 @@
   const SCALARS = [["activity", "sky", "activity"], ["unloading", "sky", "unloading"], ["gain", "sky", "gain"], ["mlt", "sky", "mlt"],
     ["eqLat", "dome", "eqLat"], ["poleLat", "dome", "poleLat"], ["dayShiftDeg", "dome", "dayShift"], ["stormRed", "dome", "stormRed"]];
 
+  // T6.6: a critically damped follower, two one-poles in series (τ 85 ms each), so the curtain's
+  // velocity doesn't kink at every 30 Hz frame. Angles ease the short way round.
+  const mid = { mlat: new Float32Array(N), mlon: new Float32Array(N), green: new Float32Array(N), red: new Float32Array(N), violet: new Float32Array(N) };
+  const midScalar = {};
+  const TAU = 0.085;
+  const wrapTo = (x, period) => ((((x + period / 2) % period) + period) % period) - period / 2;
+  const PERIOD = { mlt: 24 };
+
   function easeSnap(dt) {
     const { sky, dome: d } = target;
-    const k = primed ? 1 - Math.exp(-dt / 0.07) : 1;
+    const k = primed ? 1 - Math.exp(-dt / TAU) : 1;
     const n = Math.min(N, d.n | 0);
     snap.nodeCount = n;
     const nd = snap.nodes;
     for (let i = 0; i < n; i++) {
-      nd.mlon[i] = d.mlon[i];
-      nd.mlat[i] += (d.mlat[i] - nd.mlat[i]) * k;
-      nd.green[i] += (d.green[i] - nd.green[i]) * k;
-      nd.red[i] += (d.red[i] - nd.red[i]) * k;
-      nd.violet[i] += (d.violet[i] - nd.violet[i]) * k;
+      for (const f of ["mlat", "green", "red", "violet"]) {
+        mid[f][i] += (d[f][i] - mid[f][i]) * k;
+        nd[f][i] += (mid[f][i] - nd[f][i]) * k;
+      }
+      mid.mlon[i] += wrapTo(d.mlon[i] - mid.mlon[i], 360) * k;
+      nd.mlon[i] += wrapTo(mid.mlon[i] - nd.mlon[i], 360) * k;
+      if (Math.abs(nd.mlon[i]) > 540) { nd.mlon[i] = wrapTo(nd.mlon[i], 360); mid.mlon[i] = wrapTo(mid.mlon[i], 360); }
     }
     for (const [key, src, field] of SCALARS) {
       const v = (src === "sky" ? sky : d)[field];
-      if (typeof v === "number") snap[key] += (v - snap[key]) * k;
+      if (typeof v !== "number") continue;
+      const p = PERIOD[key];
+      if (!(key in midScalar) || !primed) midScalar[key] = v;
+      midScalar[key] += (p ? wrapTo(v - midScalar[key], p) : v - midScalar[key]) * k;
+      snap[key] += (p ? wrapTo(midScalar[key] - snap[key], p) : midScalar[key] - snap[key]) * k;
+      if (p) snap[key] = ((snap[key] % p) + p) % p;
     }
     // model time runs on between frames at the replay speed, so the stars turn smoothly
     snap.modelTimeUtc = (sky.utc + (performance.now() / 1000 - target.at) * (sky.speed || 0)) * 1000;
@@ -363,24 +396,33 @@
   // ---------------------------------------------------------------- render loop
   const P = (id) => WT.get(id);
   let last = 0;
+  // T6.6: the dome draws at the display's rate (up to 60 fps; 30 with reduced motion), the
+  // instrument pictures at 30.
+  let lastDome = 0;
   function frame(tms) {
     requestAnimationFrame(frame);
     if (document.hidden) return;
     const t = tms / 1000;
-    if (t - last < (reduced ? 1 / 15 : 1 / 30) - 0.002) return;
-    const dt = Math.min(0.2, t - last);
-    last = t;
     const tel = S.tel;
 
-    if (target) {
-      easeSnap(dt);
+    if (target && t - lastDome >= (reduced ? 1 / 30 : 1 / (S.domeHz || 61))) {
+      const dtDome = Math.min(0.2, t - lastDome);
+      lastDome = t;
+      easeSnap(dtDome);
       // Breath swells the whole sky a little; the sound's own level adds a faint glow (spec/06).
       const breath = (tel.breath || 0) * P("macro_breath");
       dome.options.exposure = 1.6 * (1 + 0.16 * breath) * (1 + 0.1 * clamp(env * 3, 0, 1));
+      const t0 = performance.now();
       dome.render(snap, reduced ? t * 0.35 : t);
+      // the dome's cost per frame, eased (T6.6; the UI check and the T6.4 cost pass read it)
+      S.domeMs = (S.domeMs || 0) + (performance.now() - t0 - (S.domeMs || 0)) * 0.05;
+      S.meshMs = dome.meshMs;
       S.frames++;
       showGlow();
     }
+
+    if (t - last < (reduced ? 1 / 15 : 1 / 30) - 0.002) return;
+    last = t;
 
     voicing.setEmission(emission, [P("red_level"), P("green_level"), P("violet_level")]);
     voicing.draw();
@@ -404,7 +446,7 @@
     if (P("play") || (tel.play && tel.play.voices && tel.play.voices.length)) keys.draw(tel.play ? tel.play.voices : [], low);
     {
       const peak = Math.max(tel.peakL || 0, tel.peakR || 0);
-      fx.filter.draw({ type: Math.round(P("flt_type")), hz: tel.filterHz || P("flt_cutoff"), base: P("flt_cutoff"), reso: P("flt_reso") }, tel.spectrum);
+      fx.filter.draw({ type: Math.round(P("flt_type")), hz: tel.filterHz || P("flt_cutoff"), base: P("flt_cutoff"), reso: P("flt_reso"), sky: P("flt_sky") }, tel.spectrum);
       fx.drive.draw(P("drive"), peak);
       fx.phaser.draw(t, { rate: P("ph_rate"), depth: P("ph_depth"), fb: P("ph_feedback"), stages: P("ph_stages"), mix: P("ph_mix") }, tel.spectrum);
       fx.chorus.draw(t, { rate: P("ch_rate"), depth: P("ch_depth"), mix: P("ch_mix") });

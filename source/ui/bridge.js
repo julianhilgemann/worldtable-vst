@@ -82,7 +82,8 @@
   let promiseId = 0;
   const pending = new Map();
   function native(name, ...args) {
-    if (!juce) return Promise.resolve(null);
+    // the browser mock answers the few native calls it can (T6.6: seek)
+    if (!juce) { const h = window.WT_MOCK_NATIVE && window.WT_MOCK_NATIVE[name]; return Promise.resolve(h ? h(...args) : null); }
     const id = promiseId++;
     return new Promise((resolve) => {
       pending.set(id, resolve);
