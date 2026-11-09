@@ -25,8 +25,8 @@ class PluginEditor final : public juce::AudioProcessorEditor,
                            private juce::Timer
 {
 public:
-    static constexpr int kBaseWidth = 1200;
-    static constexpr int kBaseHeight = 800;
+    static constexpr int kBaseWidth = 1350;   // T6.5: one page, 3:2 like before
+    static constexpr int kBaseHeight = 900;
 
     explicit PluginEditor (PluginProcessor&);
     ~PluginEditor() override;

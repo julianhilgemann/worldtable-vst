@@ -90,13 +90,10 @@
         const a = alphaOf(m, t) * (0.3 + 0.7 * emission[m.layer]) * (0.35 + 0.65 * levels[m.layer]);
         if (a < 0.01) continue;
         const name = LAYERS[m.layer], xx = x(posOf(m, t)), [y0, y1] = lane[m.layer];
-        ctx.shadowColor = rgba(name, Math.min(1, a * 1.4));
-        ctx.shadowBlur = 10;
         ctx.strokeStyle = rgba(name, clamp(a * 1.15, 0, 1));
         ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.moveTo(xx, y0 + 1); ctx.lineTo(xx, y1 - 1); ctx.stroke();
       }
-      ctx.shadowBlur = 0;
       marks = marks.filter((m) => !(m.dying && k(m, t) >= 1));
       animating = busy;
     }
@@ -205,14 +202,13 @@
       }
 
       // labels
-      ctx.font = MONO(9);
-      ctx.fillStyle = C.ink; ctx.fillText("MAGNETOGRAM", 10, 14);
-      ctx.font = MONO(8.5);
+      ctx.font = MONO(10);
+      ctx.fillStyle = C.ink; ctx.fillText("Magnetogram", 10, 14);
       ctx.fillStyle = C.muted; ctx.fillText(`ΔH ±${Math.round(max)} nT`, 10, 26);
       ctx.fillStyle = C.green; ctx.fillText("— " + (day.station ? day.station.code : "CMO"), 10, 37);
       ctx.fillStyle = C.violet; ctx.fillText("— model", 52, 37);
       ctx.fillStyle = C.ink; ctx.fillText("energy", 10, 48);
-      ctx.fillStyle = C.red; ctx.fillText("· E", 44, 48);
+      ctx.fillStyle = C.red; ctx.fillText("E", 56, 48);
       ctx.fillStyle = C.muted; ctx.fillText("phase", 10, 58);
       dirty = false;
     }
@@ -304,9 +300,8 @@
           for (let i = 0; i <= 40; i++) { const x = -1 + i / 20; const px = cx + x * r, py = cy - f(x) * r; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
           ctx.strokeStyle = C.red; ctx.lineWidth = 1.25; ctx.stroke();
           const lx = clamp(level, 0, 1);
-          ctx.shadowColor = C.red; ctx.shadowBlur = 6; ctx.fillStyle = C.red;
+          ctx.fillStyle = C.red;
           ctx.beginPath(); ctx.arc(cx + lx * r, cy - f(lx) * r, 2, 0, 2 * Math.PI); ctx.fill();
-          ctx.shadowBlur = 0;
         });
       },
     };
