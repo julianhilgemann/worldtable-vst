@@ -135,7 +135,8 @@
 
   function MagnetogramView(canvas) {
     const base = document.createElement("canvas");
-    let day = null, dirty = true, lastX = -1, lastW = 0, lastK = 0;
+    let day = null, dirty = true, lastX = -1, lastW = 0, lastK = 0, hoverX = null;
+    const PHASES = ["quiet", "growth", "onset", "recovery"];
     const L = 118, PAD_R = 10;
     const lanes = { mag: [6, 37], load: [40, 48], phase: [51, 56] };
 
@@ -213,6 +214,16 @@
       dirty = false;
     }
 
+    /** T6.6: the moment under x (CSS px in the canvas), or null over the labels. */
+    function utcAt(x) {
+      if (!day) return null;
+      const R = canvas.clientWidth - PAD_R, n = day.phase.length;
+      if (x < L - 4 || x > R + 4) return null;
+      return day.t0 + clamp((x - L) / (R - L), 0, 1) * (n - 1) * day.step;
+    }
+    function phaseAt(utc) { return day ? PHASES[day.phase[clamp(Math.round((utc - day.t0) / day.step), 0, day.phase.length - 1)]] || "" : ""; }
+    function setHover(x) { if (x !== hoverX) { hoverX = x; lastX = -1; } }
+
     function draw(nowUtc) {
       if (!day) return;
       const w = canvas.clientWidth, h = canvas.clientHeight, k = Math.min(3, UI.dpr * UI.scale);
@@ -230,9 +241,27 @@
       ctx.strokeStyle = C.red; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
       ctx.beginPath(); ctx.moveTo(Math.round(xNow) + 0.5, 3); ctx.lineTo(Math.round(xNow) + 0.5, h - 3); ctx.stroke();
       ctx.setLineDash([]);
+
+      // T6.6: where a click would jump to
+      const utc = hoverX === null ? null : utcAt(hoverX);
+      if (utc !== null) {
+        const xh = Math.round(L + (R - L) * clamp((utc - day.t0) / day.step / Math.max(1, n - 1), 0, 1)) + 0.5;
+        ctx.strokeStyle = C.ink; ctx.globalAlpha = 0.7;
+        ctx.beginPath(); ctx.moveTo(xh, 3); ctx.lineTo(xh, h - 3); ctx.stroke();
+        ctx.globalAlpha = 1;
+        const d = new Date(utc * 1000);
+        const label = `${d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} ${d.toISOString().slice(11, 16)} UT`;
+        const sub = `${phaseAt(utc)}, click to jump`;
+        ctx.font = MONO(9);
+        const tw = Math.max(ctx.measureText(label).width, ctx.measureText(sub).width) + 12;
+        const bx = xh + tw + 6 > R ? xh - tw - 4 : xh + 4;
+        ctx.fillStyle = "rgba(5,7,13,0.88)"; ctx.fillRect(bx, 4, tw, 28);
+        ctx.fillStyle = C.ink; ctx.fillText(label, bx + 6, 15);
+        ctx.fillStyle = C.muted; ctx.fillText(sub, bx + 6, 27);
+      }
     }
 
-    return { setDay, draw };
+    return { setDay, draw, utcAt, phaseAt, setHover };
   }
 
   // ================================================================ layers: level and ring-out
@@ -311,57 +340,82 @@
 
   const LOGF = (f, w) => (Math.log2(f / 20) / Math.log2(1000)) * w;
 
-  /** The filter (T3.7): its response now (after the sky) over the spectrum, the knob's cutoff as a
-   *  tick, so the sky's opening shows as the distance between them. The SVF's analog magnitude. */
+  /** The filter (T3.7; animated in T6.6): its response now (after the sky) over the spectrum. What
+   *  it draws eases like the DSP glides (log cutoff, resonance, and the type as a crossfade), so the
+   *  slope moves with every knob and with the sky. The lit body under the slope is the passband; on
+   *  the axis, the knob's cutoff (green tick) and the sky's reach at full activity (green band). */
   function FilterView(canvas) {
-    const paint = cache(canvas);
-    const DB_TOP = 15, DB_BOT = -39;
+    const DB_TOP = 15, DB_BOT = -39, TAU = 0.12;
+    const st = { lhz: Math.log2(20000), k: 1.8, w: [1, 0, 0, 0], at: 0, primed: false };
     function mag(type, k, x) {
-      const d = Math.sqrt((1 - x * x) ** 2 + (k * x) ** 2);
-      const lp = 1 / d;
-      if (type === 0) return lp;
-      if (type === 1) return lp / Math.sqrt((1 - x * x) ** 2 + 2 * x * x);
+      const x2 = x * x, d = Math.sqrt((1 - x2) ** 2 + (k * x) ** 2);
+      if (type === 0) return 1 / d;
+      if (type === 1) return 1 / (d * Math.sqrt((1 - x2) ** 2 + 2 * x2));
       if (type === 2) return (k * x) / d;
-      return (x * x) / d;
+      return x2 / d;
     }
+    const response = (f) => {
+      const x = f / Math.pow(2, st.lhz);
+      let m = 0;
+      for (let t = 0; t < 4; t++) if (st.w[t] > 1e-3) m += st.w[t] * mag(t, st.k, x);
+      return m;
+    };
     return {
       draw(p, spectrum) {
-        const spec = spectrum ? spectrum.length : 0;
-        const sig = [p.type, p.hz.toPrecision(3), p.base.toPrecision(3), p.reso.toFixed(2), spec ? spectrum[20] + spectrum[60] + spectrum[100] : 0].join();
-        paint(sig, (ctx, w, h) => {
-          const top = 3, bot = h - 3;
-          const y = (db) => top + (bot - top) * clamp((DB_TOP - db) / (DB_TOP - DB_BOT), 0, 1);
-          if (spec) {
-            ctx.beginPath(); ctx.moveTo(0, bot);
-            spectrum.forEach((db, i) => ctx.lineTo((i / (spec - 1)) * w, bot - clamp((db + 90) / 80, 0, 1) * (bot - top)));
-            ctx.lineTo(w, bot); ctx.closePath(); ctx.fillStyle = "rgba(201,211,230,0.07)"; ctx.fill();
-          }
-          for (const f of [100, 1000, 10000]) { const xx = Math.round(LOGF(f, w)) + 0.5; ctx.strokeStyle = C.hairSoft; ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke(); }
-          const y0 = Math.round(y(0)) + 0.5;
-          ctx.setLineDash([2, 3]); ctx.strokeStyle = C.hair; ctx.beginPath(); ctx.moveTo(0, y0); ctx.lineTo(w, y0); ctx.stroke(); ctx.setLineDash([]);
+        const t = now(), dt = st.primed ? Math.min(0.25, t - st.at) : 1e3;
+        st.at = t; st.primed = true;
+        const e = 1 - Math.exp(-dt / TAU);
+        const target = Math.log2(clamp(p.hz, 20, 20000));
+        st.lhz += (target - st.lhz) * e;
+        st.k += ((2 - 1.75 * clamp(p.reso, 0, 1)) - st.k) * e;
+        for (let i = 0; i < 4; i++) st.w[i] += ((i === p.type ? 1 : 0) - st.w[i]) * e;
 
-          const k = 2 - 1.75 * clamp(p.reso, 0, 1);
-          ctx.beginPath();
-          for (let i = 0; i <= 160; i++) {
-            const f = 20 * Math.pow(1000, i / 160);
-            const db = 20 * Math.log10(Math.max(1e-6, mag(p.type, k, f / p.hz)));
-            i ? ctx.lineTo((i / 160) * w, y(db)) : ctx.moveTo(0, y(db));
-          }
-          ctx.strokeStyle = C.violet; ctx.lineWidth = 1.25; ctx.stroke();
+        const { ctx, w, h } = UI.fit(canvas);
+        ctx.clearRect(0, 0, w, h);
+        const top = 3, bot = h - 4;
+        const y = (db) => top + (bot - top) * clamp((DB_TOP - db) / (DB_TOP - DB_BOT), 0, 1);
+        if (spectrum && spectrum.length) {
+          ctx.beginPath(); ctx.moveTo(0, bot);
+          spectrum.forEach((db, i) => ctx.lineTo((i / (spectrum.length - 1)) * w, bot - clamp((db + 90) / 80, 0, 1) * (bot - top)));
+          ctx.lineTo(w, bot); ctx.closePath(); ctx.fillStyle = "rgba(201,211,230,0.06)"; ctx.fill();
+        }
+        for (const f of [100, 1000, 10000]) { const xx = Math.round(LOGF(f, w)) + 0.5; ctx.strokeStyle = C.hairSoft; ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke(); }
+        const y0 = Math.round(y(0)) + 0.5;
+        ctx.setLineDash([2, 3]); ctx.strokeStyle = C.hair; ctx.beginPath(); ctx.moveTo(0, y0); ctx.lineTo(w, y0); ctx.stroke(); ctx.setLineDash([]);
 
-          // the knob's cutoff (green tick) and where the sky has moved it (the violet dot)
-          if (p.base < 19950) {
-            const xb = Math.round(LOGF(p.base, w)) + 0.5;
-            ctx.strokeStyle = rgba("green", 0.7); ctx.beginPath(); ctx.moveTo(xb, bot - 6); ctx.lineTo(xb, bot); ctx.stroke();
+        // the slope, and the lit passband under it
+        const N = Math.max(80, Math.round(w / 1.5));
+        const pts = [];
+        for (let i = 0; i <= N; i++) {
+          const f = 20 * Math.pow(1000, i / N);
+          pts.push([(i / N) * w, y(20 * Math.log10(Math.max(1e-6, response(f))))]);
+        }
+        const path = () => { ctx.beginPath(); pts.forEach(([x, yy], i) => (i ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy))); };
+        path(); ctx.lineTo(w, bot); ctx.lineTo(0, bot); ctx.closePath();
+        const g = ctx.createLinearGradient(0, top, 0, bot);
+        g.addColorStop(0, rgba("violet", 0.30)); g.addColorStop(1, rgba("violet", 0.02));
+        ctx.fillStyle = g; ctx.fill();
+        path(); ctx.strokeStyle = rgba("violet", 0.22); ctx.lineWidth = 3; ctx.stroke();
+        path(); ctx.strokeStyle = C.violet; ctx.lineWidth = 1.25; ctx.stroke();
+
+        // the knob's cutoff, the sky's reach, and where the filter is now
+        const hz = Math.pow(2, st.lhz);
+        if (p.base < 19950) {
+          const xb = LOGF(p.base, w);
+          if (p.sky > 0.005) {
+            const reach = clamp(p.base * Math.pow(2, (p.type === 3 ? -3 : 3) * p.sky), 20, 20000);
+            const xr = LOGF(reach, w);
+            ctx.fillStyle = rgba("green", 0.22); ctx.fillRect(Math.min(xb, xr), bot - 2, Math.abs(xr - xb), 2);
           }
-          if (p.hz < 19950) {
-            const xh = LOGF(p.hz, w), atCut = p.type === 2 ? 0 : 20 * Math.log10(mag(p.type, k, 1));
-            ctx.fillStyle = C.violet; ctx.beginPath(); ctx.arc(xh, y(atCut), 2, 0, 2 * Math.PI); ctx.fill();
-          }
-          ctx.font = MONO(9); ctx.fillStyle = C.faint; ctx.textAlign = "right";
-          ctx.fillText(p.hz >= 19950 ? "open" : p.hz >= 1000 ? (p.hz / 1000).toFixed(2) + " kHz" : Math.round(p.hz) + " Hz", w - 2, top + 9);
-          ctx.textAlign = "left";
-        });
+          ctx.strokeStyle = rgba("green", 0.8); ctx.beginPath(); ctx.moveTo(Math.round(xb) + 0.5, bot - 6); ctx.lineTo(Math.round(xb) + 0.5, bot); ctx.stroke();
+        }
+        if (hz < 19950) {
+          const xh = LOGF(hz, w), yy = y(20 * Math.log10(Math.max(1e-6, response(hz))));
+          ctx.fillStyle = C.violet; ctx.beginPath(); ctx.arc(xh, yy, 2.2, 0, 2 * Math.PI); ctx.fill();
+        }
+        ctx.font = MONO(9); ctx.fillStyle = C.faint; ctx.textAlign = "right";
+        ctx.fillText(hz >= 19950 ? "open" : hz >= 1000 ? (hz / 1000).toFixed(2) + " kHz" : Math.round(hz) + " Hz", w - 2, top + 9);
+        ctx.textAlign = "left";
       },
     };
   }

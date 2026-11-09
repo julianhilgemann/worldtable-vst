@@ -147,6 +147,8 @@ private:
     std::array<double, kMaxVoices> panNode {}, presenceNode {};   ///< per node, 10 Hz
     bool panInit = false;
     uint64_t tickCount = 0;
+    uint32_t seeksSeen = 0;           ///< the model's seek count at the last tick (T6.6)
+    int lastPhase = -1;               ///< the sky's phase at the last tick
 
     // chords: bank `cur` takes the excitation; the other rings out, then retires
     int cur = 0;

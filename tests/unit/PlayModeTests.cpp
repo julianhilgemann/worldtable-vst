@@ -378,3 +378,64 @@ TEST_CASE ("Extreme Play settings stay finite and under the ceiling", "[processo
     }
     CHECK (peak <= kCeiling);
 }
+
+//==================================================================================================
+// T6.6: a click on the magnetogram seeks the Journey mid-play.
+TEST_CASE ("A seek mid-play neither clicks nor swells, and the chords follow the sky there", "[processor][seek]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+
+    PluginProcessor p (false);
+    setParam (p, "rev_mix", 0.0f);   // the dry sound: a swell would not hide in the tail
+    setParam (p, "dly_mix", 0.0f);
+    p.setPlayConfigDetails (0, 2, kRate, 512);
+    p.prepareToPlay (kRate, 512);
+
+    // a landing minute whose phase differs from the one playing now, a few hours ahead
+    const auto& chart = p.getSkyFeed().dayChart();
+    REQUIRE (! chart.phase.empty());
+    const auto nowPhase = static_cast<int> (p.getSky().model().current().phase);
+    const auto startMinute = static_cast<size_t> ((p.getSky().model().modelTimeUtc() - chart.startUtc) / chart.stepSeconds);
+    size_t landing = 0;
+    for (size_t m = startMinute + 120; m < chart.phase.size() && landing == 0; ++m)
+        if (chart.phase[m] != nowPhase && chart.phase[m] == chart.phase[m - 1] && chart.phase[m] == chart.phase[std::min (m + 30, chart.phase.size() - 1)])
+            landing = m;
+    REQUIRE (landing > 0);
+    const double target = chart.startUtc + static_cast<double> (landing) * chart.stepSeconds + 30.0;
+
+    const int second = static_cast<int> (kRate);
+    const int frames = 14 * second;
+    const int seekBlock = (6 * second / 512) * 512;   // seeks land at a block start
+    dsp::ChordState c;
+    uint32_t changesBefore = 0;
+    const auto out = render (p, 512, frames, {}, [&] (int at)
+    {
+        if (at == seekBlock)
+        {
+            while (p.getInstrument().readChord (c)) {}
+            changesBefore = c.changes;
+            p.getSky().seek (target);
+        }
+    });
+    std::vector<float> left (out.begin(), out.begin() + frames);
+    const auto seekAt = static_cast<size_t> (seekBlock);
+
+    float steady = 0.0f, across = 0.0f;
+    for (size_t i = seekAt - static_cast<size_t> (3 * second); i < seekAt; ++i)
+        steady = std::max (steady, std::abs (left[i] - left[i - 1]));
+    for (size_t i = seekAt; i < seekAt + static_cast<size_t> (2 * second); ++i)
+        across = std::max (across, std::abs (left[i] - left[i - 1]));
+    const double before = rmsOf (left, seekAt - static_cast<size_t> (2 * second), seekAt);
+    const double after = rmsOf (left, seekAt, seekAt + static_cast<size_t> (2 * second));
+    INFO ("max step " << steady << " → " << across << ", rms " << before << " → " << after
+          << ", landing minute " << landing << " phase " << int (chart.phase[landing]) << " (now " << nowPhase << ")"
+          << ", start minute " << startMinute);
+    CHECK (across < 2.0f * steady + 0.01f);
+    CHECK (after < 2.0 * before);   // a jump into a storm brightens over seconds, it doesn't burst
+
+    CHECK (p.getSky().model().modelTimeUtc() > target);                  // it jumped there
+    CHECK (p.getSky().model().modelTimeUtc() < target + 8.0 * 24.0 + 1.0);  // and played on at 24×
+    CHECK (static_cast<int> (p.getSky().model().current().phase) != nowPhase);
+    while (p.getInstrument().readChord (c)) {}
+    CHECK (c.changes > changesBefore);   // the harmony heard where it landed
+}

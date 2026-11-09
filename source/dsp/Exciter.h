@@ -40,6 +40,10 @@ public:
     /** One control tick. `brightness[v]`: the curtain's brightness at each voice. */
     void tick (double realSeconds, double activity, const double* brightness) noexcept;
 
+    /** The sky jumped (a seek, T6.6): take `brightness` as the new reference, so the jump is not
+        read as a rising sky (that would swell the bank). The rise already under way decays as usual. */
+    void rebase (const double* brightness) noexcept;
+
     /** The bed and the rise of voice v this tick: split between the banks by the crossfade. */
     double continuous (int voice) const noexcept;
 

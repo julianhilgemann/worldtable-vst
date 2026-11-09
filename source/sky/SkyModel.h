@@ -184,6 +184,10 @@ public:
     /** Slow steps the last seek() replayed (≤ kMaxSeekSlowSteps). Diagnostic. */
     int lastSeekSlowSteps() const noexcept { return seekSlowSteps; }
 
+    /** How many seeks have been applied (T6.6): a listener that sees it change knows the sky jumped
+        rather than moved (SkySound re-bases its exciter and tells the harmony). */
+    uint32_t seeks() const noexcept { return seekCount; }
+
     /** The station the sky is seen from (the dome projection): the sound pans the curtain with it. */
     const Observer& observer() const noexcept { return obs; }
 
@@ -205,6 +209,7 @@ private:
     double   speedFactor   = 0.0;
     uint64_t ticks         = 0;
     int      seekSlowSteps = 0;
+    uint32_t seekCount     = 0;
 
     struct Curtain   // fast state, double like the sketch's Float64Arrays
     {

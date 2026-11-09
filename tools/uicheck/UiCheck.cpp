@@ -7,7 +7,8 @@
 //                                  processes can be sampled from outside (T6.4)
 //   WorldtableUICheck --eval JS  → afterwards evaluates JS in the real editor (WebKit) and prints
 //                                  the result, for layout probes the browser mock can't answer
-//                                  (with --soak too: the soak runs after it, for a screenshot)
+//                                  (with --soak too: the soak runs after it, for a screenshot,
+//                                  and the probe runs again at its end)
 //
 // Checks: backend attached (not the browser mock), telemetry is streaming, parameters
 // sync C++ → JS and JS → C++, every parameter has exactly one control, the header shows the
@@ -190,7 +191,7 @@ int main (int argc, char* argv[])
     if (probe.isNotEmpty())
     {
         pump (500);
-        std::cout << "eval:       " << evalSync (*browser, probe) << std::endl;
+        std::cout << "eval:       " << evalSync (*browser, probe, 20000) << std::endl;
     }
 
     if (soak)
@@ -203,6 +204,8 @@ int main (int argc, char* argv[])
             pump (10);
         }
         std::cout << "soak done, frames " << evalSync (*browser, "__wtState.frames") << std::endl;
+        if (probe.isNotEmpty())
+            std::cout << "eval after: " << evalSync (*browser, probe, 20000) << std::endl;
     }
 
     window.setVisible (false);

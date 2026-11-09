@@ -222,9 +222,11 @@
   }
 
   // ---------- canvas ----------
-  /** Sizes a canvas backing store for the stage zoom and the display; returns {ctx, w, h} in CSS px. */
+  /** Sizes a canvas backing store for the stage zoom and the display; returns {ctx, w, h} in CSS px.
+   *  Capped (T6.6): a canvas whose CSS size follows its own backing store would otherwise grow by
+   *  the device-pixel ratio on every redraw (the T3.7 filter picture did, on Retina). */
   function fit(canvas) {
-    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const w = Math.min(canvas.clientWidth, 2048), h = Math.min(canvas.clientHeight, 2048);
     const k = Math.min(3, UI.dpr * UI.scale);
     const bw = Math.max(1, Math.round(w * k)), bh = Math.max(1, Math.round(h * k));
     if (canvas.width !== bw || canvas.height !== bh) { canvas.width = bw; canvas.height = bh; }
