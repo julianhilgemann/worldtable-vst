@@ -5,6 +5,9 @@
 //   WorldtableUICheck --soak     → afterwards keeps the editor running for 30 s with audio and
 //                                  the dome drawing, and prints "soak", so the web view's
 //                                  processes can be sampled from outside (T6.4)
+//   WorldtableUICheck --eval JS  → afterwards evaluates JS in the real editor (WebKit) and prints
+//                                  the result, for layout probes the browser mock can't answer
+//                                  (with --soak too: the soak runs after it, for a screenshot)
 //
 // Checks: backend attached (not the browser mock), telemetry is streaming, parameters
 // sync C++ → JS and JS → C++, every parameter has exactly one control, the header shows the
@@ -52,7 +55,16 @@ void pump (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (
 int main (int argc, char* argv[])
 {
     juce::ScopedJuceInitialiser_GUI juce;
-    const bool soak = argc > 1 && juce::String (argv[1]) == "--soak";
+    bool soak = false;
+    juce::String probe;
+    for (int i = 1; i < argc; ++i)
+    {
+        const juce::String a (argv[i]);
+        if (a == "--soak")
+            soak = true;
+        else if (a == "--eval" && i + 1 < argc)
+            probe = argv[++i];
+    }
 
     worldtable::PluginProcessor processor (false);
     processor.setPlayConfigDetails (0, 2, 48000.0, 512);
@@ -174,6 +186,12 @@ int main (int argc, char* argv[])
               << "dome:       " << dome << "\n"
               << "sky/chord:  " << skyState << "\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
+
+    if (probe.isNotEmpty())
+    {
+        pump (500);
+        std::cout << "eval:       " << evalSync (*browser, probe) << std::endl;
+    }
 
     if (soak)
     {
