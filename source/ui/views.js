@@ -1,5 +1,8 @@
 /* The instrument layer's live pictures (spec/06, T6.1). Each view redraws only when what it shows
- * has changed (or, for the moving ones, only while its tab is visible), and every change glides. */
+ * has changed (or, for the moving ones, only while its tab is visible), and every change glides.
+ * T6.7 (spec/09 §2 rule 2): red, green and violet only where a picture shows the bands (voicing,
+ * layers, keyboard) or the sky's own light (magnetogram); the effect pictures are drawn in ink.
+ * Axis numbers are at least 10 px, words in pictures 11 px. */
 (function () {
   "use strict";
   const UI = window.UI, C = UI.C, rgba = UI.rgba, MONO = UI.MONO;
@@ -60,18 +63,20 @@
       ctx.clearRect(0, 0, w, h);
       const x0 = 16, x1 = w - 4;
       const x = (n) => x0 + (x1 - x0) * (n - LO) / (HI - LO);
-      const lane = [[35, 48], [19, 32], [3, 16]];   // red low, green, violet high
+      // three lanes over a 10 px octave axis: red low, green, violet high
+      const lh = Math.max(8, Math.floor((h - 20) / 3) - 2), axis = 4 + 3 * lh + 8;
+      const lane = [[4 + 2 * (lh + 3), 4 + 2 * (lh + 3) + lh], [4 + lh + 3, 4 + 2 * lh + 3], [4, 4 + lh]];
 
       // semitone ruler and octave lines
-      ctx.font = MONO(8);
+      ctx.font = MONO(10);
       ctx.textBaseline = "alphabetic";
       for (let n = LO; n <= HI; n++) {
         const isC = n % 12 === 0, xx = Math.round(x(n)) + 0.5;
         ctx.strokeStyle = isC ? C.hair : C.hairSoft;
         ctx.beginPath();
-        if (isC) { ctx.moveTo(xx, 2); ctx.lineTo(xx, 50); } else { ctx.moveTo(xx, 49); ctx.lineTo(xx, 51); }
+        if (isC) { ctx.moveTo(xx, 2); ctx.lineTo(xx, axis); } else { ctx.moveTo(xx, axis - 1); ctx.lineTo(xx, axis + 1); }
         ctx.stroke();
-        if (isC && n < HI) { ctx.fillStyle = C.faint; ctx.fillText("C" + (n / 12 - 1), xx + 3, h - 1); }
+        if (isC && n < HI) { ctx.fillStyle = C.faint; ctx.fillText("C" + (n / 12 - 1), xx + 3, h - 3); }
       }
       LAYERS.forEach((name, l) => {
         const yy = Math.round((lane[l][0] + lane[l][1]) / 2) + 0.5;
@@ -150,7 +155,7 @@
       const R = w - PAD_R, n = day.phase.length;
       const x = (i) => L + (R - L) * (i / Math.max(1, n - 1));
 
-      ctx.font = MONO(8);
+      ctx.font = MONO(10);
       ctx.textBaseline = "alphabetic";
       // 6-hour grid
       for (let m = 0; m < n; m += 360) {
@@ -203,8 +208,9 @@
       }
 
       // labels
+      // the legend stays at 10 px: five lanes in 64 px leave no room (T6.10 replaces this picture)
       ctx.font = MONO(10);
-      ctx.fillStyle = C.ink; ctx.fillText("Magnetogram", 10, 14);
+      ctx.fillStyle = C.inkHi; ctx.fillText("Magnetogram", 10, 14);
       ctx.fillStyle = C.muted; ctx.fillText(`ΔH ±${Math.round(max)} nT`, 10, 26);
       ctx.fillStyle = C.green; ctx.fillText("— " + (day.station ? day.station.code : "CMO"), 10, 37);
       ctx.fillStyle = C.violet; ctx.fillText("— model", 52, 37);
@@ -252,12 +258,12 @@
         const d = new Date(utc * 1000);
         const label = `${d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} ${d.toISOString().slice(11, 16)} UT`;
         const sub = `${phaseAt(utc)}, click to jump`;
-        ctx.font = MONO(9);
+        ctx.font = MONO(11);
         const tw = Math.max(ctx.measureText(label).width, ctx.measureText(sub).width) + 12;
         const bx = xh + tw + 6 > R ? xh - tw - 4 : xh + 4;
-        ctx.fillStyle = "rgba(5,7,13,0.88)"; ctx.fillRect(bx, 4, tw, 28);
-        ctx.fillStyle = C.ink; ctx.fillText(label, bx + 6, 15);
-        ctx.fillStyle = C.muted; ctx.fillText(sub, bx + 6, 27);
+        ctx.fillStyle = "rgba(5,7,13,0.9)"; ctx.fillRect(bx, 3, tw, 31);
+        ctx.fillStyle = C.inkHi; ctx.fillText(label, bx + 6, 16);
+        ctx.fillStyle = C.muted; ctx.fillText(sub, bx + 6, 29);
       }
     }
 
@@ -277,11 +283,11 @@
         const x0 = 4, x1 = w - 4, top = 6, bot = h - 14, SPAN = 30;
         const xt = (t) => x0 + (x1 - x0) * Math.sqrt(t / SPAN);
         const yd = (db) => top + (bot - top) * clamp(-db / 60, 0, 1);
-        ctx.font = MONO(8); ctx.fillStyle = C.faint; ctx.strokeStyle = C.hairSoft;
+        ctx.font = MONO(10); ctx.fillStyle = C.faint; ctx.strokeStyle = C.hairSoft;
         for (const t of [1, 5, 10, 30]) {
           const xx = Math.round(xt(t)) + 0.5;
           ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke();
-          ctx.fillText(t + (t === 30 ? " s" : ""), xx - (t === 30 ? 14 : 2), h - 2);
+          ctx.fillText(t + (t === 30 ? " s" : ""), xx - (t === 30 ? 22 : t === 10 ? 6 : 3), h - 3);
         }
         ctx.strokeStyle = C.hair;
         ctx.beginPath(); ctx.moveTo(x0, bot + 0.5); ctx.lineTo(x1, bot + 0.5); ctx.stroke();
@@ -329,10 +335,10 @@
           const g = 0.4 + 7 * drive, f = (x) => Math.tanh(g * x) / Math.tanh(g);
           ctx.beginPath();
           for (let i = 0; i <= 40; i++) { const x = -1 + i / 20; const px = cx + x * r, py = cy - f(x) * r; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
-          ctx.strokeStyle = C.red; ctx.lineWidth = 1.25; ctx.stroke();
+          ctx.strokeStyle = C.inkHi; ctx.lineWidth = 1.4; ctx.stroke();
           const lx = clamp(level, 0, 1);
-          ctx.fillStyle = C.red;
-          ctx.beginPath(); ctx.arc(cx + lx * r, cy - f(lx) * r, 2, 0, 2 * Math.PI); ctx.fill();
+          ctx.fillStyle = "#fff";
+          ctx.beginPath(); ctx.arc(cx + lx * r, cy - f(lx) * r, 2.6, 0, 2 * Math.PI); ctx.fill();
         });
       },
     };
@@ -343,7 +349,7 @@
   /** The filter (T3.7; animated in T6.6): its response now (after the sky) over the spectrum. What
    *  it draws eases like the DSP glides (log cutoff, resonance, and the type as a crossfade), so the
    *  slope moves with every knob and with the sky. The lit body under the slope is the passband; on
-   *  the axis, the knob's cutoff (green tick) and the sky's reach at full activity (green band). */
+   *  the axis, the knob's cutoff (a tick) and the sky's reach at full activity (a band). Ink (T6.7). */
   function FilterView(canvas) {
     const DB_TOP = 15, DB_BOT = -39, TAU = 0.12;
     const st = { lhz: Math.log2(20000), k: 1.8, w: [1, 0, 0, 0], at: 0, primed: false };
@@ -393,10 +399,10 @@
         const path = () => { ctx.beginPath(); pts.forEach(([x, yy], i) => (i ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy))); };
         path(); ctx.lineTo(w, bot); ctx.lineTo(0, bot); ctx.closePath();
         const g = ctx.createLinearGradient(0, top, 0, bot);
-        g.addColorStop(0, rgba("violet", 0.30)); g.addColorStop(1, rgba("violet", 0.02));
+        g.addColorStop(0, rgba("hi", 0.24)); g.addColorStop(1, rgba("hi", 0.02));
         ctx.fillStyle = g; ctx.fill();
-        path(); ctx.strokeStyle = rgba("violet", 0.22); ctx.lineWidth = 3; ctx.stroke();
-        path(); ctx.strokeStyle = C.violet; ctx.lineWidth = 1.25; ctx.stroke();
+        path(); ctx.strokeStyle = rgba("hi", 0.14); ctx.lineWidth = 3; ctx.stroke();
+        path(); ctx.strokeStyle = C.inkHi; ctx.lineWidth = 1.4; ctx.stroke();
 
         // the knob's cutoff, the sky's reach, and where the filter is now
         const hz = Math.pow(2, st.lhz);
@@ -405,16 +411,16 @@
           if (p.sky > 0.005) {
             const reach = clamp(p.base * Math.pow(2, (p.type === 3 ? -3 : 3) * p.sky), 20, 20000);
             const xr = LOGF(reach, w);
-            ctx.fillStyle = rgba("green", 0.22); ctx.fillRect(Math.min(xb, xr), bot - 2, Math.abs(xr - xb), 2);
+            ctx.fillStyle = rgba("ink", 0.3); ctx.fillRect(Math.min(xb, xr), bot - 2, Math.abs(xr - xb), 2);
           }
-          ctx.strokeStyle = rgba("green", 0.8); ctx.beginPath(); ctx.moveTo(Math.round(xb) + 0.5, bot - 6); ctx.lineTo(Math.round(xb) + 0.5, bot); ctx.stroke();
+          ctx.strokeStyle = C.ink; ctx.beginPath(); ctx.moveTo(Math.round(xb) + 0.5, bot - 7); ctx.lineTo(Math.round(xb) + 0.5, bot); ctx.stroke();
         }
         if (hz < 19950) {
           const xh = LOGF(hz, w), yy = y(20 * Math.log10(Math.max(1e-6, response(hz))));
-          ctx.fillStyle = C.violet; ctx.beginPath(); ctx.arc(xh, yy, 2.2, 0, 2 * Math.PI); ctx.fill();
+          ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(xh, yy, 2.8, 0, 2 * Math.PI); ctx.fill();
         }
-        ctx.font = MONO(9); ctx.fillStyle = C.faint; ctx.textAlign = "right";
-        ctx.fillText(hz >= 19950 ? "open" : hz >= 1000 ? (hz / 1000).toFixed(2) + " kHz" : Math.round(hz) + " Hz", w - 2, top + 9);
+        ctx.font = MONO(11); ctx.fillStyle = C.muted; ctx.textAlign = "right";
+        ctx.fillText(hz >= 19950 ? "open" : hz >= 1000 ? (hz / 1000).toFixed(2) + " kHz" : Math.round(hz) + " Hz", w - 5, top + 11);
         ctx.textAlign = "left";
       },
     };
@@ -430,7 +436,7 @@
       draw(voices, lowNote) {
         const sig = (voices || []).map((v) => v[0] + ":" + (v[1] * 20 | 0) + (v[2] ? "h" : "")).join() + "|" + lowNote;
         paint(sig, (ctx, w, h) => {
-          const kb = h - 9;
+          const kb = h - 12;
           const whites = [];
           for (let n = LO; n <= HI; n++) if (!BLACK.includes(n % 12)) whites.push(n);
           const ww = w / whites.length;
@@ -462,8 +468,8 @@
             const [x, , kw] = keyRect(lowNote);
             ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(x + kw / 2, kb - 4, 1.6, 0, 2 * Math.PI); ctx.fill();
           }
-          ctx.font = MONO(8); ctx.fillStyle = C.faint;
-          for (let n = LO; n < HI; n += 12) ctx.fillText("C" + (n / 12 - 1), xOfWhite.get(n) + 2, h - 1);
+          ctx.font = MONO(10); ctx.fillStyle = C.faint;
+          for (let n = LO; n < HI; n += 12) ctx.fillText("C" + (n / 12 - 1), xOfWhite.get(n) + 2, h - 2);
         });
       },
     };
@@ -496,7 +502,7 @@
           const y = top + (bot - top) * (1 - clamp(r, 0, 1.3) / 1.3);
           i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
         }
-        ctx.strokeStyle = C.violet; ctx.lineWidth = 1.25; ctx.stroke();
+        ctx.strokeStyle = C.inkHi; ctx.lineWidth = 1.4; ctx.stroke();
       },
     };
   }
@@ -515,8 +521,8 @@
             const y = mid + amp * Math.sin(2 * Math.PI * (p.rate * t + (i / 48) * 0.9 + v / 3));
             i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
           }
-          ctx.strokeStyle = rgba("violet", 0.25 + 0.6 * p.mix * (1 - v * 0.22));
-          ctx.lineWidth = 1.1; ctx.stroke();
+          ctx.strokeStyle = rgba("hi", 0.25 + 0.65 * p.mix * (1 - v * 0.22));
+          ctx.lineWidth = 1.3; ctx.stroke();
         }
       },
     };
@@ -530,14 +536,14 @@
           const mid = h / 2, x0 = 6, x1 = w - 14, span = Math.max(2, Math.min(16, p.time * 7));
           const x = (t) => x0 + (x1 - x0) * (t / span);
           ctx.strokeStyle = C.hair; ctx.beginPath(); ctx.moveTo(x0, mid + 0.5); ctx.lineTo(x1, mid + 0.5); ctx.stroke();
-          ctx.font = MONO(8); ctx.fillStyle = C.faint; ctx.fillText("L", w - 9, 9); ctx.fillText("R", w - 9, h - 3);
-          ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5;
+          ctx.font = MONO(10); ctx.fillStyle = C.faint; ctx.fillText("L", w - 11, 12); ctx.fillText("R", w - 11, h - 4);
+          ctx.strokeStyle = C.inkHi; ctx.lineWidth = 2;
           ctx.beginPath(); ctx.moveTo(x(0) + 0.5, mid - (mid - 4)); ctx.lineTo(x(0) + 0.5, mid + (mid - 4)); ctx.stroke();
           let a = 1;
           for (let n = 1; n * p.time <= span && a > 0.02; n++) {
             const xx = Math.round(x(n * p.time)) + 0.5, len = (mid - 4) * a;
-            ctx.strokeStyle = rgba("green", clamp(0.35 + 0.65 * p.mix, 0, 1) * (0.4 + 0.6 * a));
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = rgba("hi", clamp(0.35 + 0.65 * p.mix, 0, 1) * (0.4 + 0.6 * a));
+            ctx.lineWidth = 2;
             ctx.beginPath();
             if (p.ping) { const up = n % 2 === 1; ctx.moveTo(xx, mid); ctx.lineTo(xx, up ? mid - len : mid + len); }
             else { ctx.moveTo(xx, mid - len); ctx.lineTo(xx, mid + len); }
@@ -574,19 +580,19 @@
             ctx.strokeStyle = color; ctx.lineWidth = 1.25; ctx.stroke();
             if (fill) { ctx.lineTo(x(t0), bot); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); }
           };
-          tail(p.decay, "rgba(201,211,230,0.85)", `rgba(201,211,230,${0.04 + 0.08 * p.mix})`);
-          tail(p.decay * (1 - 0.75 * p.damp), C.violet, null);
+          tail(p.decay, "rgba(201,211,230,0.55)", `rgba(201,211,230,${0.05 + 0.1 * p.mix})`);
+          tail(p.decay * (1 - 0.75 * p.damp), C.inkHi, null);
           // shimmer: the octave and the fifth, rising out of the tail
           const sh = Math.round(14 * p.shimmer);
           for (let i = 0; i < sh; i++) {
             const tt = t0 + span * (0.1 + 0.8 * ((i * 0.618) % 1)), yy = y(-12 - 40 * ((i * 0.381) % 1));
-            ctx.fillStyle = rgba("violet", 0.35 + 0.5 * p.shimmer);
+            ctx.fillStyle = rgba("hi", 0.35 + 0.55 * p.shimmer);
             ctx.beginPath(); ctx.arc(x(tt), yy, 1.1, 0, 2 * Math.PI); ctx.fill();
           }
           // live wet level
           ctx.fillStyle = C.hair; ctx.fillRect(w - 5, top, 2, bot - top);
           const lv = clamp(wet * 2, 0, 1);
-          ctx.fillStyle = C.violet; ctx.fillRect(w - 5, bot - lv * (bot - top), 2, lv * (bot - top));
+          ctx.fillStyle = C.inkHi; ctx.fillRect(w - 5, bot - lv * (bot - top), 2, lv * (bot - top));
         });
       },
     };
@@ -601,21 +607,21 @@
         ctx.clearRect(0, 0, w, h);
         const x0 = 12, x1 = w - 4, MIN = -48;
         const x = (db) => x0 + (x1 - x0) * clamp((db - MIN) / -MIN, 0, 1);
-        ctx.font = MONO(8); ctx.fillStyle = C.faint;
-        for (const db of [-36, -24, -12, 0]) { const xx = Math.round(x(db)) + 0.5; ctx.fillStyle = C.faint; ctx.fillText(String(db).replace("-", "−"), xx - (db === 0 ? 5 : 8), h - 1); ctx.strokeStyle = C.hairSoft; ctx.beginPath(); ctx.moveTo(xx, 3); ctx.lineTo(xx, h - 10); ctx.stroke(); }
+        ctx.font = MONO(10); ctx.fillStyle = C.faint;
+        for (const db of [-36, -24, -12, 0]) { const xx = Math.round(x(db)) + 0.5; ctx.fillStyle = C.faint; ctx.fillText(String(db).replace("-", "−"), xx - (db === 0 ? 6 : 12), h - 3); ctx.strokeStyle = C.hairSoft; ctx.beginPath(); ctx.moveTo(xx, 3); ctx.lineTo(xx, h - 14); ctx.stroke(); }
         const bar = (y, g, label) => {
-          ctx.fillStyle = C.faint; ctx.fillText(label, 1, y + 5);
-          ctx.fillStyle = C.hair; ctx.fillRect(x0, y, x1 - x0, 4);
+          ctx.fillStyle = C.faint; ctx.fillText(label, 2, y + 6);
+          ctx.fillStyle = C.track; ctx.fillRect(x0, y, x1 - x0, 5);
           const xx = x(dbOf(g));
           const grad = ctx.createLinearGradient(x0, 0, x1, 0);
-          grad.addColorStop(0, "rgba(143,123,255,0.7)"); grad.addColorStop(0.75, C.green); grad.addColorStop(1, C.green);
-          ctx.fillStyle = grad; ctx.fillRect(x0, y, Math.max(0, xx - x0), 4);
+          grad.addColorStop(0, "rgba(201,211,230,0.4)"); grad.addColorStop(1, C.inkHi);
+          ctx.fillStyle = grad; ctx.fillRect(x0, y, Math.max(0, xx - x0), 5);
         };
-        bar(6, peakL, "L"); bar(16, peakR, "R");
+        bar(6, peakL, "L"); bar(17, peakR, "R");
         const grDb = -dbOf(gr);
-        if (grDb > 0.05) { const xc = x(ceiling); ctx.fillStyle = rgba("red", 0.8); ctx.fillRect(xc - (x1 - x0) * Math.min(1, grDb / 12), 26, (x1 - x0) * Math.min(1, grDb / 12), 3); }
+        if (grDb > 0.05) { const xc = x(ceiling); ctx.fillStyle = rgba("hi", 0.7); ctx.fillRect(xc - (x1 - x0) * Math.min(1, grDb / 12), 28, (x1 - x0) * Math.min(1, grDb / 12), 3); }
         const xc = Math.round(x(ceiling)) + 0.5;
-        ctx.strokeStyle = C.red; ctx.beginPath(); ctx.moveTo(xc, 3); ctx.lineTo(xc, 30); ctx.stroke();
+        ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.moveTo(xc, 3); ctx.lineTo(xc, 32); ctx.stroke();
       },
     };
   }
@@ -630,11 +636,11 @@
         [peakL, peakR].forEach((g, i) => {
           const y = 8 + i * 6, db = dbOf(g);
           if (db > hold[i] || t - holdT[i] > 1.5) { hold[i] = db; holdT[i] = t; }
-          ctx.fillStyle = C.hair; ctx.fillRect(0, y, w, 2);
-          ctx.fillStyle = db > ceiling - 0.5 ? C.red : C.green; ctx.fillRect(0, y, x(db), 2);
-          ctx.fillStyle = C.ink; ctx.fillRect(Math.max(0, x(hold[i]) - 1), y - 1, 1, 4);
+          ctx.fillStyle = C.track; ctx.fillRect(0, y, w, 3);
+          ctx.fillStyle = db > ceiling - 0.5 ? "#fff" : C.arc; ctx.fillRect(0, y, x(db), 3);
+          ctx.fillStyle = C.inkHi; ctx.fillRect(Math.max(0, x(hold[i]) - 1), y - 1, 1, 5);
         });
-        ctx.fillStyle = C.red; ctx.fillRect(Math.round(x(ceiling)), 5, 1, 12);
+        ctx.fillStyle = "#fff"; ctx.fillRect(Math.round(x(ceiling)), 5, 1.5, 14);
       },
     };
   }
