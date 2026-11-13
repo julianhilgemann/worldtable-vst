@@ -1,13 +1,15 @@
 # 08 — How to build this with agents
 
 ## Where ideas come from
-The owner iterates ideas on the phone in the Claude Docs project brief
-("Worldtable — project brief": vision, sessions, Idea inbox). The brief leads;
-this spec follows it. On the laptop:
-1. Read the brief's newest sessions and Idea inbox.
+This repo leads (owner, 2026-11-13): direction is decided with the owner in
+a session and written into `spec/`. The early vision came from the owner's
+phone-side project brief (Claude Docs, "Worldtable — project brief"); it no
+longer leads and is not kept in step unless the owner asks. In a session:
+1. Take the owner's request; show mockups or renders where looks or sound are
+   the question.
 2. Move settled decisions into `spec/` (an ADR for anything irreversible).
-3. Cut the next step into task files; build; tick the item in the brief and
-   update its "Where we are" when work merges.
+3. Cut the next step into task files; build; update `07-implementation-plan.md`
+   when work merges.
 
 ## The loop
 1. **Spec → task.** Cut a milestone into tasks of ≤ ~400 lines of change
@@ -52,9 +54,9 @@ source/data/sources/UsgsGeomag.*, tests/unit/UsgsGeomagTests.cpp, tests/fixtures
 ```
 
 ## Prompts to start each step
-- **Sync with the brief:** "Read the project brief's sessions since rev N and
-  the Idea inbox. List what changes the spec, then update spec/ and propose
-  task files."
+- **Plan from the spec:** "Read spec/07-implementation-plan.md and the open
+  task files. List what is next and what it needs from me, then propose or
+  start the task."
 - **Prototype:** "Do spec/tasks/T1.2-*.md. Show me the dome replaying
   10 May 2024 before tuning anything."
 - **Port:** "Do spec/tasks/T2.1-*.md. Header + failing tests first, stop for
