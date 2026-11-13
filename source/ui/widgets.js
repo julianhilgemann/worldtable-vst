@@ -155,26 +155,26 @@
     eq4_drive: "Saturates only the octave just under the cut.",
     eq_sky: "How far the sky's activity opens the cut, up to three octaves.",
     ph_rate: "How fast the phaser's notches travel.",
-    ph_depth: "How far the phaser's notches sweep.",
+    ph_depth: "How far the notches sweep: the bar under the picture. Drag sideways in it.",
     ph_feedback: "Feedback: sharper, more resonant notches.",
     ph_stages: "Stages: two per notch. More stages, more notches.",
     ph_mix: "How much of the phased sound you hear.",
     ch_rate: "How fast the three chorus voices swing.",
     ch_depth: "How far the three chorus voices swing.",
     ch_mix: "How much of the chorus you hear against the dry sound.",
-    dly_time: "Time between the echoes.",
-    dly_fb: "Feedback: from a single echo to a long trail.",
+    dly_time: "Time between the echoes: the handle on the first echo, sideways.",
+    dly_fb: "Feedback, from a single echo to a long trail: the handle, up and down.",
     dly_tone: "Darker or brighter echoes.",
     dly_pingpong: "Echoes alternate left and right.",
     dly_mix: "How loud the echoes are against the dry sound.",
     rev_size: "Size of the room.",
-    rev_decay: "How long the reverb's tail rings on.",
+    rev_decay: "How long the reverb's tail rings on: the handle on the tail, sideways.",
     rev_damp: "Damping: the tail darkens as it fades.",
     rev_predelay: "A short gap before the tail starts, to keep the attack clear.",
     rev_shimmer: "Octave and fifth above, fed back into the tail.",
     rev_mod: "Slow movement inside the tail, against metallic ringing.",
     rev_mix: "How much reverb you hear against the dry sound.",
-    lim_ceiling: "The limiter's ceiling: the output never goes above it.",
+    lim_ceiling: "The limiter's ceiling, the white line: the output never goes above it.",
     lim_release: "How fast the limiter lets go after a peak.",
     master: "Output level, after the limiter.",
   };
@@ -479,6 +479,167 @@
     return bindSwitch(b, id, label);
   }
 
+  // ---------- pictures as controls (T6.12, spec/09 §4–5) ----------
+  /** A drag inside a picture. `start(p, e)` gets the pointer in the canvas's CSS px and returns
+   *  { ids, move(p, ev), end() } or null (nothing to drag there). Every parameter in `ids` is one host
+   *  gesture for the whole drag; a pending key run on it ends first (JUCE asserts on a nested begin). */
+  function dragPicture(canvas, start) {
+    const local = (e) => {
+      const r = canvas.getBoundingClientRect();
+      return { x: (e.clientX - r.left) / UI.scale - canvas.clientLeft, y: (e.clientY - r.top) / UI.scale - canvas.clientTop };
+    };
+    canvas.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const h = start(local(e), e);
+      if (!h) return;
+      e.preventDefault();
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* a synthetic pointer (UiCheck): no capture */ }
+      const ids = h.ids || [];
+      for (const id of ids) { gesture(id).flush(); WT.begin(id); }
+      const move = (ev) => { if (h.move) h.move(local(ev), ev); };
+      const up = () => {
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+        canvas.removeEventListener("pointermove", move);
+        canvas.removeEventListener("pointerup", up);
+        canvas.removeEventListener("pointercancel", up);
+        if (h.end) h.end();
+        for (const id of ids) WT.end(id);
+      };
+      canvas.addEventListener("pointermove", move);
+      canvas.addEventListener("pointerup", up);
+      canvas.addEventListener("pointercancel", up);
+    });
+  }
+  /** Sets a parameter from its normalised value (inside a drag's gesture). */
+  const setNorm = (id, n) => WT.set(id, WT.fromNorm(id, clamp(n, 0, 1)));
+
+  /** The focusable proxy of a value set inside a picture (spec/09 §5): it carries the parameter's
+   *  `data-param`, role, value text and hint, takes the keys a knob takes (arrows, Shift, Page,
+   *  Home/End, Backspace, Enter to type), and sits on the handle, so the focus ring shows there. The
+   *  picture's view moves it with `place(x, y)` (the handle's centre in the canvas's CSS px). It lets
+   *  the pointer through: the picture's own drag handles it. */
+  function Handle(host, id, label, opts = {}) {
+    const m = WT.META[id];
+    if (!m) { console.warn("unknown param", id); return null; }
+    host.classList.add("handle");
+    host.dataset.param = id;
+    host.dataset.hint = opts.hint || UI.hintOf(id);
+    host.tabIndex = 0;
+    host.setAttribute("role", "slider");
+    host.setAttribute("aria-label", label || m.name);
+    const [lo, hi] = rangeOf(id);
+    host.setAttribute("aria-valuemin", String(lo));
+    host.setAttribute("aria-valuemax", String(hi));
+    WT.onParam(id, (v) => {
+      host.setAttribute("aria-valuenow", String(v));
+      host.setAttribute("aria-valuetext", UI.format(id, v));
+    });
+    let field = null;
+    function closeField(commit) {
+      if (!field) return;
+      const f = field;
+      field = null;
+      if (commit) { const v = UI.parse(id, f.value); if (v !== null && isFinite(v)) gesture(id).commit(v); }
+      f.remove();
+      host.focus({ preventScroll: true });
+    }
+    host.addEventListener("keydown", (e) => {
+      if (e.target !== host) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (field) return;
+        field = el("input", "knob-field handle-field", host);
+        field.type = "text";
+        field.value = UI.format(id, WT.get(id));
+        field.setAttribute("aria-label", (label || m.name) + ", type a value");
+        field.spellcheck = false;
+        field.addEventListener("keydown", (ev) => {
+          ev.stopPropagation();
+          if (ev.key === "Enter") { ev.preventDefault(); closeField(true); } else if (ev.key === "Escape") { ev.preventDefault(); closeField(false); }
+        });
+        field.addEventListener("blur", () => closeField(false));
+        field.focus({ preventScroll: true });
+        field.select();
+        return;
+      }
+      if (sliderKey(id, e)) e.preventDefault();
+    });
+    const w = opts.w || 18, h = opts.h || 18;
+    let shown = "";
+    return {
+      root: host, id,
+      /** Puts the proxy's centre at (x, y) in `canvas` (CSS px); w and h change its size (a line). */
+      place(canvas, x, y, ww = w, hh = h) {
+        const left = canvas.offsetLeft + canvas.clientLeft + x - ww / 2, top = canvas.offsetTop + canvas.clientTop + y - hh / 2;
+        const sig = `${left.toFixed(1)},${top.toFixed(1)},${ww.toFixed(1)},${hh.toFixed(1)}`;
+        if (sig === shown) return;
+        shown = sig;
+        host.style.left = left.toFixed(1) + "px"; host.style.top = top.toFixed(1) + "px";
+        host.style.width = ww.toFixed(1) + "px"; host.style.height = hh.toFixed(1) + "px";
+      },
+      focus() { if (document.activeElement !== host) host.focus({ preventScroll: true }); },
+      get focused() { return document.activeElement === host; },
+    };
+  }
+
+  /** A chip that steps through a few values of a parameter (the phaser's Stages: 2, 4, 6, 8). A click
+   *  takes the next (wrapping); arrows step, Home/End, Backspace = default. Role slider. */
+  function Cycle(btn, id, values, say) {
+    const m = WT.META[id];
+    btn.type = "button";
+    btn.dataset.param = id;
+    btn.dataset.hint = UI.hintOf(id);
+    btn.setAttribute("role", "slider");
+    btn.setAttribute("aria-label", m.name);
+    btn.setAttribute("aria-valuemin", String(values[0]));
+    btn.setAttribute("aria-valuemax", String(values[values.length - 1]));
+    const next = (v, dir) => {
+      if (dir > 0) { const n = values.find((x) => x > v); return n === undefined ? null : n; }
+      const l = values.filter((x) => x < v); return l.length ? l[l.length - 1] : null;
+    };
+    btn.addEventListener("click", (e) => { e.stopPropagation(); const v = next(WT.get(id), 1); gesture(id).commit(v === null ? values[0] : v); });
+    btn.addEventListener("keydown", (e) => {
+      const k = e.key, v = WT.get(id);
+      const to = k === "ArrowUp" || k === "ArrowRight" ? next(v, 1) : k === "ArrowDown" || k === "ArrowLeft" ? next(v, -1)
+        : k === "Home" ? values[0] : k === "End" ? values[values.length - 1] : k === "Backspace" || k === "Delete" ? defaultValue(id) : undefined;
+      if (to === undefined) return;
+      e.preventDefault();
+      if (to !== null && to !== v) gesture(id).commit(to);
+    });
+    WT.onParam(id, (v) => {
+      btn.innerHTML = say(v);
+      btn.setAttribute("aria-valuenow", String(v));
+      btn.setAttribute("aria-valuetext", btn.textContent);
+    });
+    return btn;
+  }
+
+  /** The tone stage's response in dB at `f` (T6.12, T6.14): the EQ of T3.9, exactly as
+   *  `dsp::Eq::responseDb` (source/dsp/fx/Eq.h) computes it, bands in series. `p` = { bands: [low
+   *  shelf {hz, gain}, bell {hz, gain, q}, bell {hz, gain, q}], cutHz } (the cut after the sky);
+   *  `fs` the sample rate. With Ω = tan(π f / fs) / tan(π f0 / fs) and A = 10^(gain / 40). */
+  function eqDb(f, p, fs) {
+    const SQ = 0.5;   // the shelf's Q², Q = 1/√2
+    const t = Math.tan(Math.PI * Math.min(f, 0.4999 * fs) / fs);
+    let db = 0;
+    p.bands.forEach((b, i) => {
+      if (!b.gain) return;
+      const w = t / Math.tan(Math.PI * Math.min(b.hz, 0.45 * fs) / fs), w2 = w * w, A = Math.pow(10, b.gain / 40);
+      let num, den;
+      if (i === 0) { num = A * A * ((A - w2) ** 2 + A * w2 / SQ); den = (1 - A * w2) ** 2 + A * w2 / SQ; }
+      else { const q = clamp(b.q, 0.3, 6), a = w * A / q, c = w / (A * q); num = (1 - w2) ** 2 + a * a; den = (1 - w2) ** 2 + c * c; }
+      db += 10 * Math.log10(num / den);
+    });
+    if (p.cutHz < 19980) { const w = t / Math.tan(Math.PI * Math.min(p.cutHz, 0.49 * fs) / fs); db += -10 * Math.log10(1 + w ** 4); }
+    return db;
+  }
+  /** The EQ's parameters now, for eqDb; `cutHz` is the cut after the sky (telemetry `eqCutHz`). */
+  const eqParams = (cutHz) => ({
+    bands: [{ hz: WT.get("eq1_freq"), gain: WT.get("eq1_gain") }, { hz: WT.get("eq2_freq"), gain: WT.get("eq2_gain"), q: WT.get("eq2_q") },
+      { hz: WT.get("eq3_freq"), gain: WT.get("eq3_gain"), q: WT.get("eq3_q") }],
+    cutHz: cutHz || WT.get("eq4_freq"),
+  });
+
   // ---------- canvas ----------
   /** Sizes a canvas backing store for the stage zoom and the display; returns {ctx, w, h} in CSS px.
    *  Capped (T6.6): a canvas whose CSS size follows its own backing store would otherwise grow by
@@ -504,5 +665,5 @@
   const MONO = (px) => `${px}px "JetBrains Mono", ui-monospace, monospace`;
   const SANS = (px, w) => `${w || 400} ${px}px "Instrument Sans", -apple-system, sans-serif`;
 
-  Object.assign(UI, { Knob, Seg, Keys, Toggle, fit, el, svg, C, rgba, MONO, SANS, KEY_NAMES, defaultValue, clamp });
+  Object.assign(UI, { Knob, Seg, Keys, Toggle, Handle, Cycle, dragPicture, setNorm, eqDb, eqParams, fit, el, svg, C, rgba, MONO, SANS, KEY_NAMES, defaultValue, clamp });
 })();

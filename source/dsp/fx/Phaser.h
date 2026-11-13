@@ -56,6 +56,37 @@ public:
         phaseR = 0.25f;
     }
 
+    /** The left LFO's phase, 0 … 1 (T6.12: the editor draws the notches where the sound has them). */
+    float lfoPhase() const noexcept { return phaseL; }
+
+    /** The break frequency for an LFO phase, as step() sweeps it (200 Hz … 2 kHz at depth 1). */
+    static double breakHz (double depth, double phase) noexcept
+    {
+        const double d = std::clamp (depth, 0.0, 1.0);
+        return 200.0 * std::pow (10.0, 0.5 + 0.5 * d * std::sin (2.0 * std::numbers::pi * phase));
+    }
+
+    /** The phaser's gain at `hz` with its break frequency at `breakHz`, for a signal small enough
+        that the feedback's tanh is linear. It is this filter's exact response, which the editor's
+        picture draws (source/ui/views.js `phaserResponse` is this function line for line):
+        each stage is the bilinear all-pass (a + z⁻¹) / (1 + a z⁻¹), phase −2·atan(tan(πf/fs) /
+        tan(πf_c/fs)); N stages give θ = N × that; the feedback returns one sample late, so
+        wet = e^{jθ} / (1 − fb·e^{−jω}·e^{jθ}); out = ((1 − mix) + mix·wet) × the make-up gain. */
+    static double magnitude (double hz, double breakHz, double sampleRate, int stages, double feedback, double mix) noexcept
+    {
+        constexpr double pi = std::numbers::pi;
+        const int n = std::clamp (stages, 2, kMaxStages);
+        const double fb = std::clamp (feedback, 0.0, 0.8), m = std::clamp (mix, 0.0, 1.0);
+        const double w = 2.0 * pi * std::clamp (hz, 0.0, 0.4999 * sampleRate) / sampleRate;
+        const double theta = -2.0 * n * std::atan (std::tan (0.5 * w) / std::tan (pi * breakHz / sampleRate));
+        const double ar = std::cos (theta), ai = std::sin (theta);
+        const double dr = 1.0 - fb * std::cos (theta - w), di = -fb * std::sin (theta - w);
+        const double dd = dr * dr + di * di;
+        const double wr = (ar * dr + ai * di) / dd, wi = (ai * dr - ar * di) / dd;
+        const double outR = (1.0 - m) + m * wr, outI = m * wi;
+        return std::sqrt (outR * outR + outI * outI) / std::sqrt (std::max (1.0e-6, (1.0 - m) * (1.0 - m) + m * m));
+    }
+
     void process (float* left, float* right, int numSamples) noexcept
     {
         if (settings.mix <= 0.0f)

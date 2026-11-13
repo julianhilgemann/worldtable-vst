@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 #include <functional>
 #include <optional>
 #include <string>
@@ -405,7 +406,8 @@ TEST_CASE ("migrateState accepts only known versions", "[state]")
     CHECK_FALSE (PluginProcessor::migrateState (juce::ValueTree ("Other")).isValid());
 }
 
-//==================================================================================================
+//===========================================================================================}
+
 // T6.9: the Journey transport — saved with the session, run/freeze, speeds, day, loop
 namespace
 {
@@ -646,4 +648,67 @@ TEST_CASE ("A day change and a loop wrap mid-play: no click, no swell, no alloca
         CHECK (daySwell < 1.5);
         CHECK (wrapSwell < 1.5);
     }
+=======
+TEST_CASE ("The editor's taps read the sound without changing it", "[processor][telemetry][T6.12]")
+{
+    // T6.12: the sources before the tone stage feed a second scope, the phaser's LFO phase a
+    // telemetry atomic. Both only read: the output is bit-identical with the input tap detached,
+    // whether or not anyone drains the scopes.
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+
+    PluginProcessor a (false), b (false);
+    for (auto* p : { &a, &b })
+    {
+        setParam (*p, "eq4_freq", 300.0f);     // a closed tone stage: the tap sees what it removes
+        setParam (*p, "eq_sky", 0.0f);
+        setParam (*p, "ph_rate", 0.25f);
+        p->setPlayConfigDetails (0, 2, 48000.0, 512);
+        p->prepareToPlay (48000.0, 512);
+    }
+    b.getInstrument().sources().setInputTap (nullptr);
+
+    juce::AudioBuffer<float> bufA (2, 512), bufB (2, 512);
+    juce::MidiBuffer midi;
+    std::vector<float> tapped, out, chunk (8192);
+    bool identical = true;
+    const int blocks = static_cast<int> (4.0 * 48000.0 / 512);
+    for (int k = 0; k < blocks; ++k)
+    {
+        bufA.clear();
+        bufB.clear();
+        a.processBlock (bufA, midi);
+        b.processBlock (bufB, midi);
+        for (int ch = 0; ch < 2; ++ch)
+            identical = identical && std::equal (bufA.getReadPointer (ch), bufA.getReadPointer (ch) + 512, bufB.getReadPointer (ch));
+        if (k % 4 == 0)   // a's scopes drained (the editor at ~23 Hz), b's left to fill up
+        {
+            for (int n; (n = a.getInstrument().getInputScope().pull (chunk.data(), 8192)) > 0;)
+                tapped.insert (tapped.end(), chunk.begin(), chunk.begin() + n);
+            for (int n; (n = a.getInstrument().getScope().pull (chunk.data(), 8192)) > 0;)
+                out.insert (out.end(), chunk.begin(), chunk.begin() + n);
+        }
+    }
+    CHECK (identical);
+    CHECK (b.getInstrument().getInputScope().pull (chunk.data(), 8192) == 0);   // detached: nothing came
+
+    // the tap carries the sources' mix before the 300 Hz high cut: far more top end than the output
+    REQUIRE (tapped.size() > 3 * 48000);
+    const auto brightness = [] (const std::vector<float>& x)
+    {
+        double e = 0.0, d = 0.0;
+        for (size_t i = 1; i < x.size(); ++i)
+        {
+            e += static_cast<double> (x[i]) * x[i];
+            d += static_cast<double> (x[i] - x[i - 1]) * (x[i] - x[i - 1]);
+        }
+        return d / std::max (e, 1.0e-30);
+    };
+    INFO ("brightness before the tone stage " << brightness (tapped) << ", after everything " << brightness (out));
+    CHECK (std::all_of (tapped.begin(), tapped.end(), [] (float v) { return std::isfinite (v); }));
+    CHECK (brightness (tapped) > 2.0 * brightness (out));   // 3.2× here, deterministic
+
+    // the phaser's phase: 4 s at 0.25 Hz is one turn (the float accumulator drifts a little)
+    const float phase = a.getInstrument().getTelemetry().phaserPhase.load();
+    INFO ("phase after 4 s at 0.25 Hz: " << phase);
+    CHECK ((phase < 0.04f || phase > 0.96f));
 }

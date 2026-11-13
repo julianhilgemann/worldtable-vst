@@ -54,14 +54,25 @@ private:
 
     std::atomic<bool> pageReady { false };
 
-    // analyzer (message thread only)
-    static constexpr int kFftOrder = 12;
-    static constexpr int kFftSize = 1 << kFftOrder;
-    static constexpr int kBands = 120;
-    juce::dsp::FFT fft { kFftOrder };
-    std::vector<float> history, fftData, window;
-    int historyPos = 0;
-    std::array<float, kBands> bands {};
+    /** One analyzer (message thread only): a ScopeFifo's mono mix → 120 log bands, 20 Hz … 20 kHz,
+        in dB, fast attack and slow fall. The output has one, the sources before the tone stage the
+        other (T6.12). */
+    struct Analyzer
+    {
+        static constexpr int kFftOrder = 12;
+        static constexpr int kFftSize = 1 << kFftOrder;
+        static constexpr int kBands = 120;
+
+        Analyzer();
+        void update (dsp::ScopeFifo&, double sampleRate);
+        juce::var toVar() const;
+
+        juce::dsp::FFT fft { kFftOrder };
+        std::vector<float> history, fftData, window;
+        int historyPos = 0;
+        std::array<float, kBands> bands {};
+    };
+    Analyzer outAnalyzer, inAnalyzer;
     float meterL = 0.0f, meterR = 0.0f;
 
     // the Sky Model's UI reader (message thread only)

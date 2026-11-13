@@ -30,6 +30,14 @@
   for (const n of document.querySelectorAll("[data-seg]")) UI.Seg(n, n.dataset.seg, n.dataset.labels ? n.dataset.labels.split(",") : null);
   for (const n of document.querySelectorAll("[data-keys]")) UI.Keys(n, n.dataset.keys);
   for (const n of document.querySelectorAll("[data-toggle]")) UI.Toggle(n, n.dataset.toggle, n.dataset.label || "");
+  // T6.12: values set inside a picture have a focusable proxy on their handle; the phaser's Stages chip
+  const handles = (UI.handles = {});
+  for (const n of document.querySelectorAll("[data-handle]")) {
+    const h = UI.Handle(n, n.dataset.handle, n.dataset.label || "");
+    if (h) handles[n.dataset.handle] = h;
+  }
+  for (const n of document.querySelectorAll("[data-cycle]"))
+    UI.Cycle(n, n.dataset.cycle, n.dataset.values.split(",").map(Number), (v) => `<b>${v}</b> stages`);
 
   // ---------------------------------------------------------------- the hint line (spec/09 §2 rule 5)
   // One sentence about what the thing under the pointer (or, from the keyboard, in focus) does.
@@ -154,8 +162,10 @@
   const layers = UI.LayersView($("cv-layers"));
   const keys = UI.KeyboardView($("cv-keys"));
   const fx = {
-    phaser: UI.PhaserView($("cv-phaser")), chorus: UI.ChorusView($("cv-chorus")),
-    delay: UI.DelayView($("cv-delay")), reverb: UI.ReverbView($("cv-reverb")), output: UI.OutputView($("cv-output")),
+    // T6.12: the pictures are the effects' controls; the phaser's outline is shaped by the tone stage
+    phaser: UI.PhaserView($("cv-phaser"), { handles, tone: (f, tel) => UI.eqDb(f, UI.eqParams(tel.eqCutHz), tel.sampleRate || 48000) }),
+    chorus: UI.ChorusView($("cv-chorus")),
+    delay: UI.DelayView($("cv-delay"), { handles }), reverb: UI.ReverbView($("cv-reverb"), { handles }), output: UI.OutputView($("cv-output"), { handles }),
   };
   const hmeter = UI.HeaderMeter($("cv-hmeter"));
 
@@ -630,11 +640,11 @@
     }
     keys.draw(litKeys(tel));
     {
-      fx.phaser.draw(t, { rate: P("ph_rate"), depth: P("ph_depth"), fb: P("ph_feedback"), stages: P("ph_stages"), mix: P("ph_mix") }, tel.spectrum);
-      fx.chorus.draw(t, { rate: P("ch_rate"), depth: P("ch_depth"), mix: P("ch_mix") });
-      fx.delay.draw({ time: P("dly_time"), fb: P("dly_fb"), tone: P("dly_tone"), mix: P("dly_mix"), ping: P("dly_pingpong") });
-      fx.reverb.draw({ size: P("rev_size"), decay: P("rev_decay"), damp: P("rev_damp"), pre: P("rev_predelay"), shimmer: P("rev_shimmer"), mix: P("rev_mix") }, tel.verb || 0);
-      fx.output.draw(tel.peakL || 0, tel.peakR || 0, tel.gr || 1, P("lim_ceiling"));
+      fx.phaser.draw(tel);
+      fx.chorus.draw(tel);
+      fx.delay.draw(tel);
+      fx.reverb.draw(tel);
+      fx.output.draw(tel);
       setHtml("verb-note", `${num(P("rev_decay").toFixed(1), 4, "span")} s`);
     }
   }
