@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Drive.h"
 #include "Harmony.h"
 #include "SkySound.h"
 #include "Sources.h"
@@ -33,7 +32,7 @@ struct Telemetry
     std::atomic<float> breath { 0.0f };        ///< the Breath cycle 0 … 1 (SkySound::breathCycle)
     std::atomic<int>   lowNote { -1 };         ///< the low resonator's MIDI note (T3.7)
     std::atomic<float> lowLevel { 0.0f };      ///< its output gain
-    std::atomic<float> filterHz { 20000.0f };  ///< the filter's cutoff now (after the sky)
+    std::atomic<float> eqCutHz { 20000.0f };   ///< the EQ's high cut now (after the sky), 20000 = open (T3.9)
     std::atomic<float> playMix { 0.0f };       ///< 0 drone … 1 Play (gliding)
     std::atomic<float> phaserPhase { 0.0f };   ///< the phaser's left LFO phase 0 … 1, per block (T6.12)
 };
@@ -111,12 +110,12 @@ struct ChordState
 };
 
 /** The v1 instrument (T3.6): the Sky Model's sound (SkySound), the spec's FX chain, the chord hold
-    and the MIDI latch, driven by parameters. T3.7 adds Play mode, the low resonator and the filter
-    (dsp::Sources, SkySound's companion).
+    and the MIDI latch, driven by parameters. T3.7 adds Play mode and the low resonator, T3.9 the EQ
+    with drive per band in place of the filter and the drive (dsp::Sources, SkySound's companion).
 
     ```
-    SkyRuntime ─► SkySound ─┬─ PlayVoices, LowResonator ─► Filter ─► Drive ─► Phaser ─► Chorus
-                            └─────────────────────────────────────► Delay ─► Reverb ─► AutoGain ─► DC
+    SkyRuntime ─► SkySound ─┬─ PlayVoices, LowResonator ─► Eq (4 bands, drive each) ─► Phaser ─► Chorus
+                            └───────────────────────────────────────────────────► Delay ─► Reverb ─► AutoGain ─► DC
               ─► master ─► Limiter ─► out
     ```
     MIDI: off, notes latch the drone's chord (T3.6); in Play mode they play the voices, at their
@@ -188,7 +187,6 @@ private:
         std::array<float, kNumLayers> t60 { 20.0f, 6.0f, 2.5f };
         float storm = 0.5f, breath = 0.35f, glow = 0.5f, space = 0.5f, driftMacro = 0.5f;
 
-        float drive = 0.15f;
         float phRate = 0.05f, phDepth = 0.6f, phFeedback = 0.3f, phMix = 0.4f;
         int phStages = 6;
         float chRate = 0.1f, chDepth = 3.0f, chMix = 0.25f;
@@ -201,8 +199,8 @@ private:
         bool play = false;
         float playAttack = 0.01f, playRelease = 2.5f, playVelocity = 0.6f, playDrone = 0.0f;
         float lowLevel = 0.5f, lowDecay = 8.0f;
-        int fltType = 0;
-        float fltCutoff = 20000.0f, fltReso = 0.1f, fltSky = 0.3f;
+        Eq::Settings eq;       ///< T3.9: snap (the EQ glides them per sample)
+        float eqSky = 0.3f;    ///< snap: the cut's opening is slewed by the activity and glided by the EQ
     };
 
     void readTarget (Controls&) const noexcept;
@@ -226,8 +224,7 @@ private:
     uint32_t seed = 1;
 
     SkySound skySound;
-    Sources front;   ///< SkySound's companion: the played notes, the low resonator, the filter
-    Drive drive;
+    Sources front;   ///< SkySound's companion: the played notes, the low resonator, the EQ
     Phaser phaser;
     Chorus chorus;
     StereoDelay delay;

@@ -252,8 +252,9 @@ TEST_CASE ("Play mode: the same MIDI gives the same sound at any block size", "[
         PluginProcessor p (false);
         setParam (p, "play", 1.0f);
         setParam (p, "play_drone", 0.3f);
-        setParam (p, "flt_cutoff", 2000.0f);
-        setParam (p, "flt_reso", 0.5f);
+        setParam (p, "eq4_freq", 2000.0f);   // T3.9: a coloured EQ with a driven band
+        setParam (p, "eq2_gain", 6.0f);
+        setParam (p, "eq2_drive", 0.6f);
         p.setPlayConfigDetails (0, 2, kRate, block);
         p.prepareToPlay (kRate, block);
         return render (p, block, frames, events);
@@ -355,13 +356,16 @@ TEST_CASE ("Extreme Play settings stay finite and under the ceiling", "[processo
     setParam (p, "play_drone", 1.0f);
     setParam (p, "low_level", 1.0f);
     setParam (p, "low_decay", 30.0f);
-    setParam (p, "flt_type", 1.0f);
-    setParam (p, "flt_cutoff", 120.0f);
-    setParam (p, "flt_reso", 1.0f);
-    setParam (p, "flt_sky", 1.0f);
+    setParam (p, "eq1_gain", 12.0f);   // T3.9: every band up and driven, the cut low and opened by the sky
+    setParam (p, "eq2_gain", 12.0f);
+    setParam (p, "eq2_q", 6.0f);
+    setParam (p, "eq3_gain", 12.0f);
+    setParam (p, "eq4_freq", 200.0f);
+    setParam (p, "eq_sky", 1.0f);
+    for (const char* id : { "eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive" })
+        setParam (p, id, 1.0f);
     setParam (p, "red_level", 1.0f);
     setParam (p, "violet_level", 1.0f);
-    setParam (p, "drive", 1.0f);
     setParam (p, "rev_mix", 1.0f);
     p.setPlayConfigDetails (0, 2, 44100.0, 333);
     p.prepareToPlay (44100.0, 333);

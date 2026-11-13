@@ -265,7 +265,10 @@ TEST_CASE ("Extreme settings stay finite and under the ceiling", "[processor][re
     juce::ScopedJuceInitialiser_GUI juceEnv;
 
     PluginProcessor p (false);
-    setParam (p, "drive", 1.0f);
+    for (const char* id : { "eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive" })   // T3.9
+        setParam (p, id, 1.0f);
+    setParam (p, "eq1_gain", 12.0f);
+    setParam (p, "eq3_gain", 12.0f);
     setParam (p, "ph_mix", 1.0f);
     setParam (p, "ph_feedback", 0.8f);
     setParam (p, "ph_depth", 1.0f);
@@ -407,8 +410,8 @@ TEST_CASE ("The editor's taps read the sound without changing it", "[processor][
     PluginProcessor a (false), b (false);
     for (auto* p : { &a, &b })
     {
-        setParam (*p, "flt_cutoff", 300.0f);   // a closed tone stage: the tap sees what it removes
-        setParam (*p, "flt_sky", 0.0f);
+        setParam (*p, "eq4_freq", 300.0f);     // a closed tone stage: the tap sees what it removes
+        setParam (*p, "eq_sky", 0.0f);
         setParam (*p, "ph_rate", 0.25f);
         p->setPlayConfigDetails (0, 2, 48000.0, 512);
         p->prepareToPlay (48000.0, 512);
@@ -439,7 +442,7 @@ TEST_CASE ("The editor's taps read the sound without changing it", "[processor][
     CHECK (identical);
     CHECK (b.getInstrument().getInputScope().pull (chunk.data(), 8192) == 0);   // detached: nothing came
 
-    // the tap carries the sources' mix before the 300 Hz low-pass: far more top end than the output
+    // the tap carries the sources' mix before the 300 Hz high cut: far more top end than the output
     REQUIRE (tapped.size() > 3 * 48000);
     const auto brightness = [] (const std::vector<float>& x)
     {

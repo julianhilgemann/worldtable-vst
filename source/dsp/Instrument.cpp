@@ -60,7 +60,6 @@ void Instrument::prepare (double rate, int maximumBlockSize)
     skySound.setCompanion (&front);
     lastPlay = controls.play;
 
-    drive.prepare (sampleRate);
     phaser.prepare (sampleRate);
     chorus.prepare (sampleRate);
     delay.prepare (sampleRate);
@@ -88,7 +87,7 @@ void Instrument::prepare (double rate, int maximumBlockSize)
     telemetry.breath.store (0.0f);
     telemetry.lowNote.store (-1);
     telemetry.lowLevel.store (0.0f);
-    telemetry.filterHz.store (controls.fltCutoff);
+    telemetry.eqCutHz.store (front.eq().cutHz());
     telemetry.playMix.store (controls.play ? 1.0f : 0.0f);
     telemetry.phaserPhase.store (phaser.lfoPhase());
 
@@ -144,7 +143,6 @@ void Instrument::readTarget (Controls& c) const noexcept
     c.space = param (p.macro_space, 0.5f);
     c.driftMacro = param (p.macro_drift, 0.5f);
 
-    c.drive = param (p.drive, 0.15f);
     c.phRate = param (p.ph_rate, 0.05f);
     c.phDepth = param (p.ph_depth, 0.6f);
     c.phFeedback = param (p.ph_feedback, 0.3f);
@@ -191,10 +189,15 @@ void Instrument::readTarget (Controls& c) const noexcept
     c.bands.shift[0] = paramInt (p.red_shift, 0);
     c.bands.shift[1] = paramInt (p.green_shift, 0);
     c.bands.shift[2] = paramInt (p.violet_shift, 0);
-    c.fltType = paramInt (p.flt_type, 0);
-    c.fltCutoff = param (p.flt_cutoff, 20000.0f);
-    c.fltReso = param (p.flt_reso, 0.1f);
-    c.fltSky = param (p.flt_sky, 0.3f);
+
+    // the EQ (T3.9): the defaults are Eq::Settings' (a test keeps parameters.yaml in step)
+    const Eq::Settings eq;
+    const auto band = [&eq] (int b) -> const Eq::Band& { return eq.bands[static_cast<size_t> (b)]; };
+    c.eq.bands[0] = { param (p.eq1_freq, band (0).hz), param (p.eq1_gain, 0.0f), Eq::kShelfQ, param (p.eq1_drive, band (0).drive) };
+    c.eq.bands[1] = { param (p.eq2_freq, band (1).hz), param (p.eq2_gain, 0.0f), param (p.eq2_q, band (1).q), param (p.eq2_drive, band (1).drive) };
+    c.eq.bands[2] = { param (p.eq3_freq, band (2).hz), param (p.eq3_gain, 0.0f), param (p.eq3_q, band (2).q), param (p.eq3_drive, band (2).drive) };
+    c.eq.bands[3] = { param (p.eq4_freq, band (3).hz), 0.0f, Eq::kCutQ, param (p.eq4_drive, band (3).drive) };
+    c.eqSky = param (p.eq_sky, 0.3f);
 }
 
 void Instrument::glideControls (const Controls& t, int numSamples) noexcept
@@ -219,7 +222,6 @@ void Instrument::glideControls (const Controls& t, int numSamples) noexcept
     glide (controls.space, t.space);
     glide (controls.driftMacro, t.driftMacro);
 
-    glide (controls.drive, t.drive);
     glide (controls.phRate, t.phRate);
     glide (controls.phDepth, t.phDepth);
     glide (controls.phFeedback, t.phFeedback);
@@ -247,15 +249,6 @@ void Instrument::glideControls (const Controls& t, int numSamples) noexcept
     glide (controls.playDrone, t.playDrone);
     glide (controls.lowLevel, t.lowLevel);
     glide (controls.lowDecay, t.lowDecay);
-    glide (controls.fltReso, t.fltReso);
-    glide (controls.fltSky, t.fltSky);
-    // the cutoff glides in octaves (the filter glides again per sample); at the target it stays
-    // exactly there, so a still knob is the same at every block size
-    {
-        const float from = std::log2 (std::max (1.0f, controls.fltCutoff));
-        const float to = std::log2 (std::max (1.0f, t.fltCutoff));
-        controls.fltCutoff = std::abs (to - from) < 1.0e-5f ? t.fltCutoff : std::exp2 (from + (to - from) * k);
-    }
 
     // Chord controls snap: Harmony turns a change into a crossfaded chord change.
     controls.key = t.key;
@@ -266,9 +259,12 @@ void Instrument::glideControls (const Controls& t, int numSamples) noexcept
     controls.bands = t.bands;   // SkySound waits until they are still, then crossfades (T3.8)
     controls.phStages = t.phStages;
     controls.dlyPingPong = t.dlyPingPong;
-    // modes and choices snap: Sources glides the mode, the filter crossfades its type
+    // modes snap: Sources glides the mode
     controls.play = t.play;
-    controls.fltType = t.fltType;
+    // the EQ snaps here and glides per sample itself (frequencies in log, τ 20 ms): a move then
+    // lands on the same samples whatever the host's block size (T3.9)
+    controls.eq = t.eq;
+    controls.eqSky = t.eqSky;
 }
 
 SkySound::Settings Instrument::settingsFrom (const Controls& c) const noexcept
@@ -314,10 +310,8 @@ Sources::Settings Instrument::sourcesFrom (const Controls& c) const noexcept
     s.driftCents = sky.driftCents;
     s.lowLevel = c.lowLevel;
     s.low.t60 = c.lowDecay;
-    s.filter.type = c.fltType;
-    s.filter.cutoffHz = c.fltCutoff;
-    s.filter.resonance = c.fltReso;
-    s.filterSky = c.fltSky;
+    s.eq = c.eq;
+    s.eqSky = c.eqSky;
     return s;
 }
 
@@ -348,8 +342,6 @@ void Instrument::applyControls() noexcept
     if (controls.scale != lastScale)          { h.setScale (static_cast<Scale> (std::clamp (controls.scale, 0, kNumScales - 1))); lastScale = controls.scale; }
     if (controls.shape != lastShape)          { h.setChordIndex (controls.shape); lastShape = controls.shape; }
     if (controls.transpose != lastTranspose)  { h.setTranspose (controls.transpose); lastTranspose = controls.transpose; }
-
-    drive.setDrive (controls.drive);
 
     Phaser::Settings ps;
     ps.rateHz = controls.phRate;
@@ -613,11 +605,6 @@ void Instrument::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuff
         skySound.process (runtime, left, right, n);
     }
 
-    for (int i = 0; i < n; ++i)
-    {
-        left[i] = drive.process (left[i]);
-        right[i] = drive.process (right[i]);
-    }
     phaser.process (left, right, n);
     chorus.process (left, right, n);
     delay.process (left, right, n);
@@ -646,7 +633,7 @@ void Instrument::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuff
     telemetry.breath.store (static_cast<float> (skySound.breathCycle()));
     telemetry.lowNote.store (front.lowResonator().note());
     telemetry.lowLevel.store (static_cast<float> (front.lowResonator().outputGain()));
-    telemetry.filterHz.store (front.filter().currentHz());
+    telemetry.eqCutHz.store (front.eq().cutHz());
     telemetry.playMix.store (static_cast<float> (front.playMix()));
     telemetry.phaserPhase.store (phaser.lfoPhase());
     scope.push (left, right, n);

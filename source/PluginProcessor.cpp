@@ -43,7 +43,10 @@ juce::ValueTree PluginProcessor::migrateState (juce::ValueTree state)
     // so nothing has to be rewritten; unknown IDs simply don't bind.
     // v2 → v3 (T3.8): register_semis, spread and low_octave gave way to the band edges, tones and
     // shifts. The old three no longer bind; the new parameters are absent from a v2 state, so they
-    // load at their defaults (the default bands). Future upgrades go here.
+    // load at their defaults (the default bands).
+    // v3 → v4 (T3.9): flt_type, flt_cutoff, flt_reso, flt_sky and drive gave way to the EQ (eq1_freq
+    // … eq_sky). The old five no longer bind; the EQ's parameters are absent from a v3 state, so it
+    // loads flat with the cut open and the default drives. Future upgrades go here.
     state.setProperty (kStateVersionId, kStateVersion, nullptr);
     return state;
 }

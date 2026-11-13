@@ -138,7 +138,7 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
 const char* const layoutProbe = R"JS(JSON.stringify((function () {
   var out = { sizes: [], canvas: [], more: [], moreCount: 0, moreParams: 0 };
   // module → [width, height] at the design size (CSS px, before the stage's zoom)
-  var SIZE = { mag: [1110, 92], sky: [213, 92], resonators: [435, 264], tone: [435, 177], 'dome-wrap': [448, 448],
+  var SIZE = { mag: [1110, 92], sky: [213, 92], resonators: [435, 264], eq: [435, 177], 'dome-wrap': [448, 448],
                harmony: [433, 448], phaser: [214, 260], chorus: [214, 260], macros: [448, 260], delay: [146, 260],
                reverb: [175, 260], output: [98, 260], topbar: [1350, 44], hintbar: [1350, 28] };
   Object.keys(SIZE).forEach(function (id) {

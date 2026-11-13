@@ -131,7 +131,7 @@
   if (hash.has("more") && more[hash.get("more")]) more[hash.get("more")].set(true);
   if (hash.has("bands")) more.resonators.set(true);
   if (hash.has("details")) details.set(true);
-  // mock only, for review screenshots: #set=play:1,flt_cutoff:800
+  // mock only, for review screenshots: #set=play:1,eq4_freq:800
   if (WT.isMock && hash.has("set"))
     for (const kv of hash.get("set").split(",")) {
       const [k, v] = kv.split(":");
@@ -154,8 +154,7 @@
   const layers = UI.LayersView($("cv-layers"));
   const keys = UI.KeyboardView($("cv-keys"));
   const fx = {
-    filter: UI.FilterView($("cv-filter")),
-    drive: UI.DriveView($("cv-drive")), phaser: UI.PhaserView($("cv-phaser")), chorus: UI.ChorusView($("cv-chorus")),
+    phaser: UI.PhaserView($("cv-phaser")), chorus: UI.ChorusView($("cv-chorus")),
     delay: UI.DelayView($("cv-delay")), reverb: UI.ReverbView($("cv-reverb")), output: UI.OutputView($("cv-output")),
   };
   const hmeter = UI.HeaderMeter($("cv-hmeter"));
@@ -494,6 +493,8 @@
       const db = 20 * Math.log10(tel.autoGain);
       setHtml("out-note", `auto ${num(signed(db, 1), 4, "span")} dB`);
     }
+    if (tel.eqCutHz)   // T3.9: the EQ's high cut now, after the sky
+      setHtml("eq-note", tel.eqCutHz >= 19980 ? "cut open" : `cut ${num(UI.format("eq4_freq", tel.eqCutHz), 8, "span")}`);
   });
 
   // ---------------------------------------------------------------- render loop
@@ -541,9 +542,6 @@
     }
     keys.draw(litKeys(tel));
     {
-      const peak = Math.max(tel.peakL || 0, tel.peakR || 0);
-      fx.filter.draw({ type: Math.round(P("flt_type")), hz: tel.filterHz || P("flt_cutoff"), base: P("flt_cutoff"), reso: P("flt_reso"), sky: P("flt_sky") }, tel.spectrum);
-      fx.drive.draw(P("drive"), peak);
       fx.phaser.draw(t, { rate: P("ph_rate"), depth: P("ph_depth"), fb: P("ph_feedback"), stages: P("ph_stages"), mix: P("ph_mix") }, tel.spectrum);
       fx.chorus.draw(t, { rate: P("ch_rate"), depth: P("ch_depth"), mix: P("ch_mix") });
       fx.delay.draw({ time: P("dly_time"), fb: P("dly_fb"), tone: P("dly_tone"), mix: P("dly_mix"), ping: P("dly_pingpong") });

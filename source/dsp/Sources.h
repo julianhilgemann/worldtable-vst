@@ -3,7 +3,7 @@
 #include "LowResonator.h"
 #include "PlayVoices.h"
 #include "SkySound.h"
-#include "fx/Filter.h"
+#include "fx/Eq.h"
 
 #include <cstdint>
 
@@ -12,17 +12,17 @@ namespace worldtable::dsp
 
 class ScopeFifo;   // dsp/Instrument.h
 
-/** Everything that sounds beside the curtain, and the filter after it (T3.7, spec/05):
+/** Everything that sounds beside the curtain, and the EQ after it (T3.7, T3.9, spec/05):
 
     ```
     SkySound's bank × drone gain ─┐
-    PlayVoices (Play mode) ───────┼─► Filter ─► (Drive … in dsp::Instrument)
+    PlayVoices (Play mode) ───────┼─► Eq (four bands, drive per band) ─► (Phaser … in dsp::Instrument)
     LowResonator ─────────────────┘
     ```
     It is SkySound's companion, so it runs on the sky's clock: per tick it reads the curtain (pan,
     presence, displacement, emission) for the played notes, the bass note for the low resonator
-    and the activity for the filter; per tick segment it mixes and filters in place. That keeps
-    Play mode and the filter as block-size independent as the curtain (rule 5).
+    and the activity for the EQ's high cut; per tick segment it mixes and equalises in place. That
+    keeps Play mode and the EQ as block-size independent as the curtain (rule 5).
 
     Mode: `play` glides a mix from drone to Play over kModeSeconds (rule 4). The drone gain goes to
     `droneUnder` in Play mode; the low resonator follows the chord root (drone) or the lowest held
@@ -34,8 +34,8 @@ class Sources final : public SkySound::Companion
 {
 public:
     static constexpr double kModeSeconds = 2.0;          ///< drone ↔ Play
-    static constexpr double kSkySlewSeconds = 2.0;       ///< the activity the filter and bow follow
-    static constexpr double kFilterSkyOctaves = 3.0;     ///< at Sky 1 and activity 1
+    static constexpr double kSkySlewSeconds = 2.0;       ///< the activity the high cut and bow follow
+    static constexpr double kEqSkyOctaves = 3.0;         ///< the cut opens by this at Sky 1 and activity 1
     static constexpr double kLowDroneCrossfade = 4.0;    ///< s, to a new chord root
     static constexpr double kBowPerBed = 2.7;            ///< a held note is bowed harder than the bed
     static constexpr double kLowBowPerBed = 1.4;         ///< the low under held notes (T3.7 renders)
@@ -51,15 +51,15 @@ public:
         double detuneCents = 3.0, driftCents = 4.0;
         double lowLevel = 0.5;
         LowResonator::Settings low;
-        Filter::Settings filter;
-        double filterSky = 0.3;           ///< 0 … 1
+        Eq::Settings eq;
+        double eqSky = 0.3;               ///< 0 … 1: how far the activity opens the high cut
     };
 
     void prepare (double sampleRate, uint32_t seed, const Settings&) noexcept;
     void setSettings (const Settings&) noexcept;
 
     /** T6.12: where the sources' mix goes before the tone stage (the editor's input spectrum), or
-        nullptr. Read-only: a mono copy of what reaches the filter, lock-free and allocation-free. */
+        nullptr. Read-only: a mono copy of what reaches the EQ, lock-free and allocation-free. */
     void setInputTap (ScopeFifo* fifo) noexcept { inputTap = fifo; }
 
     /** The low band's floor before the first tick (after it, every tick reads SkySound's bands). */
@@ -79,7 +79,7 @@ public:
     //== State =========================================================================================
     const PlayVoices& playVoices() const noexcept  { return voices; }
     const LowResonator& lowResonator() const noexcept { return low; }
-    const Filter& filter() const noexcept          { return flt; }
+    const Eq& eq() const noexcept                  { return tone; }
     double playMix() const noexcept                { return mix; }      ///< 0 drone … 1 Play
     double droneGain() const noexcept              { return drone; }
     double skyActivity() const noexcept            { return activity; } ///< slewed
@@ -94,7 +94,7 @@ private:
 
     PlayVoices voices;
     LowResonator low;
-    Filter flt;
+    Eq tone;
     SkyNodes curtain;
 
     double mix = 0.0;                    ///< drone → Play, per tick

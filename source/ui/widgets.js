@@ -55,11 +55,12 @@
     ph_stages: (v) => v + " st.",
     lim_ceiling: (v) => v.toFixed(1) + " dB",
     master: (v) => (v <= -59.9 ? "−∞" : v.toFixed(1) + " dB"),
-    flt_cutoff: (v) => (v >= 19950 ? "open" : WT.fmt("flt_cutoff", v)),
-    flt_sky: (v) => (v < 0.005 ? "still" : "+" + (3 * v).toFixed(1) + " oct"),
+    eq4_freq: (v) => (v >= 19980 ? "open" : WT.fmt("eq4_freq", v)),   // the engine opens the cut from 19.98 kHz (Eq::isOpen)
+    eq_sky: (v) => (v < 0.005 ? "still" : "+" + (3 * v).toFixed(1) + " oct"),
     play_velocity: (v) => (v < 0.005 ? "fixed" : Math.round(v * 30) + " dB"),
     play_drone: (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " %"),
   };
+  for (const id of ["eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive"]) FORMAT[id] = (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " %");
   const NOTE_NAMES = ["C", "D♭", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
   const noteName = (n) => NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
   for (const id of ["band_floor", "band_x1", "band_x2", "band_x3", "band_ceiling"]) FORMAT[id] = (v) => noteName(Math.round(v));
@@ -72,12 +73,13 @@
   const WORDS = {
     macro_storm: NEUTRAL, macro_glow: NEUTRAL, macro_space: NEUTRAL, macro_drift: NEUTRAL, macro_breath: { off: 0 },
     progression: { hold: 0, "follow sky": 1, follow: 1 }, play_velocity: { fixed: 0 }, play_drone: { off: 0 },
-    flt_cutoff: { open: 20000 }, flt_sky: { still: 0 }, master: { "-∞": -60, "∞": -60, "-inf": -60, inf: -60 },
+    eq4_freq: { open: 20000 }, eq_sky: { still: 0 }, master: { "-∞": -60, "∞": -60, "-inf": -60, inf: -60 },
   };
+  for (const id of ["eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive"]) WORDS[id] = { off: 0 };
   const signedFrom = (n) => 0.5 + n / 200;
   const PARSE = {
     macro_storm: signedFrom, macro_glow: signedFrom, macro_space: signedFrom, macro_drift: signedFrom,
-    play_velocity: (n) => n / 30, flt_sky: (n) => n / 3,
+    play_velocity: (n) => n / 30, eq_sky: (n) => n / 3,
   };
   UI.parse = function (id, text) {
     const m = WT.META[id];
@@ -138,11 +140,20 @@
     macro_glow: "Glow: more violet and more shimmer.",
     macro_space: "Space: more or less room around the sound.",
     macro_drift: "Drift: towards worn tape, the pitch wanders further.",
-    flt_type: "The filter's shape: gentle or steep low-pass, band-pass, high-pass.",
-    flt_cutoff: "Where the filter cuts. The sky opens it further as it gets active.",
-    flt_reso: "Resonance: a ringing peak at the cutoff.",
-    flt_sky: "How far the sky's activity moves the cutoff, up to three octaves.",
-    drive: "Warm saturation before the effects: rounder, then grittier.",
+    eq1_freq: "Where the low shelf turns: everything below it is lifted or lowered.",
+    eq1_gain: "Lifts or lowers everything below the low shelf's corner.",
+    eq1_drive: "Saturates only the lows: warmer, then thicker. Quiet parts stay clean.",
+    eq2_freq: "The centre of the lower bell.",
+    eq2_gain: "Lifts or lowers the sound around the lower bell's centre.",
+    eq2_q: "The lower bell's width: low is broad, high is narrow.",
+    eq2_drive: "Saturates only what the lower bell holds.",
+    eq3_freq: "The centre of the upper bell.",
+    eq3_gain: "Lifts or lowers the sound around the upper bell's centre.",
+    eq3_q: "The upper bell's width: low is broad, high is narrow.",
+    eq3_drive: "Saturates only what the upper bell holds.",
+    eq4_freq: "Cuts the highs above this, 12 dB per octave. At the top it is open.",
+    eq4_drive: "Saturates only the octave just under the cut.",
+    eq_sky: "How far the sky's activity opens the cut, up to three octaves.",
     ph_rate: "How fast the phaser's notches travel.",
     ph_depth: "How far the phaser's notches sweep.",
     ph_feedback: "Feedback: sharper, more resonant notches.",

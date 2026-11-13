@@ -481,14 +481,14 @@ juce::var PluginEditor::makeTelemetry()
         low->setProperty ("level", round3 (t.lowLevel.load()));
         o->setProperty ("low", juce::var (low));
     }
-    o->setProperty ("filterHz", std::round (static_cast<double> (t.filterHz.load())));
+    o->setProperty ("eqCutHz", std::round (static_cast<double> (t.eqCutHz.load())));   // T3.9: 20000 = open
+    o->setProperty ("sampleRate", wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0);   // for the EQ's curve (T6.14) and the phaser's (T6.12)
 
     o->setProperty ("spectrum", outAnalyzer.toVar());
     // T6.12: the sources' spectrum before the tone stage (same bands) and the phaser's LFO phase,
-    // for the phaser picture; the sample rate for its exact response
+    // for the phaser picture (which also reads sampleRate, for its exact response)
     o->setProperty ("spectrumIn", inAnalyzer.toVar());
     o->setProperty ("phaser", round3 (t.phaserPhase.load()));
-    o->setProperty ("sampleRate", wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0);
 
     return juce::var (o);
 }
