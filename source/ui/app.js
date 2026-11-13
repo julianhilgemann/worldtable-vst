@@ -24,7 +24,8 @@
   // ---------------------------------------------------------------- controls
   const knobs = (UI.knobs = {});
   for (const n of document.querySelectorAll("[data-knob]")) {
-    const k = UI.Knob(n, n.dataset.knob, n.dataset.label || "", { size: n.dataset.size, color: n.dataset.color });
+    // data-view: a second view of a parameter bound elsewhere (T6.11's band row Level)
+    const k = UI.Knob(n, n.dataset.knob, n.dataset.label || "", { size: n.dataset.size, color: n.dataset.color, view: n.hasAttribute("data-view"), hint: n.dataset.hint });
     if (k) knobs[n.dataset.knob] = k;
   }
   for (const n of document.querySelectorAll("[data-seg]")) UI.Seg(n, n.dataset.seg, n.dataset.labels ? n.dataset.labels.split(",") : null);
@@ -51,6 +52,7 @@
   $("stage").addEventListener("pointerleave", () => showHint(document.activeElement));
   document.addEventListener("focusin", (e) => showHint(e.target));
   showHint(null);
+  UI.showHint = showHint;   // for pictures whose hint follows the pointer (T6.11)
 
   // ---------------------------------------------------------------- macro rings (T6.7)
   // The macros are hard-wired until T4.2: each scales what it moves around its neutral 0.5
@@ -159,7 +161,7 @@
 
   // ---------------------------------------------------------------- views
   const strip = UI.DayStripView($("cv-strip"));
-  const layers = UI.LayersView($("cv-layers"));
+  const res = (UI.res = UI.ResonatorDisplay($("resonators")));   // T6.11
   const keys = UI.KeyboardView($("cv-keys"));
   const fx = {
     // T6.12: the pictures are the effects' controls; the phaser's outline is shaped by the tone stage
@@ -632,7 +634,7 @@
     // the macros' rings on the knobs they move: Breath's dot swells with the sound
     updateRings(tel.breath || 0);
 
-    layers.draw([P("low_level"), P("red_level"), P("green_level"), P("violet_level")], [P("low_decay"), P("red_decay"), P("green_decay"), P("violet_decay")]);
+    res.draw(tel);
     const low = tel.low && tel.low.note >= 0 ? tel.low.note : -1;
     if (low !== S.lowShown) {
       S.lowShown = low;
