@@ -1,7 +1,8 @@
 # 00 — Vision
 
-Source of truth for direction: the owner's project brief (Claude Docs,
-"Worldtable — project brief", sessions 1–7). Decisions are recorded in
+Source of truth for direction: this repo's `spec/` (owner, 2026-11-13: "This
+repo leads now"). The vision below came from the owner's project brief (Claude
+Docs, "Worldtable — project brief", sessions 1–7). Decisions are recorded in
 `spec/decisions/` (ADR-0002, -0005, -0006, -0008).
 
 ## One sentence

@@ -2,8 +2,9 @@
 
 Read `spec/00-vision.md` → `spec/03-architecture.md` → the spec file your task
 names → the task file. Never start coding without a task file in `spec/tasks/`.
-Direction comes from the owner's project brief (Claude Docs); `spec/` is its
-copy in the repo. Where the two disagree, flag it to the owner.
+This repo leads (owner, 2026-11-13): `spec/` is the source of truth for
+direction. The owner's phone-side project brief (Claude Docs) is where the
+early vision came from; do not wait for it or sync against it unless asked.
 
 ## Hard rules (non-negotiable)
 
