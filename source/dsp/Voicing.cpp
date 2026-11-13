@@ -123,6 +123,24 @@ NoteRange layerRange (Layer layer, double registerSemitones, double spread) noex
     return { roundHalfUp (centre + registerSemitones - h), roundHalfUp (centre + registerSemitones + h) };
 }
 
+//== Bands (T3.8): stubs, implemented in the next commit ===========================================
+int BandEdges::edge (int i) const noexcept
+{
+    (void) i;
+    return 0;
+}
+
+BandEdges clampEdges (const BandEdges& e) noexcept { return e; }
+
+NoteRange bandRange (const BandEdges&, Layer) noexcept { return { 0, 0 }; }
+
+int lowNote (int pitchClass, int) noexcept { return pitchClass; }
+
+Slots bandSlots (const Chord&, Tones, int) noexcept { return {}; }
+
+Bands clampBands (const Bands& b) noexcept { return b; }
+
+//==================================================================================================
 int nearestNote (int pc, double near, int lo, int hi) noexcept
 {
     // within ± 6 semitones of near; JavaScript's % is fmod. The sum is exactly an integer.
