@@ -36,6 +36,10 @@
       dh: Array.from(trace.dh), dhModel: Array.from(trace.dhModel), coupling: Array.from(trace.coupling),
       energy: Array.from(trace.energy), threshold: Array.from(trace.threshold), phase: Array.from(trace.phase),
       onsets: trace.events.filter((e) => e.type === "onset").map((e) => ({ utc: e.t / 1000, kind: e.kind, strength: e.strength })),
+      // T6.10: the keogram's inputs, two decimals as the editor sends them
+      ...Object.fromEntries(["eqLat", "poleLat", "activity", "gain", "unloading", "stormRed", "mlt", "kp"]
+        .map((k) => [k, Array.from(trace[k], (v) => Math.round(v * 100) / 100)])),
+      stationMlat: Math.round(observer.mlat * 100) / 100, dayShift: M.DEFAULTS.dayShiftDeg, arcPosition: M.DEFAULTS.arcPosition,
     });
 
     // ---- harmony: the sketch's progression, voiced like SkySound (5 slots per layer) in the bands
@@ -66,7 +70,7 @@
       });
     }
     voice(chord);
-    // T6.6: a click on the magnetogram seeks, as SkyRuntime::seek does in the plug-in
+    // T6.6: a click on the day strip seeks (T6.10: a drag scrubs), as SkyRuntime::seek does in the plug-in
     window.WT_MOCK_NATIVE = { seek(utc) {
       const before = model.snapshot().phase;
       model.seek(utc * 1000);
@@ -137,7 +141,10 @@
       return { voices: live, low: lowNoteOf(cur.notes[0]), chord: { play: true, held: heldNotes.length, label: cur.label, roman: "", notes: lay, voices: lay[0].length, changes } };
     }
 
+    let phaserPhase = 0, lastR = 0;   // T6.12: the phaser's LFO, as fx/Phaser.h runs it (only while it is on)
     function telemetry(s, newOnsets, r) {
+      if (WT.get("ph_mix") > 0) phaserPhase = (phaserPhase + WT.get("ph_rate") * Math.max(0, r - lastR)) % 1;
+      lastR = r;
       const nd = s.nodes, n = s.nodeCount;
       const act = s.activity, breath = 0.5 - 0.5 * Math.cos(2 * Math.PI * (5 / 60) * r);
       const level = 0.14 + 0.22 * act + 0.05 * Math.sin(r * 0.7);
@@ -151,6 +158,7 @@
         peakL: level * (1 + 0.04 * Math.sin(r * 3.1)), peakR: level * (1 + 0.04 * Math.cos(r * 2.7)),
         gr: level > 0.3 ? 0.96 : 1, autoGain: 1.4, verb: 0.18 + 0.14 * act, breath,
         spectrum: spectrumFor(notes, act),
+        spectrumIn: spectrumFor(notes, act), phaser: Math.round(phaserPhase * 1000) / 1000,   // T6.12: before the EQ; the LFO
         sky: {
           day: DAY, utc: s.modelTimeUtc / 1000, speed: SPEED, phase: M.PHASE_NAMES[s.phase], progress: s.phaseProgress,
           kp: s.kp, bz: s.bz, wind: s.speed, dh: s.dh, dhModel: s.dhModel, energy: s.energy, activity: act,

@@ -34,6 +34,7 @@ struct Telemetry
     std::atomic<float> lowLevel { 0.0f };      ///< its output gain
     std::atomic<float> eqCutHz { 20000.0f };   ///< the EQ's high cut now (after the sky), 20000 = open (T3.9)
     std::atomic<float> playMix { 0.0f };       ///< 0 drone … 1 Play (gliding)
+    std::atomic<float> phaserPhase { 0.0f };   ///< the phaser's left LFO phase 0 … 1, per block (T6.12)
 };
 
 /** The played notes for the editor (T3.7): every sounding voice, written by the audio thread each
@@ -48,7 +49,9 @@ struct PlayState
     int count = 0;
 };
 
-/** Single-producer/single-consumer ring of the post-limiter mono mix for the analyzer. */
+/** Single-producer/single-consumer ring of a mono mix for the editor's analyzer: the post-limiter
+    output (`getScope`) and, since T6.12, the sources before the tone stage (`getInputScope`). When
+    nobody reads, it fills and push() drops what does not fit. */
 class ScopeFifo
 {
 public:
@@ -140,6 +143,7 @@ public:
     //== State ==================================================================================
     Telemetry& getTelemetry() noexcept { return telemetry; }
     ScopeFifo& getScope() noexcept     { return scope; }
+    ScopeFifo& getInputScope() noexcept { return inputScope; }   ///< before the tone stage (T6.12)
 
     /** The editor calls this; true when newer played notes arrived (single reader). */
     bool readPlay (PlayState& out) noexcept
@@ -237,7 +241,7 @@ private:
     bool lastPlay = false, autoGainHeld = false;
 
     Telemetry telemetry;
-    ScopeFifo scope;
+    ScopeFifo scope, inputScope;
     sky::TripleBuffer<ChordState> chordBuffer;
     bool chordPublished = false;
     uint32_t publishedChanges = 0;

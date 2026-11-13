@@ -36,9 +36,10 @@
 
     <!-- ============================================================ the day: strip and sky -->
     <section id="dayrow">
-      <!-- the day strip: today's magnetogram until T6.10 makes it a keogram -->
-      <section id="mag" class="frame" aria-label="The day">
-        <canvas id="cv-mag" data-hint="The recorded day: the magnetometer, stored energy, the phases. Click to jump there."></canvas>
+      <!-- the day strip (T6.10): a keogram over the magnetometer; a slider for the Journey -->
+      <section id="strip" class="frame" tabindex="0" role="slider" aria-label="The day"
+               data-hint="The whole day: the sky's light north to south, the field under it. Click to jump.">
+        <canvas id="cv-strip"></canvas>
       </section>
       <section id="sky" class="frame" aria-label="Sky">
         <div class="sky-ttl">
@@ -178,16 +179,11 @@
     <section id="lower">
       <div class="grp" id="grp-left">
         <div class="module frame" id="phaser">
-          <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="phaser-more" data-hint="More phaser controls: Depth and Stages.">Phaser</button>
-            <div class="more frame" id="phaser-more" aria-label="Phaser, more" hidden>
-              <div class="knobs">
-                <div data-knob="ph_depth" data-label="Depth"></div>
-                <div data-knob="ph_stages" data-label="Stages"></div>
-              </div>
-            </div>
-          </div>
-          <canvas class="view" id="cv-phaser" data-hint="The phaser's notches over the sound's spectrum, sweeping at its rate."></canvas>
+          <!-- T6.12: pictures are controls. A parameter set in a picture has its focusable proxy on the
+               handle ([data-handle], placed by views.js); the picture's drag and the proxy's keys set it -->
+          <div class="head"><span class="cap">Phaser</span><span class="spacer"></span><button type="button" class="chip" data-cycle="ph_stages" data-values="2,4,6,8"></button></div>
+          <canvas class="view" id="cv-phaser" data-hint="Bright: the sound after the phaser; outline: before. Drag: sideways sweep, up feedback."></canvas>
+          <div data-handle="ph_depth" data-label="Sweep depth"></div>
           <div class="knobs">
             <div data-knob="ph_rate" data-label="Rate"></div>
             <div data-knob="ph_feedback" data-label="Feed"></div>
@@ -196,7 +192,7 @@
         </div>
         <div class="module frame" id="chorus">
           <div class="head"><span class="cap">Chorus</span></div>
-          <canvas class="view" id="cv-chorus" data-hint="The three chorus voices swinging around the dry sound."></canvas>
+          <canvas class="view" id="cv-chorus" data-hint="The three chorus voices swinging around the dry sound. Drag sideways for their speed."></canvas>
           <div class="knobs">
             <div data-knob="ch_rate" data-label="Rate"></div>
             <div data-knob="ch_depth" data-label="Depth"></div>
@@ -220,16 +216,12 @@
       <div class="grp" id="grp-right">
         <div class="module frame" id="delay">
           <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="delay-more" data-hint="More delay controls: Time and Feedback.">Delay</button>
-            <div class="more frame" id="delay-more" aria-label="Delay, more" hidden>
-              <div class="knobs">
-                <div data-knob="dly_time" data-label="Time"></div>
-                <div data-knob="dly_fb" data-label="Feed"></div>
-              </div>
-            </div>
+            <span class="cap">Delay</span>
             <div data-toggle="dly_pingpong" data-label="Ping-pong"></div>
           </div>
-          <canvas class="view" id="cv-delay" data-hint="The echoes, left above and right below, fading with the feedback."></canvas>
+          <canvas class="view" id="cv-delay" data-hint="The echoes, left above, right below. Drag the handle: sideways time, up and down feedback."></canvas>
+          <div data-handle="dly_time" data-label="Delay time"></div>
+          <div data-handle="dly_fb" data-label="Delay feedback"></div>
           <div class="knobs">
             <div data-knob="dly_tone" data-label="Tone"></div>
             <div data-knob="dly_mix" data-label="Mix"></div>
@@ -240,15 +232,15 @@
             <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="reverb-more" data-hint="More reverb controls: Decay, Damping, Pre-delay and Modulation.">Reverb</button>
             <div class="more frame" id="reverb-more" aria-label="Reverb, more" hidden>
               <div class="knobs">
-                <div data-knob="rev_decay" data-label="Decay"></div>
                 <div data-knob="rev_damp" data-label="Damp"></div>
                 <div data-knob="rev_predelay" data-label="Pre"></div>
                 <div data-knob="rev_mod" data-label="Mod"></div>
               </div>
             </div>
-            <span class="note" id="verb-note" data-hint="How long the tail rings on: Decay, in the More popover."></span>
+            <span class="note" id="verb-note" data-hint="How long the tail rings on. Drag the handle in the picture to change it."></span>
           </div>
-          <canvas class="view" id="cv-reverb" data-hint="The reverb's tail; the brighter line is its damped top, the dots the shimmer."></canvas>
+          <canvas class="view" id="cv-reverb" data-hint="The reverb's tail over time, the shimmer inside it. Drag sideways for a longer tail."></canvas>
+          <div data-handle="rev_decay" data-label="Reverb decay"></div>
           <div class="knobs">
             <div data-knob="rev_size" data-label="Size"></div>
             <div data-knob="rev_shimmer" data-label="Shimmer"></div>
@@ -257,15 +249,15 @@
         </div>
         <div class="module frame" id="output">
           <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="output-more" data-hint="More output controls: the limiter's Ceiling and Release.">Output</button>
+            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="output-more" data-hint="More output controls: the limiter's Release.">Output</button>
             <div class="more frame r" id="output-more" aria-label="Output, more" hidden>
               <div class="knobs">
-                <div data-knob="lim_ceiling" data-label="Ceil"></div>
                 <div data-knob="lim_release" data-label="Rel"></div>
               </div>
             </div>
           </div>
-          <canvas class="view" id="cv-output" data-hint="Output meters. The white line is the limiter's ceiling; the thin bar, how hard it works."></canvas>
+          <canvas class="view" id="cv-output" data-hint="Output meters. Drag the white line, the limiter's ceiling. The bar: how hard it works."></canvas>
+          <div data-handle="lim_ceiling" data-label="Ceiling"></div>
           <div class="knobs">
             <div data-knob="master" data-label="Out"></div>
           </div>

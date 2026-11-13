@@ -30,6 +30,14 @@
   for (const n of document.querySelectorAll("[data-seg]")) UI.Seg(n, n.dataset.seg, n.dataset.labels ? n.dataset.labels.split(",") : null);
   for (const n of document.querySelectorAll("[data-keys]")) UI.Keys(n, n.dataset.keys);
   for (const n of document.querySelectorAll("[data-toggle]")) UI.Toggle(n, n.dataset.toggle, n.dataset.label || "");
+  // T6.12: values set inside a picture have a focusable proxy on their handle; the phaser's Stages chip
+  const handles = (UI.handles = {});
+  for (const n of document.querySelectorAll("[data-handle]")) {
+    const h = UI.Handle(n, n.dataset.handle, n.dataset.label || "");
+    if (h) handles[n.dataset.handle] = h;
+  }
+  for (const n of document.querySelectorAll("[data-cycle]"))
+    UI.Cycle(n, n.dataset.cycle, n.dataset.values.split(",").map(Number), (v) => `<b>${v}</b> stages`);
 
   // ---------------------------------------------------------------- the hint line (spec/09 §2 rule 5)
   // One sentence about what the thing under the pointer (or, from the keyboard, in focus) does.
@@ -150,31 +158,111 @@
   rescale();
 
   // ---------------------------------------------------------------- views
-  const mag = UI.MagnetogramView($("cv-mag"));
+  const strip = UI.DayStripView($("cv-strip"));
   const layers = UI.LayersView($("cv-layers"));
   const keys = UI.KeyboardView($("cv-keys"));
   const eq = (UI.eq = UI.EqView($("cv-eq"), $("eq-well"), $("eq-say")));   // T6.14; UI.eq for the UI check
   const fx = {
-    phaser: UI.PhaserView($("cv-phaser")), chorus: UI.ChorusView($("cv-chorus")),
-    delay: UI.DelayView($("cv-delay")), reverb: UI.ReverbView($("cv-reverb")), output: UI.OutputView($("cv-output")),
+    // T6.12: the pictures are the effects' controls; the phaser's outline is shaped by the tone stage
+    phaser: UI.PhaserView($("cv-phaser"), { handles, tone: (f, tel) => UI.eqDb(f, UI.eqParams(tel.eqCutHz), tel.sampleRate || 48000) }),
+    chorus: UI.ChorusView($("cv-chorus")),
+    delay: UI.DelayView($("cv-delay"), { handles }), reverb: UI.ReverbView($("cv-reverb"), { handles }), output: UI.OutputView($("cv-output"), { handles }),
   };
   const hmeter = UI.HeaderMeter($("cv-hmeter"));
 
-  // T6.6: the magnetogram is the Journey's timeline: hover shows a moment, a click jumps there
+  // ---------------------------------------------------------------- the day strip (T6.10)
+  // The Journey's timeline (T6.6): hover reads the moment into the hint line, a click jumps there, a
+  // drag scrubs (at most 5 seeks a second, and one on release), and from the keyboard it is a slider
+  // (arrows ±10 min, Shift ±1 h, PageUp/PageDown ±6 h, Home/End). Every seek takes T6.6's path: the
+  // sound follows without a jolt.
+  const stripBox = $("strip"), stripCv = $("cv-strip");
+  const scrub = { utc: null, holdUntil: 0, dragging: false, lastSeekAt: -1e9, lastSeekUtc: null, timer: 0 };
+  const playUtc = () => (S.tel.sky ? S.tel.sky.utc : S.day ? S.day.t0 : 0);
+  /** Where the playhead is drawn: the scrub's target until the sky has caught up with it. */
+  const shownUtc = () => (scrub.utc !== null && (scrub.dragging || performance.now() < scrub.holdUntil) ? scrub.utc : playUtc());
+  const SEEK_MS = 200;
+  function seekNow(utc) {
+    clearTimeout(scrub.timer);
+    scrub.timer = 0;
+    scrub.lastSeekAt = performance.now();
+    scrub.lastSeekUtc = utc;
+    scrub.holdUntil = scrub.lastSeekAt + 500;
+    WT.native("seek", utc);
+  }
+  /** Moves the playhead to `utc` at once; seeks there now, or as soon as 200 ms have passed since the
+   *  last seek (the latest target wins). `final` seeks at once unless that moment was the last seek. */
+  function scrubTo(utc, final) {
+    scrub.utc = utc;
+    scrub.holdUntil = Math.max(scrub.holdUntil, performance.now() + 500);
+    if (final) { if (utc !== scrub.lastSeekUtc || scrub.timer) seekNow(utc); return; }
+    const wait = SEEK_MS - (performance.now() - scrub.lastSeekAt);
+    if (wait <= 0) seekNow(utc);
+    else if (!scrub.timer) scrub.timer = setTimeout(() => seekNow(scrub.utc), wait);
+  }
+  let ariaShown = 0, ariaMinute = null;
+  /** The slider's value for assistive tech: the moment's sentence (at most 4× a second unless forced). */
+  function stripAria(utc, force) {
+    const t = performance.now(), m = Math.floor(utc / 60);
+    if ((!force && t - ariaShown < 250) || m === ariaMinute) return;
+    ariaShown = t;
+    ariaMinute = m;
+    stripBox.setAttribute("aria-valuenow", String(Math.round(utc)));
+    stripBox.setAttribute("aria-valuetext", strip.moment(utc));
+  }
   {
-    const cv = $("cv-mag");
-    const xOf = (e) => (e.clientX - cv.getBoundingClientRect().left) / UI.scale;
-    cv.addEventListener("pointermove", (e) => {
-      const x = xOf(e);
-      mag.setHover(x);
-      cv.style.cursor = mag.utcAt(x) === null ? "default" : "pointer";
+    const xOf = (e) => (e.clientX - stripCv.getBoundingClientRect().left) / UI.scale;
+    let drag = false, hoverMinute;
+    const hover = (e) => {
+      const x = xOf(e), utc = strip.utcAt(x);
+      strip.setHover(utc === null ? null : x);
+      stripCv.style.cursor = utc === null && !drag ? "default" : "pointer";
+      const m = utc === null ? null : Math.floor(utc / 60);
+      if (m !== hoverMinute) {
+        hoverMinute = m;
+        $("hint").textContent = utc === null ? stripBox.dataset.hint : `${strip.moment(utc)} Click to jump there.`;
+      }
+      return x;
+    };
+    stripCv.addEventListener("pointermove", (e) => {
+      const x = hover(e);
+      if (drag) scrubTo(strip.utcAt(x, true), false);
     });
-    cv.addEventListener("pointerleave", () => mag.setHover(null));
-    cv.addEventListener("click", (e) => {
-      const utc = mag.utcAt(xOf(e));
-      if (utc !== null) WT.native("seek", utc);
+    stripCv.addEventListener("pointerleave", () => { strip.setHover(null); hoverMinute = undefined; });
+    stripCv.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const utc = strip.utcAt(xOf(e));
+      if (utc === null) return;
+      e.preventDefault();
+      stripBox.focus({ preventScroll: true });
+      try { stripCv.setPointerCapture(e.pointerId); } catch (err) { /* a synthetic pointer (the UI check) */ }
+      drag = scrub.dragging = true;
+      scrubTo(utc, false);
+    });
+    const release = (e) => {
+      if (!drag) return;
+      drag = scrub.dragging = false;
+      const utc = strip.utcAt(xOf(e), true);
+      scrubTo(utc, true);
+      stripAria(utc, true);
+    };
+    stripCv.addEventListener("pointerup", release);
+    stripCv.addEventListener("pointercancel", release);
+    stripBox.addEventListener("keydown", (e) => {
+      const day = S.day;
+      if (!day || e.target !== stripBox) return;
+      const k = e.key, t0 = day.t0, last = t0 + day.phase.length * day.step - day.step;
+      const from = shownUtc(), step = e.shiftKey ? 3600 : 600;
+      const to = k === "ArrowRight" || k === "ArrowUp" ? from + step : k === "ArrowLeft" || k === "ArrowDown" ? from - step
+        : k === "PageUp" ? from + 6 * 3600 : k === "PageDown" ? from - 6 * 3600 : k === "Home" ? t0 : k === "End" ? last : null;
+      if (to === null) return;
+      e.preventDefault();
+      const utc = clamp(to, t0, last);
+      scrubTo(utc, false);
+      stripAria(utc, true);
+      $("hint").textContent = strip.moment(utc);
     });
   }
+  UI.dayStrip = { view: strip, shownUtc, scrubTo, scrub };   // for the UI check
 
   // ---------------------------------------------------------------- the dome
   const dome = new SKY.DomeRenderer($("dome"), $("dome-ov"), new SKY.Observer(), 1);
@@ -295,7 +383,10 @@
 
   WT.on("day", (day) => {
     S.day = day;
-    mag.setDay(day);
+    strip.setDay(day);
+    stripBox.setAttribute("aria-valuemin", String(day.t0));
+    stripBox.setAttribute("aria-valuemax", String(day.t0 + day.phase.length * day.step));
+    ariaMinute = null;
     dayEvents = day.onsets.map((o) => ({ utc: o.utc, say: "substorm onset, " + (KIND[o.kind] || o.kind) }));
     for (let i = 1; i < day.phase.length; i++)
       if (day.phase[i] !== day.phase[i - 1] && PHASES[day.phase[i]] !== "onset")
@@ -527,7 +618,11 @@
     if (t - last < (reduced ? 1 / 15 : 1 / 30) - 0.002) return;
     last = t;
 
-    if (tel.sky) mag.draw(tel.sky.utc);
+    if (tel.sky) {
+      const u = shownUtc();
+      strip.draw(u);
+      stripAria(u, false);
+    }
     hmeter.draw(tel.peakL || 0, tel.peakR || 0, P("lim_ceiling"));
 
     // the macros' rings on the knobs they move: Breath's dot swells with the sound
@@ -542,11 +637,11 @@
     keys.draw(litKeys(tel));
     eq.draw(tel);   // the cut now comes from tel.eqCutHz; T4.2 passes its modulated values as a second argument
     {
-      fx.phaser.draw(t, { rate: P("ph_rate"), depth: P("ph_depth"), fb: P("ph_feedback"), stages: P("ph_stages"), mix: P("ph_mix") }, tel.spectrum);
-      fx.chorus.draw(t, { rate: P("ch_rate"), depth: P("ch_depth"), mix: P("ch_mix") });
-      fx.delay.draw({ time: P("dly_time"), fb: P("dly_fb"), tone: P("dly_tone"), mix: P("dly_mix"), ping: P("dly_pingpong") });
-      fx.reverb.draw({ size: P("rev_size"), decay: P("rev_decay"), damp: P("rev_damp"), pre: P("rev_predelay"), shimmer: P("rev_shimmer"), mix: P("rev_mix") }, tel.verb || 0);
-      fx.output.draw(tel.peakL || 0, tel.peakR || 0, tel.gr || 1, P("lim_ceiling"));
+      fx.phaser.draw(tel);
+      fx.chorus.draw(tel);
+      fx.delay.draw(tel);
+      fx.reverb.draw(tel);
+      fx.output.draw(tel);
       setHtml("verb-note", `${num(P("rev_decay").toFixed(1), 4, "span")} s`);
     }
   }

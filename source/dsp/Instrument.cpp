@@ -56,6 +56,7 @@ void Instrument::prepare (double rate, int maximumBlockSize)
     skySound.prepare (sampleRate, numNodes, seed, settings, skySound.harmony().chord());
     front.prepare (sampleRate, seed, sourcesFrom (controls));
     front.setLowFloor (skySound.bands().edges.floor);
+    front.setInputTap (&inputScope);
     skySound.setCompanion (&front);
     lastPlay = controls.play;
 
@@ -88,6 +89,7 @@ void Instrument::prepare (double rate, int maximumBlockSize)
     telemetry.lowLevel.store (0.0f);
     telemetry.eqCutHz.store (front.eq().cutHz());
     telemetry.playMix.store (controls.play ? 1.0f : 0.0f);
+    telemetry.phaserPhase.store (phaser.lfoPhase());
 
     prepared = true;
     publishedPlay = ! controls.play;   // force the first publish
@@ -633,6 +635,7 @@ void Instrument::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuff
     telemetry.lowLevel.store (static_cast<float> (front.lowResonator().outputGain()));
     telemetry.eqCutHz.store (front.eq().cutHz());
     telemetry.playMix.store (static_cast<float> (front.playMix()));
+    telemetry.phaserPhase.store (phaser.lfoPhase());
     scope.push (left, right, n);
 
     publishChord();

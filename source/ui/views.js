@@ -1,7 +1,7 @@
 /* The instrument layer's live pictures (spec/06, T6.1). Each view redraws only when what it shows
  * has changed (or, for the moving ones, only while its tab is visible), and every change glides.
  * T6.7 (spec/09 §2 rule 2): red, green and violet only where a picture shows the bands (layers, the
- * keyboard strip) or the sky's own light (magnetogram); the effect pictures are drawn in ink.
+ * keyboard strip) or the sky's own light (the day strip's keogram); the effect pictures are drawn in ink.
  * Axis numbers are at least 10 px, words in pictures 11 px. */
 (function () {
   "use strict";
@@ -10,142 +10,205 @@
   const LAYERS = ["red", "green", "violet"];
   const now = () => performance.now() / 1000;
 
-  // ================================================================ magnetogram
-  const PHASE_FILL = ["rgba(138,150,173,0.22)", "rgba(143,123,255,0.55)", "rgba(92,242,160,0.95)", "rgba(92,242,160,0.38)"];
+  // ================================================================ the day strip: keogram over the magnetometer (T6.10)
+  /** The keogram's constants, tuned by eye in the mockup (spec/mockups/ui-v2.html `buildKeo`). The
+   *  picture is the dome's oval shader (dome.js `FS_OVAL`: the diffuse band, the red band, slant,
+   *  night, the day shift) along the station's north–south meridian, plus the arc the curtain draws
+   *  (green 115 km, red 250 km, violet 100 km). If FS_OVAL changes, change these with it; the
+   *  owner's eye tunes them here. */
+  const KEO = {
+    colS: 300,                       // one column per 5 minutes of the day
+    rows: 64,                        // zenith angle −90° (north) … +90° (south)
+    earthKm: 6371.2,
+    heightKm: { green: 115, red: 250, violet: 100 },
+    sigmaDeg: { green: 0.55, red: 1.0, violet: 0.55, perRow: 0.6 },   // the arc's width: max(σ, 0.6 × the row's step)
+    diffuse: { base: 0.008, activity: 0.035, unloading: 0.04, gain: 5 },   // FS_OVAL uDiffuse, × 5 for the strip
+    arcI: { base: 0.08, activity: 0.95, unloading: 0.8, green: 0.6 },
+    red: { storm: 0.055, quiet: 0.006, gain: 5, arc: 0.22, stormArc: 0.6 },  // FS_OVAL uRed, uQuietRed
+    violet: { base: 0.1, unloading: 0.9 },
+    unloadingMax: 1.5,
+    horizonDeg: 7,                   // fade the last 7° of elevation
+    tone: 1.7,                       // pixel = ground + fade · (1 − e^(−1.7 x))
+    ground: [0.02, 0.027, 0.051],    // the night sky, #05070d
+    // how each line's light lands in r, g, b (the mockup's mix, not the pure hues: the strip glows)
+    mix: { green: [0.36, 0.95, 0.63], red: [1.0, 0.42, 0.42], violet: [0.56, 0.48, 1.0] },
+    traceStepS: 300,                 // the magnetometer is drawn on the same 5-minute grid
+  };
+  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const PHASES = ["quiet", "growth", "onset", "recovery"];
+  const KEO_CACHE = new Map();   // day id → bitmap; a revisited day (T6.9) is not rebuilt
 
-  function MagnetogramView(canvas) {
+  /** A per-minute field of the day event at fractional minute index f (entry k is the state at
+   *  t0 + step·(k + 1)), linearly interpolated; `wrap` for angles like MLT (period 24). */
+  function sample(arr, f, wrap) {
+    const n = arr.length, i = clamp(f, 0, n - 1), i0 = Math.floor(i), i1 = Math.min(n - 1, i0 + 1), a = arr[i0];
+    let b = arr[i1];
+    if (wrap && Math.abs(b - a) > wrap / 2) b += a > b ? wrap : -wrap;
+    return a + (b - a) * (i - i0);
+  }
+
+  /** The keogram of a loaded day: KEO.colS columns × KEO.rows rows, built once and cached. */
+  function buildKeogram(day) {
+    const sig = [day.t0, day.phase.length, day.stationMlat, day.dayShift, day.arcPosition].join();
+    const hit = KEO_CACHE.get(day.day);
+    if (hit && hit.sig === sig) return hit;
+    const t0 = performance.now();
+    const span = day.phase.length * day.step, n = Math.max(1, Math.round(span / KEO.colS)), H = KEO.rows;
+    const Re = KEO.earthKm, R2D = 180 / Math.PI, st = day.stationMlat || 65.66;
+    const cv = document.createElement("canvas");
+    cv.width = n; cv.height = H;
+    const cx = cv.getContext("2d"), img = cx.createImageData(n, H), px = img.data;
+    // rows: where each height's light at that zenith angle sits in magnetic latitude
+    const rows = [];
+    for (let j = 0; j < H; j++) {
+      const zeta = -90 + 180 * (j + 0.5) / H, e = (90 - Math.abs(zeta)) / R2D, sgn = zeta < 0 ? 1 : -1;
+      const mlat = (h) => {
+        const s = -Re * Math.sin(e) + Math.sqrt(Re * Re * Math.sin(e) ** 2 + 2 * Re * h + h * h);
+        return st + sgn * Math.atan2(s * Math.cos(e), Re + s * Math.sin(e)) * R2D;
+      };
+      rows.push({ g: mlat(KEO.heightKm.green), r: mlat(KEO.heightKm.red), v: mlat(KEO.heightKm.violet),
+        slant: 1 + 2 * Math.pow(1 - Math.sin(e), 3), fade: smooth(0, KEO.horizonDeg, 90 - Math.abs(zeta)) });
+    }
+    const S = KEO.sigmaDeg;
+    rows.forEach((q, j) => {
+      const nb = rows[Math.min(H - 1, j + 1)], pv = rows[Math.max(0, j - 1)];
+      q.sg = Math.max(S.green, S.perRow * Math.abs(nb.g - pv.g));
+      q.sv = Math.max(S.violet, S.perRow * Math.abs(nb.v - pv.v));
+      q.sr = Math.max(S.red, S.perRow * Math.abs(nb.r - pv.r));
+    });
+    const tone = (x) => 1 - Math.exp(-KEO.tone * x), [mg, mr, mv] = [KEO.mix.green, KEO.mix.red, KEO.mix.violet];
+    const D = KEO.diffuse, A = KEO.arcI, RD = KEO.red, V = KEO.violet, half = (day.dayShift || 0) / 2, pos = day.arcPosition ?? 0.5;
+    for (let i = 0; i < n; i++) {
+      const f = (KEO.colS * (i + 0.5)) / day.step - 1;   // the column's middle, in minute entries
+      const mlt = sample(day.mlt, f, 24), c = Math.cos((2 * Math.PI * mlt) / 24);
+      const shift = half * (1 - c), night = 0.25 + 0.75 * (0.5 + 0.5 * c);
+      const eq = sample(day.eqLat, f) + shift, pole = sample(day.poleLat, f) + shift, arc = eq + pos * (pole - eq);
+      const act = sample(day.activity, f), gain = sample(day.gain, f), u = Math.min(KEO.unloadingMax, sample(day.unloading, f));
+      const red = sample(day.stormRed, f);
+      const dif = D.base + D.activity * act * gain + D.unloading * u, Ia = A.base + A.activity * act + A.unloading * u;
+      for (let j = 0; j < H; j++) {
+        const q = rows[j];
+        const band = smooth(eq - 1.5, eq + 1, q.g) * Math.exp(-Math.max(0, q.g - eq - 1) / 3) * (1 - smooth(pole - 1.5, pole + 2, q.g));
+        const bandR = smooth(eq - 6, eq, q.r) * (1 - smooth(eq + 3, eq + 8, q.r));
+        const ga = Math.exp(-(((q.g - arc) / q.sg) ** 2)), ra = Math.exp(-(((q.r - arc) / q.sr) ** 2)), va = Math.exp(-(((q.v - arc) / q.sv) ** 2));
+        const G = D.gain * dif * band * night * q.slant + A.green * Ia * ga;
+        const R = RD.gain * (RD.storm * red + RD.quiet) * bandR * night * q.slant + (RD.arc * Ia + RD.stormArc * red * night) * ra;
+        const Vi = Ia * (V.base + V.unloading * u) * va;
+        const o = (j * n + i) * 4;
+        for (let ch = 0; ch < 3; ch++) px[o + ch] = 255 * clamp(KEO.ground[ch] + q.fade * tone(mg[ch] * G + mr[ch] * R + mv[ch] * Vi), 0, 1);
+        px[o + 3] = 255;
+      }
+    }
+    cx.putImageData(img, 0, 0);
+    // the magnetometer on the same grid, and its range (zero always inside)
+    const trace = [];
+    let lo = 0, hi = 0;
+    for (let t = 0; t <= span; t += KEO.traceStepS) {
+      const v = sample(day.dh, t / day.step - 1);
+      trace.push(v); lo = Math.min(lo, v); hi = Math.max(hi, v);
+    }
+    const k = { sig, cv, cols: n, rows: H, trace, lo, hi: hi > lo ? hi : lo + 1, ms: performance.now() - t0 };
+    KEO_CACHE.set(day.day, k);
+    return k;
+  }
+
+  /** The day strip (spec/09 §2, T6.10; mockup `drawStrip`): the keogram over the magnetometer, hour
+   *  marks, onsets as carets on the top edge, the part still to come dimmed, the playhead. It sizes
+   *  itself from its canvas box: rows fixed at the bottom (field 27 px, hours), the keogram takes the
+   *  rest. The static layer is drawn once per day and size; a frame blits it and adds the playhead. */
+  function DayStripView(canvas) {
     const base = document.createElement("canvas");
-    let day = null, dirty = true, lastX = -1, lastW = 0, lastK = 0, hoverX = null;
-    const PHASES = ["quiet", "growth", "onset", "recovery"];
-    const L = 118, PAD_R = 10;
-    // lanes and legend laid out for 64 px and stretched to the strip's height (92 since T6.8)
-    let lanes = { mag: [6, 37], load: [40, 48], phase: [51, 56] }, ky = 1;
+    let day = null, keo = null, dirty = true, lastW = 0, lastH = 0, lastK = 0, lastSig = "", hoverX = null;
+    const span = () => day.phase.length * day.step;
+    const geom = (w, h) => ({ x0: 62, x1: w - 12, ky0: 7, ky1: h - 36, ty: h - 9, dy0: h - 31, dy1: h - 4 });
+    const xOfUtc = (G, utc) => G.x0 + clamp((utc - day.t0) / span(), 0, 1) * (G.x1 - G.x0);
 
-    function setDay(d) { day = d; dirty = true; }
+    function setDay(d) {
+      day = d;
+      keo = d && d.eqLat ? buildKeogram(d) : null;
+      dirty = true;
+    }
 
     function drawBase(w, h, k) {
       base.width = Math.round(w * k); base.height = Math.round(h * k);
-      const ctx = base.getContext("2d");
-      ctx.setTransform(k, 0, 0, k, 0, 0);
-      ctx.clearRect(0, 0, w, h);
-      ky = h / 64;
-      lanes = { mag: [6 * ky, 37 * ky], load: [40 * ky, 48 * ky], phase: [51 * ky, 56 * ky] };
-      const R = w - PAD_R, n = day.phase.length;
-      const x = (i) => L + (R - L) * (i / Math.max(1, n - 1));
-
-      ctx.font = MONO(10);
-      ctx.textBaseline = "alphabetic";
-      // 6-hour grid
-      for (let m = 0; m < n; m += 360) {
-        const xx = Math.round(x(m)) + 0.5;
-        ctx.strokeStyle = C.hairSoft; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(xx, 3); ctx.lineTo(xx, h - 3); ctx.stroke();
-        const d = new Date((day.t0 + m * day.step) * 1000);
-        const label = m === 0 ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : d.toISOString().slice(11, 16);
-        ctx.fillStyle = C.faint; ctx.fillText(label, xx + 3, 12);
+      const c = base.getContext("2d"), G = geom(w, h);
+      c.setTransform(k, 0, 0, k, 0, 0);
+      c.clearRect(0, 0, w, h);
+      if (keo) {
+        c.imageSmoothingEnabled = true; c.imageSmoothingQuality = "high";
+        c.drawImage(keo.cv, G.x0, G.ky0, G.x1 - G.x0, G.ky1 - G.ky0);
       }
-
-      // magnetogram: measured (green) over the model (violet), symmetric scale
-      let max = 50;
-      for (let i = 0; i < n; i++) max = Math.max(max, Math.abs(day.dh[i]), Math.abs(day.dhModel[i]));
-      const [m0, m1] = lanes.mag, mid = (m0 + m1) / 2, sy = (m1 - m0) / 2 / max;
-      ctx.strokeStyle = C.hair;
-      ctx.beginPath(); ctx.moveTo(L, mid + 0.5); ctx.lineTo(R, mid + 0.5); ctx.stroke();
-      const line = (arr, color, width) => {
-        ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
-        for (let i = 0; i < n; i++) { const y = mid - arr[i] * sy; i ? ctx.lineTo(x(i), y) : ctx.moveTo(x(i), y); }
-        ctx.stroke();
-      };
-      line(day.dhModel, "rgba(143,123,255,0.8)", 1);
-      line(day.dh, C.green, 1);
-
-      // load: coupling (red area), reservoir (ink) against its threshold
-      const [l0, l1] = lanes.load;
-      let emax = 2, wmax = 1.5;
-      for (let i = 0; i < n; i++) { emax = Math.max(emax, day.coupling[i]); wmax = Math.max(wmax, day.energy[i], day.threshold[i]); }
-      ctx.beginPath();
-      for (let i = 0; i < n; i++) { const y = l1 - (day.coupling[i] / emax) * (l1 - l0); i ? ctx.lineTo(x(i), y) : ctx.moveTo(x(i), y); }
-      ctx.lineTo(R, l1); ctx.lineTo(L, l1); ctx.closePath();
-      ctx.fillStyle = "rgba(255,107,107,0.26)"; ctx.fill();
-      const lane = (arr, color) => {
-        ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.beginPath();
-        for (let i = 0; i < n; i++) { const y = l1 - (arr[i] / wmax) * (l1 - l0); i ? ctx.lineTo(x(i), y) : ctx.moveTo(x(i), y); }
-        ctx.stroke();
-      };
-      lane(day.threshold, "rgba(201,211,230,0.22)");
-      lane(day.energy, "rgba(201,211,230,0.8)");
-
-      // phase band and onsets
-      const [p0, p1] = lanes.phase, cw = (R - L) / n + 0.6;
-      for (let i = 0; i < n; i++) { ctx.fillStyle = PHASE_FILL[day.phase[i]] || PHASE_FILL[0]; ctx.fillRect(x(i), p0, cw, p1 - p0); }
-      for (const e of day.onsets) {
-        const i = (e.utc - day.t0) / day.step;
-        if (i < 0 || i > n) continue;
-        ctx.fillStyle = e.kind === "forced" ? C.red : e.kind === "pseudo" ? C.muted : C.green;
-        ctx.beginPath(); ctx.moveTo(x(i), p0 - 0.5); ctx.lineTo(x(i) - 2.6, p0 - 4.5); ctx.lineTo(x(i) + 2.6, p0 - 4.5); ctx.fill();
+      // the rows: north, overhead, south, and the field under them
+      c.font = UI.SANS(11); c.textBaseline = "middle"; c.textAlign = "right"; c.fillStyle = C.muted;
+      const mid = (G.ky0 + G.ky1) / 2;
+      if (G.ky1 - G.ky0 >= 30) { c.fillText("north", G.x0 - 8, G.ky0 + 7); c.fillText("south", G.x0 - 8, G.ky1 - 7); }
+      if (G.ky1 - G.ky0 >= 40 || G.ky1 - G.ky0 < 30) c.fillText(G.ky1 - G.ky0 >= 40 ? "overhead" : "sky", G.x0 - 8, mid);
+      c.fillText("field", G.x0 - 8, (G.dy0 + G.dy1) / 2);
+      c.strokeStyle = "rgba(201,211,230,0.16)"; c.lineWidth = 1; c.setLineDash([2, 4]);
+      c.beginPath(); c.moveTo(G.x0, Math.round(mid) + 0.5); c.lineTo(G.x1, Math.round(mid) + 0.5); c.stroke(); c.setLineDash([]);
+      // hour marks every 6 h, the date at midnight
+      c.textAlign = "left"; c.font = MONO(10);
+      for (let u = Math.ceil(day.t0 / 21600) * 21600; u < day.t0 + span(); u += 21600) {
+        const x = Math.round(xOfUtc(G, u)), midnight = u % 86400 === 0, d = new Date(u * 1000);
+        c.fillStyle = midnight ? "rgba(201,211,230,0.5)" : "rgba(201,211,230,0.2)"; c.fillRect(x, G.ky0, 1, G.dy1 - G.ky0);
+        c.fillStyle = midnight ? C.ink : C.muted;
+        c.fillText(midnight ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : d.toISOString().slice(11, 16), x + 5, G.ty);
       }
-
-      // labels
-      // the legend stays at 10 px: five lanes in 64 px leave no room (T6.10 replaces this picture)
-      ctx.font = MONO(10);
-      ctx.fillStyle = C.inkHi; ctx.fillText("Magnetogram", 10, 14 * ky);
-      ctx.fillStyle = C.muted; ctx.fillText(`ΔH ±${Math.round(max)} nT`, 10, 26 * ky);
-      ctx.fillStyle = C.green; ctx.fillText("— " + (day.station ? day.station.code : "CMO"), 10, 37 * ky);
-      ctx.fillStyle = C.violet; ctx.fillText("— model", 52, 37 * ky);
-      ctx.fillStyle = C.ink; ctx.fillText("energy", 10, 48 * ky);
-      ctx.fillStyle = C.red; ctx.fillText("E", 56, 48 * ky);
-      ctx.fillStyle = C.muted; ctx.fillText("phase", 10, 58 * ky);
+      // the magnetometer: ΔH in ink over its zero line
+      if (keo) {
+        const zy = G.dy0 + (keo.hi / (keo.hi - keo.lo)) * (G.dy1 - G.dy0), Y = (v) => zy - (v / (keo.hi - keo.lo)) * (G.dy1 - G.dy0);
+        c.strokeStyle = "rgba(201,211,230,0.16)"; c.beginPath(); c.moveTo(G.x0, Math.round(zy) + 0.5); c.lineTo(G.x1, Math.round(zy) + 0.5); c.stroke();
+        c.strokeStyle = C.arc; c.lineWidth = 1.2; c.lineJoin = "round"; c.beginPath();
+        keo.trace.forEach((v, i) => { const x = xOfUtc(G, day.t0 + i * KEO.traceStepS), y = Y(v); if (i) c.lineTo(x, y); else c.moveTo(x, y); });
+        c.stroke();
+      }
+      // onsets: carets on the top edge, filled (hollow for pseudo-breakups), sized by strength
+      for (const o of day.onsets) {
+        const x = xOfUtc(G, o.utc), s = 3 + Math.min(3, o.strength * 1.5);
+        c.beginPath(); c.moveTo(x, G.ky0 + s + 1); c.lineTo(x - s * 0.8, G.ky0 - 0.5); c.lineTo(x + s * 0.8, G.ky0 - 0.5); c.closePath();
+        if (o.kind === "pseudo") { c.strokeStyle = "rgba(238,242,250,0.75)"; c.lineWidth = 1; c.stroke(); } else { c.fillStyle = C.inkHi; c.fill(); }
+      }
       dirty = false;
     }
 
-    /** T6.6: the moment under x (CSS px in the canvas), or null over the labels. */
-    function utcAt(x) {
+    /** The moment under x (CSS px in the canvas); null over the row words unless `clamped` (a drag
+     *  that leaves the strip holds at its ends). */
+    function utcAt(x, clamped) {
       if (!day) return null;
-      const R = canvas.clientWidth - PAD_R, n = day.phase.length;
-      if (x < L - 4 || x > R + 4) return null;
-      return day.t0 + clamp((x - L) / (R - L), 0, 1) * (n - 1) * day.step;
+      const G = geom(canvas.clientWidth, canvas.clientHeight);
+      if (!clamped && (x < G.x0 - 6 || x > G.x1 + 6)) return null;
+      return day.t0 + clamp((x - G.x0) / (G.x1 - G.x0), 0, 1) * span();
     }
-    function phaseAt(utc) { return day ? PHASES[day.phase[clamp(Math.round((utc - day.t0) / day.step), 0, day.phase.length - 1)]] || "" : ""; }
-    function setHover(x) { if (x !== hoverX) { hoverX = x; lastX = -1; } }
+    const phaseAt = (utc) => (day ? PHASES[day.phase[clamp(Math.round((utc - day.t0) / day.step - 1), 0, day.phase.length - 1)]] || "" : "");
+    /** `10 May 17:45 UT, onset, Kp 7.7, field −1063 nT.` */
+    function moment(utc) {
+      if (!day) return "";
+      const f = (utc - day.t0) / day.step - 1, d = new Date(utc * 1000), dh = Math.round(sample(day.dh, f));
+      const kp = day.kp ? `, Kp ${sample(day.kp, f).toFixed(1)}` : "";
+      return `${d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} ${d.toISOString().slice(11, 16)} UT, `
+        + `${phaseAt(utc)}${kp}, field ${dh < 0 ? "−" : ""}${Math.abs(dh)} nT.`;
+    }
+    function setHover(x) { hoverX = x; }
 
     function draw(nowUtc) {
       if (!day) return;
       const w = canvas.clientWidth, h = canvas.clientHeight, k = Math.min(3, UI.dpr * UI.scale);
-      if (dirty || w !== lastW || k !== lastK) { drawBase(w, h, k); lastW = w; lastK = k; lastX = -1; }
-      const R = w - PAD_R, n = day.phase.length;
-      const xNow = L + (R - L) * clamp((nowUtc - day.t0) / day.step / Math.max(1, n - 1), 0, 1);
-      if (Math.abs(xNow - lastX) < 0.25) return;
-      lastX = xNow;
+      if (dirty || w !== lastW || h !== lastH || k !== lastK) { drawBase(w, h, k); lastW = w; lastH = h; lastK = k; lastSig = ""; }
+      const G = geom(w, h), xn = xOfUtc(G, nowUtc), utcH = hoverX === null ? null : utcAt(hoverX);
+      const xh = utcH === null ? null : Math.round(xOfUtc(G, utcH));
+      const sig = (xn * 4 | 0) + "|" + xh;
+      if (sig === lastSig) return;   // the playhead moves a quarter pixel at a time
+      lastSig = sig;
       const { ctx } = UI.fit(canvas);
       ctx.clearRect(0, 0, w, h);
       ctx.drawImage(base, 0, 0, w, h);
-      // what is still ahead in the replayed day, dimmed
-      ctx.fillStyle = "rgba(5,7,13,0.55)";
-      ctx.fillRect(xNow, 2, R - xNow + 2, h - 4);
-      ctx.strokeStyle = C.red; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
-      ctx.beginPath(); ctx.moveTo(Math.round(xNow) + 0.5, 3); ctx.lineTo(Math.round(xNow) + 0.5, h - 3); ctx.stroke();
-      ctx.setLineDash([]);
-
-      // T6.6: where a click would jump to
-      const utc = hoverX === null ? null : utcAt(hoverX);
-      if (utc !== null) {
-        const xh = Math.round(L + (R - L) * clamp((utc - day.t0) / day.step / Math.max(1, n - 1), 0, 1)) + 0.5;
-        ctx.strokeStyle = C.ink; ctx.globalAlpha = 0.7;
-        ctx.beginPath(); ctx.moveTo(xh, 3); ctx.lineTo(xh, h - 3); ctx.stroke();
-        ctx.globalAlpha = 1;
-        const d = new Date(utc * 1000);
-        const label = `${d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} ${d.toISOString().slice(11, 16)} UT`;
-        const sub = `${phaseAt(utc)}, click to jump`;
-        ctx.font = MONO(11);
-        const tw = Math.max(ctx.measureText(label).width, ctx.measureText(sub).width) + 12;
-        const bx = xh + tw + 6 > R ? xh - tw - 4 : xh + 4;
-        ctx.fillStyle = "rgba(5,7,13,0.9)"; ctx.fillRect(bx, 3, tw, 31);
-        ctx.fillStyle = C.inkHi; ctx.fillText(label, bx + 6, 16);
-        ctx.fillStyle = C.muted; ctx.fillText(sub, bx + 6, 29);
-      }
+      ctx.fillStyle = "rgba(5,7,13,0.5)"; ctx.fillRect(xn, G.ky0, G.x1 - xn, G.dy1 - G.ky0);   // still to come
+      ctx.fillStyle = "#fff"; ctx.fillRect(Math.round(xn) - 0.5, G.ky0 - 3, 1.5, G.dy1 - G.ky0 + 5);
+      ctx.beginPath(); ctx.moveTo(xn - 5, G.ky0 - 4); ctx.lineTo(xn + 5, G.ky0 - 4); ctx.lineTo(xn, G.ky0 + 3); ctx.closePath(); ctx.fill();
+      if (xh !== null) { ctx.fillStyle = "rgba(255,255,255,0.55)"; ctx.fillRect(xh, G.ky0, 1, G.dy1 - G.ky0); }
     }
 
-    return { setDay, draw, utcAt, phaseAt, setHover };
+    return { setDay, draw, utcAt, phaseAt, moment, setHover, get keo() { return keo; }, get day() { return day; } };
   }
 
   // ================================================================ layers: level and ring-out
@@ -493,14 +556,19 @@
       c.strokeStyle = "rgba(201,211,230,0.16)";
       c.beginPath(); c.moveTo(0, Math.round(g.mid) + 0.5); c.lineTo(w, Math.round(g.mid) + 0.5); c.stroke();
 
-      // behind: the sound. T6.12's pre-EQ spectrum shaped by the curve now; until then the output's,
-      // which the EQ has already shaped
+      // UI.eqDb's parameters (T6.12's shape): as set, and as they are now
+      const pOf = (v) => ({ bands: [{ hz: v("eq1_freq"), gain: v("eq1_gain") }, { hz: v("eq2_freq"), gain: v("eq2_gain"), q: v("eq2_q") },
+        { hz: v("eq3_freq"), gain: v("eq3_gain"), q: v("eq3_q") }], cutHz: v("eq4_freq") });
+      const setP = pOf(P), liveP = pOf((id) => (id in live ? live[id] : P(id)));
+
+      // behind: the sound. T6.12's pre-EQ spectrum shaped by the curve now (the output's, which the EQ
+      // has already shaped, where that tap is missing)
       const spec = tel.spectrumIn || tel.spectrum;
       if (spec && spec.length) {
         const n = spec.length, top = g.floor - (g.floor - 12) * 0.82;
         c.beginPath(); c.moveTo(0, g.floor);
         for (let i = 0; i < n; i++) {
-          const x = (i + 0.5) / n * w, db = spec[i] + (tel.spectrumIn ? UI.eqDb(g.F(x), live, fs) : 0);
+          const x = (i + 0.5) / n * w, db = spec[i] + (tel.spectrumIn ? UI.eqDb(g.F(x), liveP, fs) : 0);
           c.lineTo(i ? x : 0, g.floor - (g.floor - top) * clamp((db + 90) / 80, 0, 1));
         }
         c.lineTo(w, g.floor); c.closePath(); c.fillStyle = "rgba(201,211,230,0.11)"; c.fill();
@@ -519,9 +587,9 @@
         c.beginPath();
         for (let x = 0; x <= w; x += 2) { const y = clamp(g.Y(UI.eqDb(g.F(x), p, fs)), 2, g.floor); if (x) c.lineTo(x, y); else c.moveTo(x, y); }
       };
-      path(live); c.lineTo(w, g.mid); c.lineTo(0, g.mid); c.closePath(); c.fillStyle = "rgba(201,211,230,0.13)"; c.fill();
-      path(null); c.strokeStyle = "rgba(201,211,230,0.32)"; c.lineWidth = 1; c.stroke();
-      path(live); c.strokeStyle = C.inkHi; c.lineWidth = 1.8; c.stroke();
+      path(liveP); c.lineTo(w, g.mid); c.lineTo(0, g.mid); c.closePath(); c.fillStyle = "rgba(201,211,230,0.13)"; c.fill();
+      path(setP); c.strokeStyle = "rgba(201,211,230,0.32)"; c.lineWidth = 1; c.stroke();
+      path(liveP); c.strokeStyle = C.inkHi; c.lineWidth = 1.8; c.stroke();
 
       // the sky's reach on the top edge: from the cut as set to the cut at full activity; its end is
       // the handle for eq_sky; the white dot is the cut now
@@ -636,139 +704,327 @@
     return { draw };
   }
 
-  function PhaserView(canvas) {
+  // ================================================================ pictures as controls (T6.12)
+  // Each effect's picture shows what the effect does to the sound now and is where its main values
+  // are set (spec/09 rule 4; the mockup's drawPha, drawCho, drawDly, drawRev, drawOut). A view sizes
+  // itself from its canvas, takes its parameters by ID (`ids`) and the focusable proxies of the
+  // values it sets (`handles`, UI.Handle, placed on the handles every frame), and eases what it draws
+  // (rule 4). All ink (rule 2).
+  const DEFAULT_FS = 48000;
+  const reducedMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const norm = (id) => WT.toNorm(id, WT.get(id));
+  /** The value a parameter has now with what moves it (the macro rings' dot), else the value set. */
+  const liveOf = (id) => { const k = UI.knobs && UI.knobs[id]; return k && k.mod ? k.mod.now : WT.get(id); };
+  /** Eases named values toward their targets once per frame (τ in seconds); snaps when there. */
+  function Easer(tau) {
+    const v = {};
+    let at = 0, k = 1;
     return {
-      draw(t, p, spectrum) {
+      tick() { const t = now(), dt = at ? Math.min(0.25, t - at) : 1e3; at = t; k = 1 - Math.exp(-dt / tau); return dt > 100 ? 0 : dt; },
+      get(name, target) {
+        if (!(name in v) || !isFinite(v[name])) v[name] = target;
+        v[name] += (target - v[name]) * k;
+        if (Math.abs(target - v[name]) < 1e-5 * (1 + Math.abs(target))) v[name] = target;
+        return v[name];
+      },
+    };
+  }
+  const handleRing = (ctx, x, y, r = 5.5) => {
+    ctx.fillStyle = C.night; ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill();
+    ctx.strokeStyle = C.inkHi; ctx.lineWidth = 1.8; ctx.stroke();
+  };
+  const tag = (ctx, text, x, y, align = "right") => {
+    ctx.font = MONO(10.5); ctx.textAlign = align; ctx.textBaseline = "alphabetic"; ctx.fillStyle = C.ink; ctx.fillText(text, x, y); ctx.textAlign = "left";
+  };
+
+  /** The phaser's gain at `hz` with its break frequency at `fc`: dsp::Phaser::magnitude (fx/Phaser.h)
+   *  line for line, the filter's exact response (bilinear all-passes, the feedback one sample late,
+   *  dry/wet and the make-up gain). A unit test holds it to the Phaser on a sine sweep. */
+  function phaserResponse(hz, fc, fs, stages, feedback, mix) {
+    const n = clamp(Math.round(stages), 2, 8), fb = clamp(feedback, 0, 0.8), m = clamp(mix, 0, 1);
+    const w = 2 * Math.PI * clamp(hz, 0, 0.4999 * fs) / fs;
+    const th = -2 * n * Math.atan(Math.tan(0.5 * w) / Math.tan(Math.PI * fc / fs));
+    const ar = Math.cos(th), ai = Math.sin(th);
+    const dr = 1 - fb * Math.cos(th - w), di = -fb * Math.sin(th - w), dd = dr * dr + di * di;
+    const wr = (ar * dr + ai * di) / dd, wi = (ai * dr - ar * di) / dd;
+    const or = (1 - m) + m * wr, oi = m * wi;
+    return Math.sqrt(or * or + oi * oi) / Math.sqrt(Math.max(1e-6, (1 - m) * (1 - m) + m * m));
+  }
+  /** The break frequency for an LFO phase (dsp::Phaser::breakHz): 200 Hz … 2 kHz at depth 1. */
+  const phaserBreak = (depth, phase) => 200 * Math.pow(10, 0.5 + 0.5 * clamp(depth, 0, 1) * Math.sin(2 * Math.PI * phase));
+
+  /** Phaser: the sources' spectrum shaped by the tone stage (outline: what goes in) and the same ×
+   *  the phaser's response (bright: what comes out), so the notches are seen eating the sound; dotted
+   *  lines at the notches; the sweep range on the bottom edge with a dot at the break frequency now.
+   *  The LFO phase is the engine's (telemetry `phaser`), run on between frames. Drag: sideways the
+   *  depth, up and down the feedback. `tone(f, tel)` is the tone stage's response in dB. */
+  function PhaserView(canvas, { ids = {}, handles = {}, tone = () => 0 } = {}) {
+    const id = Object.assign({ rate: "ph_rate", depth: "ph_depth", feedback: "ph_feedback", mix: "ph_mix", stages: "ph_stages" }, ids);
+    const E = Easer(0.1);
+    // heights are amplitude^½ against an eased reference (the loudest band): the spectrum's shape
+    // reads, and a notch of −10 dB takes half the height away, as the ear hears it eat the sound
+    const LIFT = 40;
+    let phase = 0, primed = false, ref = -30, drag = false;
+    const spec = new Float32Array(120).fill(-100);
+    const X = (f, w) => (Math.log(f / 20) / Math.log(1000)) * w;
+    UI.dragPicture(canvas, (p) => {
+      const d0 = norm(id.depth), f0 = norm(id.feedback);
+      drag = true;
+      return {
+        ids: [id.depth, id.feedback],
+        move(q, ev) { const k = ev.shiftKey ? 0.15 : 1; UI.setNorm(id.depth, d0 + (q.x - p.x) / 80 * k); UI.setNorm(id.feedback, f0 + (p.y - q.y) / 80 * k); },
+        end() { drag = false; },
+      };
+    });
+    /** The source's level (dB) at f, interpolated between the analyser's 120 log bands. */
+    const specAt = (f) => {
+      const x = clamp(Math.log(f / 20) / Math.log(1000) * 120 - 0.5, 0, 119), i = Math.floor(x), j = Math.min(119, i + 1);
+      return spec[i] + (spec[j] - spec[i]) * (x - i);
+    };
+    return {
+      draw(tel) {
+        const dt = E.tick(), fs = tel.sampleRate || DEFAULT_FS;
+        const mixSet = WT.get(id.mix);
+        // the engine's LFO: it advances only while the phaser is on (fx/Phaser.h)
+        if (mixSet > 0) phase += WT.get(id.rate) * dt;
+        if (typeof tel.phaser === "number") {
+          if (!primed) phase = tel.phaser;
+          else { let e = tel.phaser - phase; e -= Math.round(e); phase += e * 0.15; }
+          primed = true;
+        }
+        phase -= Math.floor(phase);
+        const depth = E.get("depth", WT.get(id.depth)), fb = E.get("fb", WT.get(id.feedback)), mix = E.get("mix", liveOf(id.mix));
+        const N = Math.round(WT.get(id.stages));
+        const fc = phaserBreak(depth, phase), fLo = phaserBreak(depth, 0.75), fHi = phaserBreak(depth, 0.25);
+        const src = tel.spectrumIn || tel.spectrum;
+        if (src && src.length === 120) for (let i = 0; i < 120; i++) spec[i] += (src[i] - spec[i]) * 0.4;
+
         const { ctx, w, h } = UI.fit(canvas);
         ctx.clearRect(0, 0, w, h);
-        const top = 3, bot = h - 3;
-        if (spectrum && spectrum.length) {
-          ctx.beginPath(); ctx.moveTo(0, bot);
-          spectrum.forEach((db, i) => ctx.lineTo((i / (spectrum.length - 1)) * w, bot - clamp((db + 90) / 80, 0, 1) * (bot - top)));
-          ctx.lineTo(w, bot); ctx.closePath(); ctx.fillStyle = "rgba(201,211,230,0.07)"; ctx.fill();
+        const base = h - 18, H = base - 8, yBar = h - 8;
+        // what goes in (the source through the tone stage) and what comes out
+        const n = Math.max(40, Math.round(w / 1.5));
+        const fin = new Float32Array(n + 1), fout = new Float32Array(n + 1);
+        let peak = -100;
+        for (let i = 0; i <= n; i++) {
+          const f = 20 * Math.pow(1000, i / n);
+          fin[i] = specAt(f) + tone(f, tel);
+          fout[i] = fin[i] + 20 * Math.log10(Math.max(1e-6, phaserResponse(f, fc, fs, N, fb, mix)));
+          peak = Math.max(peak, fin[i]);
         }
-        for (const f of [100, 1000, 10000]) { const xx = Math.round(LOGF(f, w)) + 0.5; ctx.strokeStyle = C.hairSoft; ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke(); }
-        const notches = Math.max(1, Math.round(p.stages / 2));
-        const sweep = 0.5 + 0.5 * p.depth * Math.sin(2 * Math.PI * p.rate * t);
-        const c0 = Math.log2(120) + sweep * Math.log2(30), width = 0.55 - 0.4 * p.fb;
+        ref += (Math.max(-60, peak) - ref) * (primed ? 0.05 : 1);
+        const Y = (db) => base - H * 0.8 * Math.min(1.25, Math.pow(10, (db - ref) / LIFT));
+        const path = (arr) => { ctx.beginPath(); ctx.moveTo(0, base); for (let i = 0; i <= n; i++) ctx.lineTo((i / n) * w, Y(arr[i])); ctx.lineTo(w, base); ctx.closePath(); };
+        path(fin); ctx.fillStyle = "rgba(201,211,230,0.06)"; ctx.fill(); ctx.strokeStyle = "rgba(201,211,230,0.3)"; ctx.lineWidth = 1; ctx.stroke();
+        path(fout);
+        const g = ctx.createLinearGradient(0, 8, 0, base);
+        g.addColorStop(0, "rgba(238,242,250,0.75)"); g.addColorStop(1, "rgba(201,211,230,0.14)");
+        ctx.fillStyle = g; ctx.fill();
+        // the notches: where the stages turn the sound half a cycle (refined on the exact response)
+        ctx.strokeStyle = "rgba(238,242,250,0.5)"; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+        const tc = Math.tan(Math.PI * fc / fs);
+        for (let k = 0; 2 * k + 1 < N; k++) {
+          let f = (fs / Math.PI) * Math.atan(tc * Math.tan((2 * k + 1) * Math.PI / (2 * N))), best = Infinity, at = f;
+          for (let s = -12; s <= 12; s++) { const ff = f * Math.pow(2, s / 40), r = phaserResponse(ff, fc, fs, N, fb, 0.5); if (r < best) { best = r; at = ff; } }
+          f = at;
+          if (f < 20 || f > 20000) continue;
+          const x = Math.round(X(f, w)) + 0.5;
+          ctx.beginPath(); ctx.moveTo(x, 6); ctx.lineTo(x, base); ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        // the sweep: its range as a bar with end caps, the break frequency now as a dot
+        const xl = X(fLo, w), xh = X(fHi, w);
+        ctx.fillStyle = "rgba(201,211,230,0.3)"; ctx.fillRect(xl, yBar - 1, xh - xl, 2);
+        ctx.fillStyle = C.ink;
+        for (const x of [xl, xh]) { ctx.beginPath(); ctx.roundRect(x - 2, yBar - 5, 4, 10, 2); ctx.fill(); }
+        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(X(fc, w), yBar, 3, 0, 2 * Math.PI); ctx.fill();
+        const hd = handles[id.depth];
+        if (hd) hd.place(canvas, (xl + xh) / 2, yBar, xh - xl + 14, 16);
+        if (drag || (hd && hd.focused)) tag(ctx, `depth ${Math.round(WT.get(id.depth) * 100)} %  feed ${WT.get(id.feedback).toFixed(2)}`, w - 6, 15);
+      },
+    };
+  }
+
+  /** Chorus: the dry sound as a centre line, the band the voices swing in (± the depth, dotted edges,
+   *  the value in the corner), the three voices (1.0, 1.22, 1.44 × the rate, a third of a cycle apart,
+   *  as fx/Chorus.h runs them) scrolling towards "now", where each has a dot; their strength by the
+   *  mix. Drag sideways: the rate. */
+  function ChorusView(canvas, { ids = {} } = {}) {
+    const id = Object.assign({ rate: "ch_rate", depth: "ch_depth", mix: "ch_mix" }, ids);
+    const E = Easer(0.1), SCALE = [1, 1.22, 1.44];
+    let phase = 0, drag = false;
+    UI.dragPicture(canvas, (p) => {
+      const r0 = norm(id.rate);
+      drag = true;
+      return { ids: [id.rate], move(q, ev) { UI.setNorm(id.rate, r0 + (q.x - p.x) / 90 * (ev.shiftKey ? 0.15 : 1)); }, end() { drag = false; } };
+    });
+    return {
+      draw() {
+        const dt = E.tick();
+        const rate = WT.get(id.rate), depth = E.get("depth", WT.get(id.depth)), mix = E.get("mix", liveOf(id.mix));
+        if (!reducedMotion) phase = (phase + rate * dt) % 1000;
+        const { ctx, w, h } = UI.fit(canvas);
+        ctx.clearRect(0, 0, w, h);
+        const mid = h / 2 + 5, amp = 7 + Math.max(0, h / 2 - 26) * clamp(depth / 10, 0, 1), xn = w - 20;
+        const band = ctx.createLinearGradient(0, 0, xn, 0);
+        band.addColorStop(0, "rgba(201,211,230,0)"); band.addColorStop(1, "rgba(201,211,230,0.07)");
+        ctx.fillStyle = band; ctx.fillRect(0, mid - amp, xn, 2 * amp);
+        ctx.strokeStyle = "rgba(201,211,230,0.2)"; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
         ctx.beginPath();
-        for (let i = 0; i <= 120; i++) {
-          const x = (i / 120) * w, lf = Math.log2(20) + (i / 120) * Math.log2(1000);
-          let r = 1;
-          for (let k = 0; k < notches; k++) {
-            const c = c0 + k * 1.3;
-            r *= 1 - 0.92 * p.mix * Math.exp(-(((lf - c) / width) ** 2));
-            r += 0.35 * p.fb * p.mix * Math.exp(-(((lf - c - 0.65) / width) ** 2));
-          }
-          const y = top + (bot - top) * (1 - clamp(r, 0, 1.3) / 1.3);
-          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        ctx.moveTo(0, Math.round(mid - amp) + 0.5); ctx.lineTo(xn, Math.round(mid - amp) + 0.5);
+        ctx.moveTo(0, Math.round(mid + amp) + 0.5); ctx.lineTo(xn, Math.round(mid + amp) + 0.5);
+        ctx.stroke(); ctx.setLineDash([]);
+        ctx.strokeStyle = "rgba(201,211,230,0.3)"; ctx.beginPath(); ctx.moveTo(0, Math.round(mid) + 0.5); ctx.lineTo(w, Math.round(mid) + 0.5); ctx.stroke();
+        ctx.fillStyle = "rgba(255,255,255,0.25)"; ctx.fillRect(xn, mid - amp - 6, 1, 2 * amp + 12);
+        // x is time: "now" at xn, 1.25 cycles of the first voice across the picture
+        const strong = (0.35 + 0.65 * clamp(mix, 0, 1)).toFixed(3);
+        for (let v = 0; v < 3; v++) {
+          const y = (x) => mid + amp * Math.sin(2 * Math.PI * (SCALE[v] * (phase - 1.25 * (xn - x) / xn) + v / 3));
+          const g = ctx.createLinearGradient(0, 0, xn, 0);
+          g.addColorStop(0, "rgba(223,230,243,0)"); g.addColorStop(1, `rgba(238,242,250,${strong})`);
+          ctx.beginPath();
+          for (let x = 0; x <= xn; x += 2) (x ? ctx.lineTo(x, y(x)) : ctx.moveTo(x, y(x)));
+          ctx.strokeStyle = g; ctx.lineWidth = 1.7; ctx.stroke();
+          ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(xn + 0.5, y(xn), 3, 0, 2 * Math.PI); ctx.fill();
         }
-        ctx.strokeStyle = C.inkHi; ctx.lineWidth = 1.4; ctx.stroke();
+        ctx.textBaseline = "alphabetic";
+        if (drag) tag(ctx, `rate ${UI.format(id.rate, rate)}`, 7, 14, "left");
+        else { ctx.font = UI.SANS(11); ctx.fillStyle = C.muted; ctx.fillText("three voices around the dry sound", 7, 14); }
+        ctx.font = MONO(10); ctx.textAlign = "right"; ctx.fillStyle = C.ink; ctx.fillText("± " + WT.get(id.depth).toFixed(1) + " ms", w - 6, h - 6);
+        ctx.textAlign = "left";
       },
     };
   }
 
-  function ChorusView(canvas) {
+  /** Delay: time 0 … 4 s left to right; the dry hit, then each echo as a bar (left above the line,
+   *  right below; ping-pong alternates), heights from the feedback, darker with the tone. A handle on
+   *  the first echo: sideways the time, up and down the feedback; the time in the corner. */
+  function DelayView(canvas, { ids = {}, handles = {} } = {}) {
+    const id = Object.assign({ time: "dly_time", feedback: "dly_fb", tone: "dly_tone", mix: "dly_mix", ping: "dly_pingpong" }, ids);
+    const E = Easer(0.1), SPAN = 4;
+    let drag = false, shown = "";
+    const X = (s, w) => 8 + (s / SPAN) * (w - 14);
+    UI.dragPicture(canvas, (p) => {
+      const f0 = norm(id.feedback), w = canvas.clientWidth;
+      drag = true;
+      return {
+        ids: [id.time, id.feedback],
+        move(q, ev) {
+          WT.set(id.time, clamp(((q.x - 8) / (w - 14)) * SPAN, 0.05, SPAN));
+          UI.setNorm(id.feedback, f0 + (p.y - q.y) / 80 * (ev.shiftKey ? 0.15 : 1));
+        },
+        end() { drag = false; },
+      };
+    });
     return {
-      draw(t, p) {
+      draw() {
+        E.tick();
+        const T = E.get("time", WT.get(id.time)), fb = E.get("fb", WT.get(id.feedback)), tone = E.get("tone", WT.get(id.tone));
+        const mix = E.get("mix", clamp(liveOf(id.mix), 0, 1)), ping = WT.get(id.ping) > 0.5;
+        const ht = handles[id.time], hf = handles[id.feedback];
+        const hot = drag || (ht && ht.focused) || (hf && hf.focused);
+        const sig = [T, fb, tone, mix].map((v) => v.toFixed(4)).join() + ping + hot + canvas.clientWidth + UI.scale;
+        if (sig === shown) return;
+        shown = sig;
         const { ctx, w, h } = UI.fit(canvas);
         ctx.clearRect(0, 0, w, h);
-        const mid = h / 2, amp = (p.depth / 10) * (h / 2 - 5) + 1;
-        ctx.strokeStyle = C.hair; ctx.beginPath(); ctx.moveTo(0, mid + 0.5); ctx.lineTo(w, mid + 0.5); ctx.stroke();
-        for (let v = 0; v < 3; v++) {
-          ctx.beginPath();
-          for (let i = 0; i <= 48; i++) {
-            const x = (i / 48) * w;
-            const y = mid + amp * Math.sin(2 * Math.PI * (p.rate * t + (i / 48) * 0.9 + v / 3));
-            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-          }
-          ctx.strokeStyle = rgba("hi", 0.25 + 0.65 * p.mix * (1 - v * 0.22));
-          ctx.lineWidth = 1.3; ctx.stroke();
+        const mid = h / 2;
+        ctx.fillStyle = C.hair; ctx.fillRect(0, Math.round(mid), w, 1);
+        ctx.font = MONO(10); ctx.fillStyle = C.faint; ctx.textBaseline = "alphabetic";
+        ctx.fillText("L", 5, 14); ctx.fillText("R", 5, h - 6);
+        ctx.fillStyle = C.inkHi; ctx.fillRect(X(0, w) - 1, mid - h * 0.36, 2.5, h * 0.72);
+        for (let k = 1; k < 64; k++) {
+          const s = k * T, a = Math.pow(fb, k - 1) * (0.25 + 0.75 * mix);
+          if (s > SPAN || a < 0.03) break;
+          const hh = h * 0.36 * a, x = X(s, w) - 1;
+          ctx.fillStyle = rgba("ink", 0.35 + 0.6 * (1 - (1 - tone) * Math.min(1, k / 5)));
+          if (!ping || k % 2 === 1) ctx.fillRect(x, mid - hh, 2.5, hh);
+          if (!ping || k % 2 === 0) ctx.fillRect(x, mid, 2.5, hh);
         }
+        handleRing(ctx, X(T, w), mid);
+        tag(ctx, WT.get(id.time).toFixed(2) + " s", w - 6, 14);
+        if (hot) tag(ctx, `feed ${Math.round(WT.get(id.feedback) * 100)} %`, w - 6, h - 6);
+        for (const hd of [ht, hf]) if (hd) hd.place(canvas, X(T, w), mid);
       },
     };
   }
 
-  function DelayView(canvas) {
-    const paint = cache(canvas);
+  /** Reverb: the tail's level over time (log time, marks at 1, 5, 20, 60 s) from the decay and the
+   *  mix, the shimmer as a brighter layer inside it, the reverb's live level as a dot riding the
+   *  curve. A handle on the tail: sideways the decay (written in the title row). */
+  function ReverbView(canvas, { ids = {}, handles = {} } = {}) {
+    const id = Object.assign({ decay: "rev_decay", mix: "rev_mix", shimmer: "rev_shimmer" }, ids);
+    const E = Easer(0.1);
+    let drag = false, shown = "";
+    UI.dragPicture(canvas, (p) => {
+      const d0 = norm(id.decay);
+      drag = true;
+      return { ids: [id.decay], move(q, ev) { UI.setNorm(id.decay, d0 + (q.x - p.x) / 110 * (ev.shiftKey ? 0.15 : 1)); }, end() { drag = false; } };
+    });
     return {
-      draw(p) {
-        paint([p.time, p.fb, p.tone, p.mix, p.ping].map((v) => (+v).toFixed(3)).join(), (ctx, w, h) => {
-          const mid = h / 2, x0 = 6, x1 = w - 14, span = Math.max(2, Math.min(16, p.time * 7));
-          const x = (t) => x0 + (x1 - x0) * (t / span);
-          ctx.strokeStyle = C.hair; ctx.beginPath(); ctx.moveTo(x0, mid + 0.5); ctx.lineTo(x1, mid + 0.5); ctx.stroke();
-          ctx.font = MONO(10); ctx.fillStyle = C.faint; ctx.fillText("L", w - 11, 12); ctx.fillText("R", w - 11, h - 4);
-          ctx.strokeStyle = C.inkHi; ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.moveTo(x(0) + 0.5, mid - (mid - 4)); ctx.lineTo(x(0) + 0.5, mid + (mid - 4)); ctx.stroke();
-          let a = 1;
-          for (let n = 1; n * p.time <= span && a > 0.02; n++) {
-            const xx = Math.round(x(n * p.time)) + 0.5, len = (mid - 4) * a;
-            ctx.strokeStyle = rgba("hi", clamp(0.35 + 0.65 * p.mix, 0, 1) * (0.4 + 0.6 * a));
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            if (p.ping) { const up = n % 2 === 1; ctx.moveTo(xx, mid); ctx.lineTo(xx, up ? mid - len : mid + len); }
-            else { ctx.moveTo(xx, mid - len); ctx.lineTo(xx, mid + len); }
-            ctx.stroke();
-            a *= p.fb * (0.75 + 0.25 * p.tone);
-          }
-        });
-      },
-    };
-  }
-
-  function ReverbView(canvas) {
-    const paint = cache(canvas);
-    return {
-      draw(p, wet) {
-        paint([p.size, p.decay, p.damp, p.pre, p.shimmer, p.mix].map((v) => v.toFixed(3)).join() + (wet * 30 | 0), (ctx, w, h) => {
-          const x0 = 4, x1 = w - 12, top = 4, bot = h - 4, span = Math.max(1.5, p.decay * 1.15 + p.pre / 1000);
-          const x = (t) => x0 + (x1 - x0) * (t / span);
-          const y = (db) => top + (bot - top) * clamp(-db / 60, 0, 1);
-          const t0 = p.pre / 1000;
-          ctx.strokeStyle = C.hairSoft;
-          for (let s = 1; s < span; s *= 2) { const xx = Math.round(x(s)) + 0.5; ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke(); }
-          // early reflections: denser with size
-          const er = 6 + Math.round(18 * p.size);
-          ctx.strokeStyle = "rgba(201,211,230,0.35)"; ctx.lineWidth = 1;
-          for (let i = 0; i < er; i++) {
-            const tt = t0 + (0.004 + 0.09 * (0.4 + p.size) * (i / er) ** 1.4), yy = y(-6 - 30 * (i / er));
-            const xx = Math.round(x(tt)) + 0.5;
-            ctx.beginPath(); ctx.moveTo(xx, bot); ctx.lineTo(xx, yy); ctx.stroke();
-          }
-          const tail = (t60, color, fill) => {
-            ctx.beginPath(); ctx.moveTo(x(t0), y(0));
-            ctx.lineTo(x(t0 + t60), y(-60));
-            ctx.strokeStyle = color; ctx.lineWidth = 1.25; ctx.stroke();
-            if (fill) { ctx.lineTo(x(t0), bot); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); }
-          };
-          tail(p.decay, "rgba(201,211,230,0.55)", `rgba(201,211,230,${0.05 + 0.1 * p.mix})`);
-          tail(p.decay * (1 - 0.75 * p.damp), C.inkHi, null);
-          // shimmer: the octave and the fifth, rising out of the tail
-          const sh = Math.round(14 * p.shimmer);
-          for (let i = 0; i < sh; i++) {
-            const tt = t0 + span * (0.1 + 0.8 * ((i * 0.618) % 1)), yy = y(-12 - 40 * ((i * 0.381) % 1));
-            ctx.fillStyle = rgba("hi", 0.35 + 0.55 * p.shimmer);
-            ctx.beginPath(); ctx.arc(x(tt), yy, 1.1, 0, 2 * Math.PI); ctx.fill();
-          }
-          // live wet level
-          ctx.fillStyle = C.hair; ctx.fillRect(w - 5, top, 2, bot - top);
-          const lv = clamp(wet * 2, 0, 1);
-          ctx.fillStyle = C.inkHi; ctx.fillRect(w - 5, bot - lv * (bot - top), 2, lv * (bot - top));
-        });
+      draw(tel) {
+        E.tick();
+        const T = E.get("decay", WT.get(id.decay)), mix = E.get("mix", clamp(liveOf(id.mix), 0, 1)), shim = E.get("shim", clamp(liveOf(id.shimmer), 0, 1));
+        const live = E.get("live", clamp((tel.verb || 0) * 2, 0.001, 1));
+        const hd = handles[id.decay], hot = drag || (hd && hd.focused);
+        const sig = [T, mix, shim, live].map((v) => v.toFixed(4)).join() + hot + canvas.clientWidth + UI.scale;
+        if (sig === shown) return;
+        shown = sig;
+        const { ctx, w, h } = UI.fit(canvas);
+        ctx.clearRect(0, 0, w, h);
+        const X = (s) => 6 + (Math.log(1 + s) / Math.log(61)) * (w - 12), base = h - 16;
+        const tail = (s, k) => base - (base - 10) * k * Math.pow(10, -3 * s / T / 2.2);
+        ctx.font = MONO(10); ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+        for (const s of [1, 5, 20, 60]) {
+          const x = Math.round(X(s)) + 0.5;
+          ctx.strokeStyle = C.hairSoft; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, 6); ctx.lineTo(x, base); ctx.stroke();
+          ctx.fillStyle = C.faint; ctx.fillText(s + (s === 60 ? " s" : ""), x - (s === 60 ? 8 : 0), h - 4);
+        }
+        ctx.textAlign = "left";
+        const level = 0.35 + 0.65 * mix;
+        const area = (k, fill) => {
+          ctx.beginPath(); ctx.moveTo(X(0), base);
+          for (let s = 0; s <= 60; s += 0.25) ctx.lineTo(X(s), tail(s, k));
+          ctx.lineTo(X(60), base); ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+        };
+        area(level, "rgba(201,211,230,0.16)");
+        if (shim > 0.01) area(level * Math.min(1, shim * 1.4) * 0.9, "rgba(238,242,250,0.32)");
+        ctx.beginPath();
+        for (let s = 0; s <= 60; s += 0.25) (s ? ctx.lineTo(X(s), tail(s, level)) : ctx.moveTo(X(s), tail(s, level)));
+        ctx.strokeStyle = C.inkHi; ctx.lineWidth = 1.6; ctx.stroke();
+        // the reverb's level now, where the tail is at that level
+        const sl = Math.min(60, -(2.2 * T / 3) * Math.log10(live));
+        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(X(sl), tail(sl, level), 2.5, 0, 2 * Math.PI); ctx.fill();
+        const hx = X(T * 0.37), hy = tail(T * 0.37, level);
+        handleRing(ctx, hx, hy);
+        if (hd) hd.place(canvas, hx, hy);
+        if (hot) tag(ctx, UI.format(id.decay, WT.get(id.decay)), w - 6, 15);
       },
     };
   }
 
   const dbOf = (g) => (g > 1e-5 ? 20 * Math.log10(g) : -100);
 
-  /** Output (T6.8: upright, the mockup's drawOut, for the 98 px module): the two channels' peaks, the
-   *  limiter's ceiling as a white line, and its gain reduction as a thin bar hanging from it. */
-  function OutputView(canvas) {
+  /** Output (upright, the mockup's drawOut): the two channels' peaks on a dB scale, the limiter's
+   *  ceiling as a white line that is dragged up and down, and its gain reduction as a thin bar
+   *  hanging from it. The auto-gain is in the bottom bar. */
+  function OutputView(canvas, { ids = {}, handles = {} } = {}) {
+    const id = Object.assign({ ceiling: "lim_ceiling" }, ids);
+    const E = Easer(0.1), MIN = -48;
+    let drag = false;
+    const span = () => canvas.clientHeight - 26;
+    UI.dragPicture(canvas, (p) => {
+      const c0 = WT.get(id.ceiling);
+      drag = true;
+      return { ids: [id.ceiling], move(q, ev) { WT.set(id.ceiling, c0 - ((q.y - p.y) / span()) * -MIN * (ev.shiftKey ? 0.15 : 1)); }, end() { drag = false; } };
+    });
     return {
-      draw(peakL, peakR, gr, ceiling) {
+      draw(tel) {
+        E.tick();
+        const ceiling = E.get("ceiling", WT.get(id.ceiling));
         const { ctx, w, h } = UI.fit(canvas);
         ctx.clearRect(0, 0, w, h);
-        const MIN = -48, top = 10, bot = h - 16, x1 = w - 30;
+        const top = 10, bot = h - 16, x1 = w - 30;
         const Y = (db) => top + (bot - top) * clamp(db / MIN, 0, 1);
         ctx.font = MONO(10); ctx.textAlign = "right"; ctx.textBaseline = "middle";
         for (const db of [0, -12, -24, -36]) {
@@ -777,18 +1033,25 @@
         }
         const grad = ctx.createLinearGradient(0, Y(0), 0, Y(MIN));
         grad.addColorStop(0, C.inkHi); grad.addColorStop(1, "rgba(201,211,230,0.35)");
-        [peakL, peakR].forEach((g, ch) => {
+        [tel.peakL || 0, tel.peakR || 0].forEach((g, ch) => {
           const x = 12 + ch * 18, y = Y(clamp(dbOf(g), MIN, 0));
           ctx.fillStyle = C.track; ctx.fillRect(x, Y(0), 12, Y(MIN) - Y(0));
           ctx.fillStyle = grad; ctx.fillRect(x, y, 12, Y(MIN) - y);
         });
         const yc = Math.round(Y(ceiling));
         ctx.fillStyle = "#fff"; ctx.fillRect(8, yc - 1, x1 - 8, 1.5);
-        const grDb = -dbOf(gr);
+        const grDb = -dbOf(tel.gr || 1);
         if (grDb > 0.05) { ctx.fillStyle = rgba("hi", 0.8); ctx.fillRect(x1 - 4, yc, 2, Math.min(bot, Y(ceiling - grDb)) - yc); }
         ctx.fillStyle = C.ink; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
         ctx.fillText("L", 18, h - 4); ctx.fillText("R", 36, h - 4);
         ctx.textAlign = "left";
+        const hd = handles[id.ceiling];
+        if (hd) hd.place(canvas, (8 + x1) / 2, yc - 0.25, x1 - 4, 12);
+        if (drag || (hd && hd.focused)) {
+          const t = WT.get(id.ceiling).toFixed(1).replace("-", "−");
+          ctx.font = MONO(10); ctx.fillStyle = "rgba(5,7,13,0.85)"; ctx.fillRect(8, yc + 3, ctx.measureText(t).width + 6, 13);
+          ctx.fillStyle = C.inkHi; ctx.fillText(t, 11, yc + 13);
+        }
       },
     };
   }
@@ -813,5 +1076,5 @@
     };
   }
 
-  Object.assign(UI, { MagnetogramView, LayersView, EqView, KeyboardView, PhaserView, ChorusView, DelayView, ReverbView, OutputView, HeaderMeter, dbOf });
+  Object.assign(UI, { DayStripView, KEO, LayersView, EqView, KeyboardView, PhaserView, ChorusView, DelayView, ReverbView, OutputView, HeaderMeter, dbOf, phaserResponse, phaserBreak });
 })();

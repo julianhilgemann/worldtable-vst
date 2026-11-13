@@ -15,18 +15,25 @@
 // Checks: backend attached (not the browser mock), telemetry is streaming, parameters
 // sync C++ → JS and JS → C++, every parameter has exactly one control, the header shows the
 // replayed storm (T2.4), the chord readout shows the sounding chord (T3.6), the dome draws
-// the plug-in's sky with WebGL and the magnetogram got the day's chart (T6.1). T6.7 (spec/09 §5):
+// the plug-in's sky with WebGL and the day strip got the day's chart (T6.1). T6.7 (spec/09 §5):
 // every parameter's control has a hint, a role and a value text and can be set with the keyboard
 // alone (and a typed value lands), every picture has a hint, red/green/violet stay on the bands in
 // the DOM, and the macro rings follow the engine (Space 0 / 0.5 / 1 → reverb mix ×0.5 / ×1 / ×1.5).
+// T6.10: the day strip is a slider with a hint and a value sentence, its keogram is built, its canvas
+// is no larger than its box × dpr, an arrow key seeks 10 minutes on, and a pointer drag across it
+// seeks (at its start and on release) and the sky lands there.
 // T6.8 (spec/09 §3, §5): every module has its size in the layout, no canvas's backing store is wider
 // than its box × the pixel ratio, and every More popover opens from its title by pointer, is next in
-// the Tab order, and closes on Escape with the focus back on the title. T6.14: the EQ display draws,
-// a dot dragged, a bell scrolled, a drive bar pulled, the sky's end dragged and a dot's keys set the
-// right parameters, and the processor gets them.
+// the Tab order, and closes on Escape with the focus back on the title.
+// T6.12: the effect pictures are controls: a drag in each sets its parameters (read back in C++), the
+// telemetry carries the input spectrum and the phaser's phase, every proxy sits inside its picture,
+// and the page's phaser response is dsp::Phaser::magnitude.
+// T6.14: the EQ display draws, a dot dragged, a bell scrolled, a drive bar pulled, the sky's end
+// dragged and a dot's keys set the right parameters, and the processor gets them.
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "dsp/fx/Phaser.h"
 
 #include <iostream>
 
@@ -122,7 +129,7 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
   // Layers picture, the keyboard strip, the dome, the day strip, the brand mark
   var HUE = { red: '255, 107, 107', green: '92, 242, 160', violet: '143, 123, 255' };
   [].forEach.call(document.querySelectorAll('#stage *'), function (e) {
-    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #mag, #cv-layers, #cv-keys, .brand')) return;
+    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #strip, #cv-layers, #cv-keys, .brand')) return;
     var cs = getComputedStyle(e);
     var v = [cs.color, cs.backgroundColor, cs.borderTopColor, cs.borderBottomColor, cs.borderLeftColor, cs.borderRightColor,
              cs.fill, cs.stroke, cs.backgroundImage, cs.boxShadow, cs.outlineColor].join('|');
@@ -137,12 +144,54 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
   bad.spaceRing = ring;
   return bad;
 })()))JS";
+// T6.10: the day strip, from the keyboard and the pointer (synthetic events, dispatched in place).
+// Returns where the drag let go (`target`, UTC s) and where the sky was (`from`), to check and undo.
+const char* const stripProbe = R"JS(JSON.stringify((function () {
+  var box = document.getElementById('strip'), cv = document.getElementById('cv-strip'), r = { problems: [] };
+  if (!box || !cv || !UI.dayStrip) return { problems: ['no strip'] };
+  if (box.getAttribute('role') !== 'slider') r.problems.push('role');
+  if (!box.getAttribute('aria-valuetext')) r.problems.push('valuetext');
+  var h = box.getAttribute('data-hint') || '';
+  if (!h || h.length > 90) r.problems.push('hint');
+  var k = UI.dayStrip.view.keo;
+  r.keogram = k ? [k.cols, k.rows, Math.round(k.ms * 10) / 10] : null;
+  if (!k || k.cols < 100) r.problems.push('keogram');
+  var dpr = Math.min(3, UI.dpr * UI.scale);
+  r.canvas = [cv.width, cv.height, cv.clientWidth, cv.clientHeight, dpr];
+  if (cv.width > Math.ceil(cv.clientWidth * dpr) + 1 || cv.height > Math.ceil(cv.clientHeight * dpr) + 1) r.problems.push('canvas');
+  var seeks = [], native = WT.native;
+  WT.native = function (n, a) { if (n === 'seek') seeks.push(a); return native.apply(WT, arguments); };
+  var u0 = UI.dayStrip.shownUtc();
+  r.from = u0;
+  box.focus();
+  box.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+  r.keySeek = seeks.length ? Math.round(seeks[0] - u0) : null;
+  if (r.keySeek === null || Math.abs(r.keySeek - 600) > 30) r.problems.push('keys');
+  // a drag from a fifth to three fifths of the strip's width
+  var rect = cv.getBoundingClientRect(), y = rect.top + rect.height * 0.4, n0 = seeks.length;
+  var at = function (f) { return rect.left + rect.width * f; };
+  var ev = function (type, f) { cv.dispatchEvent(new PointerEvent(type, { clientX: at(f), clientY: y, button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 7, bubbles: true, cancelable: true })); };
+  UI.dayStrip.scrub.lastSeekAt = -1e9;   // the key's seek does not throttle the drag's first
+  ev('pointerdown', 0.2);
+  for (var i = 1; i <= 8; i++) ev('pointermove', 0.2 + 0.4 * i / 8);
+  ev('pointerup', 0.6);
+  WT.native = native;
+  var d = seeks.slice(n0);
+  r.dragSeeks = d.length;
+  r.target = d.length ? d[d.length - 1] : 0;
+  r.expect = UI.dayStrip.view.utcAt((at(0.6) - rect.left) / UI.scale, true);
+  // WebKit rounds a synthetic event's clientX to whole pixels: allow one pixel of the day
+  var px = UI.dayStrip.view.utcAt(201, true) - UI.dayStrip.view.utcAt(200, true) + 1;
+  if (d.length < 2 || Math.abs(r.target - r.expect) > px || Math.abs(d[0] - UI.dayStrip.view.utcAt((at(0.2) - rect.left) / UI.scale, true)) > px) r.problems.push('drag');
+  box.blur();
+  return r;
+})()))JS";
 
 // T6.8: the regrouped page (spec/09 §3) and its More popovers (§5), in the real editor.
 const char* const layoutProbe = R"JS(JSON.stringify((function () {
   var out = { sizes: [], canvas: [], more: [], moreCount: 0, moreParams: 0 };
   // module → [width, height] at the design size (CSS px, before the stage's zoom)
-  var SIZE = { mag: [1110, 92], sky: [213, 92], resonators: [435, 264], eq: [435, 177], 'dome-wrap': [448, 448],
+  var SIZE = { strip: [1110, 92], sky: [213, 92], resonators: [435, 264], eq: [435, 177], 'dome-wrap': [448, 448],
                harmony: [433, 448], phaser: [214, 260], chorus: [214, 260], macros: [448, 260], delay: [146, 260],
                reverb: [175, 260], output: [98, 260], topbar: [1350, 44], hintbar: [1350, 28] };
   Object.keys(SIZE).forEach(function (id) {
@@ -254,6 +303,50 @@ const char* const eqProbe = R"JS(JSON.stringify((function () {
   out.after = ids.map(function (id) { return Math.round(WT.get(id) * 1000) / 1000; });
   return out;
 })()))JS";
+// T6.12: a drag in each picture, with pointer events dispatched in WebKit (the views' own handlers);
+// values are restored afterwards by restoreProbe, after C++ has read them.
+const char* const picturesProbe = R"JS(JSON.stringify((function () {
+  var IDS = ['ph_depth', 'ph_feedback', 'ch_rate', 'dly_time', 'dly_fb', 'rev_decay', 'lim_ceiling'];
+  var before = {}, after = {}, out = { telemetry: [], proxies: [], before: before, after: after };
+  IDS.forEach(function (id) { before[id] = WT.get(id); });
+  window.__t612 = before;
+  var drag = function (cvId, x0, y0, x1, y1) {
+    var cv = document.getElementById(cvId), r = cv.getBoundingClientRect(), s = UI.scale;
+    var ev = function (type, x, y) {
+      cv.dispatchEvent(new PointerEvent(type, { clientX: r.left + (x + cv.clientLeft) * s, clientY: r.top + (y + cv.clientTop) * s,
+        button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 7, isPrimary: true, bubbles: true, cancelable: true }));
+    };
+    ev('pointerdown', x0, y0);
+    for (var i = 1; i <= 6; i++) ev('pointermove', x0 + (x1 - x0) * i / 6, y0 + (y1 - y0) * i / 6);
+    ev('pointerup', x1, y1);
+  };
+  drag('cv-phaser', 90, 70, 60, 50);    // left: shallower sweep; up: more feedback
+  drag('cv-chorus', 90, 70, 120, 70);   // right: faster
+  drag('cv-delay', 40, 68, 70, 40);     // the first echo later, more feedback
+  drag('cv-reverb', 60, 100, 90, 100);  // right: a longer tail
+  drag('cv-output', 30, 40, 30, 60);    // down: a lower ceiling
+  IDS.forEach(function (id) { after[id] = WT.get(id); });
+  var tel = __wtState.tel;
+  if (!tel.spectrumIn || tel.spectrumIn.length !== 120) out.telemetry.push('spectrumIn');
+  if (typeof tel.phaser !== 'number' || tel.phaser < 0 || tel.phaser > 1) out.telemetry.push('phaser');
+  if (!(tel.sampleRate > 0)) out.telemetry.push('sampleRate');
+  [].forEach.call(document.querySelectorAll('.handle[data-param]'), function (h) {
+    var cv = h.parentElement.querySelector('canvas.view'), x = h.offsetLeft + h.offsetWidth / 2, y = h.offsetTop + h.offsetHeight / 2;
+    if (!cv || x < cv.offsetLeft || x > cv.offsetLeft + cv.offsetWidth || y < cv.offsetTop || y > cv.offsetTop + cv.offsetHeight) out.proxies.push(h.dataset.param);
+  });
+  // the page's phaser response on a grid, for C++ to compare with dsp::Phaser::magnitude
+  out.response = [];
+  [[632.5, 6, 0.3, 0.4], [2000, 8, 0.8, 1], [200, 4, 0.8, 0.5], [900, 3, 0.55, 0.7]].forEach(function (c) {
+    for (var k = 0; k <= 30; k++) { var f = 20 * Math.pow(1000, k / 30); out.response.push([f, c[0], c[1], c[2], c[3], UI.phaserResponse(f, c[0], 48000, c[1], c[2], c[3])]); }
+  });
+  return out;
+})()))JS";
+
+const char* const restoreProbe = R"JS((function () {
+  var b = window.__t612 || {};
+  Object.keys(b).forEach(function (id) { UI.commit(id, b[id]); });
+  return Object.keys(b).length;
+})())JS";
 } // namespace
 
 int main (int argc, char* argv[])
@@ -377,7 +470,45 @@ int main (int argc, char* argv[])
     bool layoutOk = parsedLayout.isObject();
     for (const auto* list : { "sizes", "canvas", "more" })
         layoutOk = layoutOk && parsedLayout[list].isArray() && parsedLayout[list].size() == 0;
-    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 6 && static_cast<int> (parsedLayout["moreParams"]) >= 20;   // T6.14: the EQ's went
+    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 4 && static_cast<int> (parsedLayout["moreParams"]) >= 20;   // T6.12, T6.14 took some
+
+    // T6.12: the pictures as controls. The drags' values must have reached the processor.
+    const auto pictures = evalSync (*browser, juce::String::fromUTF8 (picturesProbe), 20000);
+    pump (400);
+    auto parsedPictures = juce::JSON::parse (pictures);
+    auto& apvts = processor.getValueTreeState();
+    const auto cpp = [&apvts] (const char* id) { return static_cast<double> (apvts.getRawParameterValue (id)->load()); };
+    const auto js = [&parsedPictures] (const char* when, const char* id) { return static_cast<double> (parsedPictures[when][id]); };
+    juce::StringArray dragBad;
+    const auto expect = [&] (const char* id, int direction)
+    {
+        const double b = js ("before", id), a = js ("after", id);
+        if (direction * (a - b) <= 1.0e-6 || std::abs (cpp (id) - a) > 1.0e-3 * (1.0 + std::abs (a)))
+            dragBad.add (juce::String (id) + " " + juce::String (b, 3) + " -> js " + juce::String (a, 3) + ", c++ " + juce::String (cpp (id), 3));
+    };
+    expect ("ph_depth", -1);
+    expect ("ph_feedback", 1);
+    expect ("ch_rate", 1);
+    expect ("dly_time", 1);
+    expect ("dly_fb", 1);
+    expect ("rev_decay", 1);
+    expect ("lim_ceiling", -1);
+    double responseError = 1.0e9;
+    if (const auto* rows = parsedPictures["response"].getArray())
+    {
+        responseError = 0.0;
+        for (const auto& r : *rows)
+        {
+            const double want = worldtable::dsp::Phaser::magnitude (r[0], r[1], 48000.0, static_cast<int> (r[2]), r[3], r[4]);
+            responseError = std::max (responseError, std::abs (20.0 * std::log10 (want) - 20.0 * std::log10 (static_cast<double> (r[5]))));
+        }
+    }
+    const auto restored = evalSync (*browser, juce::String::fromUTF8 (restoreProbe));
+    pump (400);
+    bool picturesOk = parsedPictures.isObject() && dragBad.isEmpty() && responseError < 1.0e-6
+                   && parsedPictures["response"].size() > 100;
+    for (const auto* list : { "telemetry", "proxies" })
+        picturesOk = picturesOk && parsedPictures[list].isArray() && parsedPictures[list].size() == 0;
 
     // T6.14: the EQ display, by pointer and keys; the values it set arrive in the processor
     const auto eqRun = evalSync (*browser, juce::String::fromUTF8 (eqProbe), 20000);
@@ -392,14 +523,14 @@ int main (int argc, char* argv[])
         eqOk = eqOk && after != nullptr && after->size() == 6;
         for (int i = 0; eqOk && i < 6; ++i)
         {
-            const double cpp = processor.getValueTreeState().getRawParameterValue (ids[i])->load();
-            const double js = (*after)[i];
-            eqCpp << (i ? ", " : "") << ids[i] << " " << cpp;
-            eqOk = eqOk && std::abs (cpp - js) <= 0.002 * std::max (1.0, std::abs (js));
+            const double inCpp = cpp (ids[i]), inJs = (*after)[i];
+            eqCpp << (i ? ", " : "") << ids[i] << " " << inCpp;
+            eqOk = eqOk && std::abs (inCpp - inJs) <= 0.002 * std::max (1.0, std::abs (inJs));
         }
     }
     evalSync (*browser, "Object.keys(window.__eqSaved).forEach(function (id) { UI.commit(id, window.__eqSaved[id]); }); true");
     pump (300);
+
     bool accessOk = parsedAccess.isObject();
     for (const auto* list : { "hint", "long", "role", "text", "focus", "keys", "pictures", "hues" })
         accessOk = accessOk && parsedAccess[list].isArray() && parsedAccess[list].size() == 0;
@@ -410,11 +541,28 @@ int main (int argc, char* argv[])
             && std::abs (static_cast<double> ((*ring)[1]) - 1.0) < 1.0e-3
             && std::abs (static_cast<double> ((*ring)[2]) - 1.5) < 1.0e-3;
 
+    // T6.10: the day strip; after the drag the sky must have landed where it let go, then it goes back
+    const auto strip = evalSync (*browser, juce::String::fromUTF8 (stripProbe), 10000);
+    auto parsedStrip = juce::JSON::parse (strip);
+    for (int k = 0; k < 30; ++k)
+    {
+        processor.processBlock (buffer, midi);
+        pump (20);
+    }
+    const double landed = evalSync (*browser, "__wtState.tel.sky.utc").getDoubleValue();
+    const double target = parsedStrip["target"];
+    evalSync (*browser, "UI.dayStrip.scrubTo(" + juce::String (static_cast<double> (parsedStrip["from"]), 3) + ", true); true");
+    pump (300);
+    const bool stripOk = parsedStrip.isObject() && parsedStrip["problems"].isArray() && parsedStrip["problems"].size() == 0
+                      && landed >= target - 1.0 && landed < target + 120.0;   // ≈ 0.6 s at 24× after the seek
+
     auto parsed = juce::JSON::parse (state);
     const bool ok = ready == "true"
                  && accessOk
                  && eqOk
+                 && stripOk
                  && layoutOk
+                 && picturesOk
                  && parsedSky["date"].toString().startsWith ("10 May")
                  && parsedSky["ut"].toString().endsWith ("UT")
                  && parsedSky["day"].toString() == "2024-05-10"
@@ -444,9 +592,15 @@ int main (int argc, char* argv[])
               << "dome:       " << dome << "\n"
               << "sky/chord:  " << skyState << "\n"
               << "keyboard, hints, colour, rings: " << access << "\n"
+              << "day strip:  " << strip << ", the sky landed " << juce::String (landed - target, 1) << " s after the drag's end\n"
               << "layout, canvases, More: " << layout << "\n"
               << "EQ display: " << eqRun << "\n"
               << "EQ in C++:  " << eqCpp << "\n"
+              << "pictures (T6.12): drags " << (dragBad.isEmpty() ? juce::String ("all read back in C++") : dragBad.joinIntoString ("; "))
+              << ", page phaser response vs dsp::Phaser " << responseError << " dB"
+              << ", telemetry " << juce::JSON::toString (parsedPictures["telemetry"], true)
+              << ", proxies off their picture " << juce::JSON::toString (parsedPictures["proxies"], true)
+              << ", restored " << restored << "\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
 
     if (probe.isNotEmpty())

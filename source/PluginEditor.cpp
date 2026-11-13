@@ -54,15 +54,8 @@ constexpr std::array<const char*, 3> kOnsetKindNames { "loaded", "forced", "pseu
 } // namespace
 
 PluginEditor::PluginEditor (PluginProcessor& p)
-    : AudioProcessorEditor (p), wtProcessor (p),
-      history (static_cast<size_t> (kFftSize), 0.0f),
-      fftData (static_cast<size_t> (2 * kFftSize), 0.0f),
-      window (static_cast<size_t> (kFftSize), 0.0f)
+    : AudioProcessorEditor (p), wtProcessor (p)
 {
-    for (int i = 0; i < kFftSize; ++i)
-        window[static_cast<size_t> (i)] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * static_cast<float> (i) / kFftSize);
-    bands.fill (-100.0f);
-
    #if WORLDTABLE_WEB_UI
     auto options = juce::WebBrowserComponent::Options {}
         .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
@@ -86,8 +79,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                              })
         .withNativeFunction ("seek", [this] (const juce::Array<juce::var>& args, auto complete)
                              {
-                                 // T6.6: a click on the magnetogram jumps the Journey there (UTC
-                                 // seconds). Applied by the audio thread at its next block.
+                                 // T6.6: a click on the day strip jumps the Journey there (UTC
+                                 // seconds; T6.10: a drag scrubs, at most 5 seeks a second).
+                                 // Applied by the audio thread at its next block.
                                  if (! args.isEmpty())
                                      if (const double utc = args[0]; std::isfinite (utc))
                                          wtProcessor.getSky().seek (utc);
@@ -199,9 +193,18 @@ std::optional<juce::WebBrowserComponent::Resource> PluginEditor::getResource (co
 }
 
 //==============================================================================
-void PluginEditor::updateAnalyzer()
+PluginEditor::Analyzer::Analyzer()
+    : history (static_cast<size_t> (kFftSize), 0.0f),
+      fftData (static_cast<size_t> (2 * kFftSize), 0.0f),
+      window (static_cast<size_t> (kFftSize), 0.0f)
 {
-    auto& scope = wtProcessor.getInstrument().getScope();
+    for (int i = 0; i < kFftSize; ++i)
+        window[static_cast<size_t> (i)] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * static_cast<float> (i) / kFftSize);
+    bands.fill (-100.0f);
+}
+
+void PluginEditor::Analyzer::update (dsp::ScopeFifo& scope, double sr)
+{
     std::array<float, 2048> chunk {};
     for (int n; (n = scope.pull (chunk.data(), static_cast<int> (chunk.size()))) > 0;)
         for (int i = 0; i < n; ++i)
@@ -215,7 +218,6 @@ void PluginEditor::updateAnalyzer()
     std::fill (fftData.begin() + kFftSize, fftData.end(), 0.0f);
     fft.performFrequencyOnlyForwardTransform (fftData.data(), true);
 
-    const double sr = wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0;
     const double binHz = sr / kFftSize;
     const float norm = 4.0f / kFftSize;   // Hann window coherent gain, single-sided
 
@@ -232,6 +234,23 @@ void PluginEditor::updateAnalyzer()
         auto& band = bands[static_cast<size_t> (b)];
         band = db > band ? db : band + 0.18f * (db - band);   // fast attack, slow fall
     }
+}
+
+juce::var PluginEditor::Analyzer::toVar() const
+{
+    juce::Array<juce::var> spec;
+    spec.ensureStorageAllocated (kBands);
+    for (auto b : bands)
+        spec.add (std::round (b * 10.0f) / 10.0f);
+    return spec;
+}
+
+void PluginEditor::updateAnalyzer()
+{
+    auto& instrument = wtProcessor.getInstrument();
+    const double sr = wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0;
+    outAnalyzer.update (instrument.getScope(), sr);
+    inAnalyzer.update (instrument.getInputScope(), sr);   // T6.12: the sources before the tone stage
 }
 
 juce::var PluginEditor::makeSkyTelemetry()
@@ -331,7 +350,8 @@ juce::var PluginEditor::makeDomeTelemetry() const
 
 juce::var PluginEditor::makeDayEvent() const
 {
-    // The loaded day at a glance (the magnetogram strip) and the station the dome looks up from.
+    // The loaded day at a glance (the day strip: keogram and magnetometer, T6.10) and the station
+    // the dome looks up from.
     const auto& c = wtProcessor.getSkyFeed().dayChart();
     const auto& ob = skyFrame.observer;
 
@@ -375,6 +395,19 @@ juce::var PluginEditor::makeDayEvent() const
     o->setProperty ("threshold", floats (c.threshold, 1000.0));
     o->setProperty ("phase", phases);
     o->setProperty ("onsets", onsets);
+
+    // T6.10: the keogram's inputs, per minute (2 decimals), and the oval's constants
+    o->setProperty ("eqLat", floats (c.eqLatitudeDeg, 100.0));
+    o->setProperty ("poleLat", floats (c.poleLatitudeDeg, 100.0));
+    o->setProperty ("activity", floats (c.activity, 100.0));
+    o->setProperty ("gain", floats (c.gain, 100.0));
+    o->setProperty ("unloading", floats (c.unloading, 100.0));
+    o->setProperty ("stormRed", floats (c.stormRed, 100.0));
+    o->setProperty ("mlt", floats (c.mltHours, 100.0));
+    o->setProperty ("kp", floats (c.kp, 100.0));
+    o->setProperty ("stationMlat", std::round (c.stationMlatDeg * 100.0) / 100.0);
+    o->setProperty ("dayShift", std::round (c.dayShiftDeg * 100.0) / 100.0);
+    o->setProperty ("arcPosition", std::round (c.arcPosition * 100.0) / 100.0);
     return juce::var (o);
 }
 
@@ -464,12 +497,13 @@ juce::var PluginEditor::makeTelemetry()
         o->setProperty ("low", juce::var (low));
     }
     o->setProperty ("eqCutHz", std::round (static_cast<double> (t.eqCutHz.load())));   // T3.9: 20000 = open
-    o->setProperty ("sampleRate", wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0);   // for the EQ's curve (T6.14)
+    o->setProperty ("sampleRate", wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0);   // for the EQ's curve (T6.14) and the phaser's (T6.12)
 
-    juce::Array<juce::var> spec;
-    for (auto b : bands)
-        spec.add (std::round (b * 10.0f) / 10.0f);
-    o->setProperty ("spectrum", spec);
+    o->setProperty ("spectrum", outAnalyzer.toVar());
+    // T6.12: the sources' spectrum before the tone stage (same bands) and the phaser's LFO phase,
+    // for the phaser picture (which also reads sampleRate, for its exact response)
+    o->setProperty ("spectrumIn", inAnalyzer.toVar());
+    o->setProperty ("phaser", round3 (t.phaserPhase.load()));
 
     return juce::var (o);
 }
