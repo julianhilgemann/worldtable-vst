@@ -527,7 +527,7 @@ const EqParam kEqParams[] = {
     { "eq2_freq", 80.0f, 3000.0f, 420.0f },  { "eq2_gain", -12.0f, 12.0f, -6.0f }, { "eq2_q", 0.3f, 6.0f, 1.0f },
     { "eq2_drive", 0.0f, 1.0f, 0.5f },       { "eq3_freq", 500.0f, 12000.0f, 2400.0f }, { "eq3_gain", -12.0f, 12.0f, 6.0f },
     { "eq3_q", 0.3f, 6.0f, 1.0f },           { "eq3_drive", 0.0f, 1.0f, 0.5f },    { "eq4_freq", 200.0f, 20000.0f, 6000.0f },
-    { "eq4_drive", 0.0f, 1.0f, 0.5f },       { "eq_sky", 0.0f, 1.0f, 0.5f },
+    { "eq4_drive", 0.0f, 1.0f, 0.5f },
 };
 constexpr double kLead = 1.0, kPerParam = 1.5;
 
@@ -574,8 +574,7 @@ TEST_CASE ("EQ in the instrument: the parameters' defaults are the EQ's", "[proc
         CHECK_THAT (defaultOf (p, id), Catch::Matchers::WithinAbs (0.0, 1.0e-6));
     CHECK_THAT (defaultOf (p, "eq2_q"), Catch::Matchers::WithinAbs (d.bands[1].q, 1.0e-4));
     CHECK_THAT (defaultOf (p, "eq3_q"), Catch::Matchers::WithinAbs (d.bands[2].q, 1.0e-4));
-    CHECK_THAT (defaultOf (p, "eq_sky"), Catch::Matchers::WithinAbs (dsp::Sources::Settings {}.eqSky, 1.0e-4));
-    for (const char* gone : { "flt_type", "flt_cutoff", "flt_reso", "flt_sky", "drive" })
+    for (const char* gone : { "flt_type", "flt_cutoff", "flt_reso", "flt_sky", "drive", "eq_sky" })
         CHECK (p.getValueTreeState().getParameter (gone) == nullptr);
 }
 
@@ -605,7 +604,7 @@ TEST_CASE ("EQ in the instrument: a v3 state (Filter, Drive) loads with the EQ's
     auto& apvts = p.getValueTreeState();
     CHECK (std::abs (apvts.getRawParameterValue ("rev_mix")->load() - 0.6f) < 1.0e-3f);   // the rest loads
     for (const char* id : { "eq1_freq", "eq1_gain", "eq1_drive", "eq2_freq", "eq2_gain", "eq2_q", "eq2_drive", "eq3_freq",
-                            "eq3_gain", "eq3_q", "eq3_drive", "eq4_freq", "eq4_drive", "eq_sky" })
+                            "eq3_gain", "eq3_q", "eq3_drive", "eq4_freq", "eq4_drive" })
     {
         INFO (id);
         CHECK (std::abs (apvts.getRawParameterValue (id)->load() - defaultOf (p, id)) < 1.0e-3f);
@@ -619,15 +618,16 @@ TEST_CASE ("EQ in the instrument: a v3 state (Filter, Drive) loads with the EQ's
 
 TEST_CASE ("EQ in the instrument: the sky opens the cut as the filter did (same reach, same slew)", "[processor][eq][sky]")
 {
+    // T4.2: the sky's opening is the grid's route Activity → Cut (its depth was eq_sky)
     juce::ScopedJuceInitialiser_GUI juceEnv;
-    CHECK (dsp::Sources::kEqSkyOctaves == Catch::Approx (3.0));     // the filter's reach
+    CHECK (dsp::mod::kOctavesPerUnit == Catch::Approx (3.0));        // the filter's reach
     CHECK (dsp::Sources::kSkySlewSeconds == Catch::Approx (2.0));   // and its slew
 
     for (const float sky : { 1.0f, 0.5f, 0.0f })
     {
         PluginProcessor p (false);
         setParam (p, "eq4_freq", 1000.0f);
-        setParam (p, "eq_sky", sky);
+        p.setRoute (worldtable::dsp::mod::Source::activity, worldtable::dsp::mod::Destination::eqCut, sky);
         p.setPlayConfigDetails (0, 2, kRate, 480);
         p.prepareToPlay (kRate, 480);
         CHECK_THAT (p.getInstrument().getTelemetry().eqCutHz.load(), Catch::Matchers::WithinRel (1000.0f, 1.0e-4f));
@@ -671,7 +671,7 @@ TEST_CASE ("EQ in the instrument: the telemetry carries the cut now", "[processo
     CHECK_THAT (p.getInstrument().getTelemetry().eqCutHz.load(), Catch::Matchers::WithinULP (Eq::kOpenHz, 0));   // open at the defaults
 
     setParam (p, "eq4_freq", 3000.0f);
-    setParam (p, "eq_sky", 0.0f);
+    p.setRoute (worldtable::dsp::mod::Source::activity, worldtable::dsp::mod::Destination::eqCut, 0.0f);
     juce::AudioBuffer<float> buffer (2, 512);
     juce::MidiBuffer midi;
     for (int b = 0; b < 50; ++b)

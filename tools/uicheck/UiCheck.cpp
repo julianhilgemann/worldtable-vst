@@ -24,7 +24,8 @@
 // the plug-in's sky with WebGL and the day strip got the day's chart (T6.1). T6.7 (spec/09 §5):
 // every parameter's control has a hint, a role and a value text and can be set with the keyboard
 // alone (and a typed value lands), every picture has a hint, red/green/violet stay on the bands in
-// the DOM, and the macro rings follow the engine (Space 0 / 0.5 / 1 → reverb mix ×0.5 / ×1 / ×1.5).
+// the DOM, and the rings follow the engine (T4.2: Space 0 / 0.5 / 1 → reverb mix ×0.5 / ×1 / ×1.5,
+// the ring's dot equal to the telemetry's modulated value, after the engine has run).
 // T6.9: the Journey transport's controls, journeySet and the day menu reach the processor.
 // T6.10: the day strip is a slider with a hint and a value sentence, its keogram is built, its canvas
 // is no larger than its box × dpr, an arrow key seeks 10 minutes on, and a pointer drag across it
@@ -152,13 +153,7 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
              cs.fill, cs.stroke, cs.backgroundImage, cs.boxShadow, cs.outlineColor].join('|');
     for (var k in HUE) if (v.indexOf(HUE[k]) >= 0) bad.hues.push((e.id || e.getAttribute('data-param') || e.tagName) + ' ' + k);
   });
-  // the Space macro's ring on Reverb mix, as a multiple of the knob's own value
-  var base = WT.get('rev_mix'), s0 = WT.get('macro_space'), ring = [];
-  [0, 0.5, 1].forEach(function (m) { UI.commit('macro_space', m); UI.updateRings(); var md = UI.knobs.rev_mix.mod; ring.push(md ? Math.round(md.now / base * 1000) / 1000 : -1); });
-  UI.commit('macro_space', s0);
-  UI.updateRings();
   bad.typed = typed;
-  bad.spaceRing = ring;
   return bad;
 })()))JS";
 // T6.10: the day strip, from the keyboard and the pointer (synthetic events, dispatched in place).
@@ -230,7 +225,7 @@ const char* const layoutProbe = R"JS(JSON.stringify((function () {
     });
   };
   [].forEach.call(document.querySelectorAll('.more-btn[aria-controls]'), function (btn) {
-    var panel = document.getElementById(btn.getAttribute('aria-controls')), id = btn.closest('.module').id;
+    var panel = document.getElementById(btn.getAttribute('aria-controls')), id = btn.closest('.module, #macros').id;
     out.moreCount++;
     if (!panel || !panel.hidden) { out.more.push(id + ' not closed'); return; }
     btn.click();
@@ -282,12 +277,11 @@ const char* const eqProbe = R"JS(JSON.stringify((function () {
   for (var i = 3; i < px.length; i += 4) if (px[i] > 0) lit++;
   out.drawn = Math.round(lit / (px.length / 4) * 1000) / 1000;
   out.size = [cv.clientWidth, cv.clientHeight, cv.width, cv.height];
-  var ids = ['eq1_drive', 'eq2_freq', 'eq2_gain', 'eq3_q', 'eq4_freq', 'eq_sky'];
+  var ids = ['eq1_drive', 'eq2_freq', 'eq2_gain', 'eq3_q', 'eq4_freq'];
   var saved = { eq2_q: WT.get('eq2_q') };
   ids.forEach(function (id) { saved[id] = WT.get(id); });
   window.__eqSaved = saved;
   UI.commit('eq4_freq', 6500);   // a cut below the top, so the sky's reach is drawn
-  UI.commit('eq_sky', 0.3);
   var ev = function (type, x, y) {
     cv.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, button: 0,
                                               buttons: type === 'pointerup' ? 0 : 1, isPrimary: true, pointerType: 'mouse' }));
@@ -314,12 +308,6 @@ const char* const eqProbe = R"JS(JSON.stringify((function () {
   pull(c, 0, -11);
   out.bar = Math.round(WT.get('eq1_drive') * 1000) / 1000;
   if (!near(WT.get('eq1_drive'), 12 / c.bh, 0.02)) out.bad.push('bar');
-  // the sky's reach: its end 20 px to the left
-  var s = UI.eq.at('sky'), s0 = WT.get('eq_sky');
-  pull(s, -20, 0);
-  var sx = s0 - 20 / s.w * Math.log2(1000) / 3;
-  out.sky = [s0, Math.round(WT.get('eq_sky') * 1000) / 1000, Math.round(sx * 1000) / 1000];
-  if (!near(WT.get('eq_sky'), sx, 0.01)) out.bad.push('sky');
   // the keys on a dot: up and down move the gain, left and right the frequency, ] the width
   var dot = document.querySelector('[data-param="eq2_freq"]'), key = function (k) {
     document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
@@ -724,6 +712,44 @@ int main (int argc, char* argv[])
     pump (600);   // let the restored values travel back to C++
     auto parsedAccess = juce::JSON::parse (access);
 
+    // T4.2: the Space macro's ring on Reverb mix, from the engine's telemetry (mod.val): for each
+    // macro setting the engine runs (its glide is 0.15 s), then the ring's dot must be telemetry's
+    // value, and that value Space's factor × the knob's own value
+    juce::Array<juce::var> spaceRing;
+    bool ringAgrees = true;
+    const auto space0 = evalSync (*browser, "String(WT.get('macro_space'))");
+    const auto revMix0 = evalSync (*browser, "String(WT.get('rev_mix'))");
+    evalSync (*browser, "UI.commit('rev_mix', 0.4); true");   // a base that × 1.5 stays inside its range
+    for (const double m : { 0.0, 0.5, 1.0 })
+    {
+        evalSync (*browser, "UI.commit('macro_space', " + juce::String (m) + "); true");
+        // the engine runs until the telemetry's value has settled (at most ≈ 5 s)
+        juce::var r;
+        double last = -10.0;
+        for (int round = 0; round < 20; ++round)
+        {
+            for (int k = 0; k < 20; ++k) { processor.processBlock (buffer, midi); pump (12); }
+            r = juce::JSON::parse (evalSync (*browser,
+                "JSON.stringify((function () { UI.updateRings(); var k = UI.knobs.rev_mix, t = UI.mod.tel,"
+                " i = UI.mod.info ? UI.mod.info.targets.indexOf('rev_mix') : -1;"
+                " return { now: k.mod ? k.mod.now : -1, val: t && i >= 0 ? t.val[i] : -2, base: WT.get('rev_mix') }; })())"));
+            const double v = r["val"];
+            if (round > 0 && std::abs (v - last) < 1.0e-6)
+                break;
+            last = v;
+        }
+        const double now = r["now"], val = r["val"], base = r["base"];
+        spaceRing.add (base > 0 ? std::round (now / base * 1000.0) / 1000.0 : -1.0);
+        ringAgrees = ringAgrees && std::abs (now - val) < 1.0e-9;
+    }
+    evalSync (*browser, "UI.commit('macro_space', " + space0 + "); UI.commit('rev_mix', " + revMix0 + "); true");
+    for (int k = 0; k < 20; ++k) { processor.processBlock (buffer, midi); pump (25); }
+    if (auto* o = parsedAccess.getDynamicObject())
+    {
+        o->setProperty ("spaceRing", spaceRing);
+        o->setProperty ("ringAgrees", ringAgrees);
+    }
+
     // T6.8: the layout, the canvases, the More popovers
     const auto layout = evalSync (*browser, juce::String::fromUTF8 (layoutProbe), 20000);
     auto parsedLayout = juce::JSON::parse (layout);
@@ -792,10 +818,10 @@ int main (int argc, char* argv[])
              && static_cast<double> (parsedEq["drawn"]) > 0.05;
     juce::String eqCpp;
     {
-        const char* const ids[] = { "eq1_drive", "eq2_freq", "eq2_gain", "eq3_q", "eq4_freq", "eq_sky" };
+        const char* const ids[] = { "eq1_drive", "eq2_freq", "eq2_gain", "eq3_q", "eq4_freq" };   // T4.2: eq_sky went
         const auto* after = parsedEq["after"].getArray();
-        eqOk = eqOk && after != nullptr && after->size() == 6;
-        for (int i = 0; eqOk && i < 6; ++i)
+        eqOk = eqOk && after != nullptr && after->size() == 5;
+        for (int i = 0; eqOk && i < 5; ++i)
         {
             const double inCpp = cpp (ids[i]), inJs = (*after)[i];
             eqCpp << (i ? ", " : "") << ids[i] << " " << inCpp;
@@ -810,7 +836,7 @@ int main (int argc, char* argv[])
         accessOk = accessOk && parsedAccess[list].isArray() && parsedAccess[list].size() == 0;
     accessOk = accessOk && std::abs (static_cast<double> (parsedAccess["typed"]) - 0.5) < 1.0e-3;
     const auto* ring = parsedAccess["spaceRing"].getArray();
-    accessOk = accessOk && ring != nullptr && ring->size() == 3
+    accessOk = accessOk && static_cast<bool> (parsedAccess["ringAgrees"]) && ring != nullptr && ring->size() == 3
             && std::abs (static_cast<double> ((*ring)[0]) - 0.5) < 1.0e-3
             && std::abs (static_cast<double> ((*ring)[1]) - 1.0) < 1.0e-3
             && std::abs (static_cast<double> ((*ring)[2]) - 1.5) < 1.0e-3;
@@ -938,7 +964,8 @@ int main (int argc, char* argv[])
               << "JS→C++ master −12 → C++ sees " << cppMaster << ", mood → " << cppMood << "\n"
               << "dome:       " << dome << "\n"
               << "sky/chord:  " << skyState << "\n"
-              << "keyboard, hints, colour, rings: " << access << "\n"
+              << "keyboard, hints, colour, rings: " << access << " ring " << juce::JSON::toString (parsedAccess["spaceRing"], true)
+              << (static_cast<bool> (parsedAccess["ringAgrees"]) ? " = telemetry" : " != telemetry") << "\n"
               << "day strip:  " << strip << ", the sky landed " << juce::String (landed - target, 1) << " s after the drag's end\n"
               << "layout, canvases, More: " << layout << "\n"
               << "EQ display: " << eqRun << "\n"

@@ -145,7 +145,7 @@
   const more = {};
   for (const btn of document.querySelectorAll(".more-btn[aria-controls]")) {
     btn.insertAdjacentHTML("beforeend", CHEVRON);
-    more[btn.closest(".module").id] = popover(btn, $(btn.getAttribute("aria-controls")));
+    more[btn.closest(".module, #macros").id] = popover(btn, $(btn.getAttribute("aria-controls")));
   }
   UI.more = more;   // module id → its More popover ({ open, set(open) })
   const details = popover($("details-btn"), $("details"), () => { if (S.tel.sky) showJourney(S.tel.sky); });

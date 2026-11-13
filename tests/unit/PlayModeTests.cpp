@@ -361,7 +361,7 @@ TEST_CASE ("Extreme Play settings stay finite and under the ceiling", "[processo
     setParam (p, "eq2_q", 6.0f);
     setParam (p, "eq3_gain", 12.0f);
     setParam (p, "eq4_freq", 200.0f);
-    setParam (p, "eq_sky", 1.0f);
+    p.setRoute (worldtable::dsp::mod::Source::activity, worldtable::dsp::mod::Destination::eqCut, 1.0f);
     for (const char* id : { "eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive" })
         setParam (p, id, 1.0f);
     setParam (p, "red_level", 1.0f);

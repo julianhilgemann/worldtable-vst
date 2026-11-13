@@ -29,17 +29,50 @@ void putEdges (ChordState& s, const Bands& bands) noexcept
     s.blend = static_cast<float> (bands.edges.blend);
 }
 
-/** The macros scale the values they move around a neutral 0.5 (see spec/tasks/T3.6). */
-float macroGain (float macro) noexcept { return 0.5f + macro; }
-float stormGain (float storm) noexcept  { return 0.4f + 1.2f * storm; }
+using mod::Target;
+
+/** A macro knob as a grid source: 2·(m − 0.5), −1 … 1 (dsp/mod/ModMatrix.h). */
+float macroSource (float m) noexcept { return 2.0f * (m - 0.5f); }
+
+mod::SlowLfo::Shape lfoShapeOf (int index) noexcept
+{
+    return static_cast<mod::SlowLfo::Shape> (std::clamp (index, 0, mod::SlowLfo::kNumShapes - 1));
+}
+
+mod::Envelope::Trigger triggerOf (int index) noexcept
+{
+    return static_cast<mod::Envelope::Trigger> (std::clamp (index, 0, 2));
+}
 } // namespace
 
-Instrument::Instrument (params::ParamPointers& pointers, sky::SkyRuntime& sky) : p (pointers), runtime (sky) {}
+void Instrument::OnsetSwell::tick() noexcept
+{
+    if (t < 0.0)
+        return;
+    t += mod::kTickSeconds;
+    if (t < kOnsetAttack)
+    {
+        value = from + (1.0 - from) * (t / kOnsetAttack);
+        return;
+    }
+    value = std::exp (-(t - kOnsetAttack) / kOnsetTau);
+    if (value < 1.0e-6)
+    {
+        value = 0.0;
+        t = -1.0;
+    }
+}
+
+Instrument::Instrument (params::ParamPointers& pointers, sky::SkyRuntime& sky) : p (pointers), runtime (sky)
+{
+    matrix.reset (mod::defaultDepths());   // until the processor publishes the session's grid
+}
 
 //==================================================================================================
 void Instrument::prepare (double rate, int maximumBlockSize)
 {
     (void) maximumBlockSize;   // every stage processes in place: no internal buffering needed
+    prepared = false;          // (the LFOs take their shapes at once, not crossfaded)
     sampleRate = rate > 0.0 ? rate : 48000.0;
     numNodes = sky::SkyParams {}.nodes;
 
@@ -49,12 +82,42 @@ void Instrument::prepare (double rate, int maximumBlockSize)
 
     readTarget (target);
     controls = target;
+
+    // T4.2: the grid's sources before the first tick, and the grid evaluated on them (the depths
+    // as they are, no glide), so the first block already plays the modulated settings
+    {
+        const int slot = depthsIn.take();
+        if (slot >= 0)
+        {
+            matrix.reset (depthsIn.slot (slot));
+            depthsIn.release (slot);
+        }
+        else
+        {
+            matrix.reset (matrix.target());
+        }
+    }
+    for (size_t i = 0; i < lfos.size(); ++i)
+        lfos[i].prepare (seed, static_cast<uint32_t> (i));
+    env.reset();
+    onsetSwell = {};
+    firesTaken = fireRequests.load (std::memory_order_acquire);
+    configureMotion (controls);
+    frame = {};
+    {
+        auto sources = sourceValues (0);
+        sources[mod::Source::activity] = 0.0f;
+        mod::ModMatrix::evaluate (matrix.depths(), sources, basesFrom (controls), frame);
+    }
+    modTicks = 0;
+    modTicked = false;
+
     configureHarmony (controls);
 
-    SkySound::Settings settings = settingsFrom (controls);
+    SkySound::Settings settings = settingsFrom (controls, frame);
     settings.voicesPerNode = 1;
     skySound.prepare (sampleRate, numNodes, seed, settings, skySound.harmony().chord());
-    front.prepare (sampleRate, seed, sourcesFrom (controls));
+    front.prepare (sampleRate, seed, sourcesFrom (controls, frame));
     front.setLowFloor (skySound.bands().edges.floor);
     front.setInputTap (&inputScope);
     skySound.setCompanion (&front);
@@ -78,6 +141,11 @@ void Instrument::prepare (double rate, int maximumBlockSize)
 
     masterGain = dbToGain (controls.masterDb);
     applyControls();
+    fxTo = fxOf (frame);
+    fxFrom = fxTo;
+    fxMoving = false;
+    setEffects (fxTo);
+    tickLength = intoTick = 0;
 
     telemetry.peakL.store (0.0f);
     telemetry.peakR.store (0.0f);
@@ -95,6 +163,7 @@ void Instrument::prepare (double rate, int maximumBlockSize)
     publishedPlay = ! controls.play;   // force the first publish
     publishChord();
     publishPlay();
+    publishModulation();
 }
 
 void Instrument::configureHarmony (const Controls& c) noexcept
@@ -106,7 +175,7 @@ void Instrument::configureHarmony (const Controls& c) noexcept
     h.setScale (static_cast<Scale> (std::clamp (c.scale, 0, kNumScales - 1)));
     h.setChordIndex (c.shape);
     h.setTranspose (c.transpose);
-    h.setProgression (static_cast<double> (c.progression) * stormGain (c.storm));
+    h.setProgression (static_cast<double> (frame[Target::progression]));
     h.start (static_cast<Phase> (runtime.model().current().phase));
 
     lastKey = c.key;
@@ -197,7 +266,44 @@ void Instrument::readTarget (Controls& c) const noexcept
     c.eq.bands[1] = { param (p.eq2_freq, band (1).hz), param (p.eq2_gain, 0.0f), param (p.eq2_q, band (1).q), param (p.eq2_drive, band (1).drive) };
     c.eq.bands[2] = { param (p.eq3_freq, band (2).hz), param (p.eq3_gain, 0.0f), param (p.eq3_q, band (2).q), param (p.eq3_drive, band (2).drive) };
     c.eq.bands[3] = { param (p.eq4_freq, band (3).hz), 0.0f, Eq::kCutQ, param (p.eq4_drive, band (3).drive) };
-    c.eqSky = param (p.eq_sky, 0.3f);
+
+    // T4.2: the LFOs and the envelope
+    c.lfoRate[0] = param (p.lfo1_rate, 0.12f);
+    c.lfoRate[1] = param (p.lfo2_rate, 0.03f);
+    c.lfoShape[0] = paramInt (p.lfo1_shape, 0);
+    c.lfoShape[1] = paramInt (p.lfo2_shape, 2);
+    c.envAttack = param (p.env_attack, 0.1f);
+    c.envDecay = param (p.env_decay, 0.6f);
+    c.envSustain = param (p.env_sustain, 0.35f);
+    c.envRelease = param (p.env_release, 1.5f);
+    c.envTrigger = paramInt (p.env_trigger, 0);
+}
+
+void Instrument::snapControls (const Controls& t) noexcept
+{
+    // Chord controls snap: Harmony turns a change into a crossfaded chord change.
+    controls.key = t.key;
+    controls.mood = t.mood;
+    controls.scale = t.scale;
+    controls.shape = t.shape;
+    controls.transpose = t.transpose;
+    controls.bands = t.bands;   // SkySound waits until they are still, then crossfades (T3.8)
+    controls.phStages = t.phStages;
+    controls.dlyPingPong = t.dlyPingPong;
+    // modes snap: Sources glides the mode
+    controls.play = t.play;
+    // the EQ snaps here and glides per sample itself (frequencies in log, τ 20 ms): a move then
+    // lands on the same samples whatever the host's block size (T3.9)
+    controls.eq = t.eq;
+    // T4.2: the LFO keeps its phase through a rate change and crossfades a shape change; the
+    // envelope's times act from its next tick on, continuously
+    controls.lfoRate = t.lfoRate;
+    controls.lfoShape = t.lfoShape;
+    controls.envAttack = t.envAttack;
+    controls.envDecay = t.envDecay;
+    controls.envSustain = t.envSustain;
+    controls.envRelease = t.envRelease;
+    controls.envTrigger = t.envTrigger;
 }
 
 void Instrument::glideControls (const Controls& t, int numSamples) noexcept
@@ -249,52 +355,37 @@ void Instrument::glideControls (const Controls& t, int numSamples) noexcept
     glide (controls.playDrone, t.playDrone);
     glide (controls.lowLevel, t.lowLevel);
     glide (controls.lowDecay, t.lowDecay);
-
-    // Chord controls snap: Harmony turns a change into a crossfaded chord change.
-    controls.key = t.key;
-    controls.mood = t.mood;
-    controls.scale = t.scale;
-    controls.shape = t.shape;
-    controls.transpose = t.transpose;
-    controls.bands = t.bands;   // SkySound waits until they are still, then crossfades (T3.8)
-    controls.phStages = t.phStages;
-    controls.dlyPingPong = t.dlyPingPong;
-    // modes snap: Sources glides the mode
-    controls.play = t.play;
-    // the EQ snaps here and glides per sample itself (frequencies in log, τ 20 ms): a move then
-    // lands on the same samples whatever the host's block size (T3.9)
-    controls.eq = t.eq;
-    controls.eqSky = t.eqSky;
 }
 
-SkySound::Settings Instrument::settingsFrom (const Controls& c) const noexcept
+SkySound::Settings Instrument::settingsFrom (const Controls& c, const mod::Frame& f) const noexcept
 {
     SkySound::Settings s;
     s.voicesPerNode = 1;
     s.bands = c.bands;
 
-    s.level[0] = c.level[0];
-    s.level[1] = c.level[1];
-    s.level[2] = c.level[2] * macroGain (c.glow);
+    // T4.2: the levels, detune, drift and width arrive modulated (Breath and Glow on the levels,
+    // Drift on detune and drift: dsp/mod/ModMatrix.h's default grid)
+    s.level[0] = f[Target::redLevel];
+    s.level[1] = f[Target::greenLevel];
+    s.level[2] = f[Target::violetLevel];
     for (size_t l = 0; l < kNumLayers; ++l)
         s.t60[l] = c.t60[l];
-    s.breathDepth = c.breath;
+    s.detuneCents = f[Target::detune];
+    s.driftCents = f[Target::drift];
 
-    const float driftGain = macroGain (c.driftMacro);
-    s.detuneCents = c.detune * driftGain;
-    s.driftCents = c.drift * driftGain;
-
-    const float storm = stormGain (c.storm);
-    s.exciter.bed = 0.3 * storm;
-    s.exciter.rise = 0.4 * storm;
-    s.exciter.strike = 1.0 * storm;
-    s.width = c.width;
+    // Strike (Storm's route): the exciter's bed, rise and strike, where Storm's factor sat
+    const Exciter::Settings unit;
+    const double strike = f[Target::excite];
+    s.exciter.bed = unit.bed * strike;
+    s.exciter.rise = unit.rise * strike;
+    s.exciter.strike = unit.strike * strike;
+    s.width = f[Target::width];
     return s;
 }
 
-Sources::Settings Instrument::sourcesFrom (const Controls& c) const noexcept
+Sources::Settings Instrument::sourcesFrom (const Controls& c, const mod::Frame& f) const noexcept
 {
-    const auto sky = settingsFrom (c);
+    const auto sky = settingsFrom (c, f);
     Sources::Settings s;
     s.play = c.play;
     s.droneUnder = c.playDrone;
@@ -308,19 +399,24 @@ Sources::Settings Instrument::sourcesFrom (const Controls& c) const noexcept
     s.strike = sky.exciter.strike;
     s.detuneCents = sky.detuneCents;
     s.driftCents = sky.driftCents;
-    s.lowLevel = c.lowLevel;
+    s.lowLevel = f[Target::lowLevel];
     s.low.t60 = c.lowDecay;
     s.eq = c.eq;
-    s.eqSky = c.eqSky;
+    // T4.2: the gains, the cut (the sky opens it: Activity → Cut) and the drives, modulated
+    s.eq.bands[0].gainDb = f[Target::eq1Gain];
+    s.eq.bands[1].gainDb = f[Target::eq2Gain];
+    s.eq.bands[2].gainDb = f[Target::eq3Gain];
+    s.eq.bands[3].hz = f[Target::eq4Freq];
+    s.eq.bands[0].drive = f[Target::eq1Drive];
+    s.eq.bands[1].drive = f[Target::eq2Drive];
+    s.eq.bands[2].drive = f[Target::eq3Drive];
+    s.eq.bands[3].drive = f[Target::eq4Drive];
     return s;
 }
 
+/** Per block: what is not on the sky's clock (the chord's snapped controls, the output stage). */
 void Instrument::applyControls() noexcept
 {
-    const float storm = stormGain (controls.storm);
-
-    skySound.setSettings (settingsFrom (controls));
-    front.setSettings (sourcesFrom (controls));
     if (controls.play != autoGainHeld)
     {
         // Play mode: the player's dynamics stay theirs; the normaliser glides back to unity.
@@ -331,71 +427,222 @@ void Instrument::applyControls() noexcept
     }
 
     auto& h = skySound.harmony();
-    const float progression = std::clamp (controls.progression * storm, 0.0f, 1.0f);
-    if (std::abs (progression - lastProgression) > 1.0e-4f)
-    {
-        h.setProgression (static_cast<double> (progression));
-        lastProgression = progression;
-    }
     if (controls.key != lastKey)              { h.setKey (controls.key); lastKey = controls.key; }
     if (controls.mood != lastMood)            { h.setMood (static_cast<Mood> (std::clamp (controls.mood, 0, kNumMoods - 1))); lastMood = controls.mood; }
     if (controls.scale != lastScale)          { h.setScale (static_cast<Scale> (std::clamp (controls.scale, 0, kNumScales - 1))); lastScale = controls.scale; }
     if (controls.shape != lastShape)          { h.setChordIndex (controls.shape); lastShape = controls.shape; }
     if (controls.transpose != lastTranspose)  { h.setTranspose (controls.transpose); lastTranspose = controls.transpose; }
 
+    limiter.setSettings (0.0f, controls.ceiling, controls.release);
+    masterGain = dbToGain (controls.masterDb);
+}
+
+//==================================================================================================
+// T4.2: the grid on the sky's clock
+
+void Instrument::configureMotion (const Controls& c) noexcept
+{
+    for (size_t i = 0; i < lfos.size(); ++i)
+    {
+        lfos[i].setRate (static_cast<double> (c.lfoRate[i]));
+        lfos[i].setShape (lfoShapeOf (c.lfoShape[i]), prepared);   // before playback: at once
+    }
+    mod::Envelope::Settings es;
+    es.attack = static_cast<double> (c.envAttack);
+    es.decay = static_cast<double> (c.envDecay);
+    es.sustain = static_cast<double> (c.envSustain);
+    es.release = static_cast<double> (c.envRelease);
+    es.trigger = triggerOf (c.envTrigger);
+    env.setSettings (es);
+}
+
+mod::SourceValues Instrument::sourceValues (uint64_t tick) const noexcept
+{
+    mod::SourceValues v;
+    v[mod::Source::storm] = macroSource (controls.storm);
+    v[mod::Source::breath] = static_cast<float> (SkySound::breathCycleAt (tick)) * controls.breath;
+    v[mod::Source::glow] = macroSource (controls.glow);
+    v[mod::Source::space] = macroSource (controls.space);
+    v[mod::Source::drift] = macroSource (controls.driftMacro);
+    v[mod::Source::activity] = static_cast<float> (std::min (front.skyActivity(), 1.0));
+    v[mod::Source::onset] = static_cast<float> (onsetSwell.value);
+    v[mod::Source::lfo1] = lfos[0].value();
+    v[mod::Source::lfo2] = lfos[1].value();
+    v[mod::Source::envelope] = env.value();
+    v.breathKnob = controls.breath;
+    return v;
+}
+
+mod::Bases Instrument::basesFrom (const Controls& c) const noexcept
+{
+    mod::Bases b;
+    b[Target::lowLevel] = c.lowLevel;
+    b[Target::redLevel] = c.level[0];
+    b[Target::greenLevel] = c.level[1];
+    b[Target::violetLevel] = c.level[2];
+    b[Target::detune] = c.detune;
+    b[Target::drift] = c.drift;
+    b[Target::width] = c.width;
+    b[Target::excite] = mod::infoOf (Target::excite).min;   // no knob: the fixed base
+    b[Target::eq1Gain] = c.eq.bands[0].gainDb;
+    b[Target::eq2Gain] = c.eq.bands[1].gainDb;
+    b[Target::eq3Gain] = c.eq.bands[2].gainDb;
+    b[Target::eq4Freq] = c.eq.bands[3].hz;
+    b[Target::eq1Drive] = c.eq.bands[0].drive;
+    b[Target::eq2Drive] = c.eq.bands[1].drive;
+    b[Target::eq3Drive] = c.eq.bands[2].drive;
+    b[Target::eq4Drive] = c.eq.bands[3].drive;
+    b[Target::phMix] = c.phMix;
+    b[Target::chMix] = c.chMix;
+    b[Target::dlyFb] = c.dlyFb;
+    b[Target::dlyMix] = c.dlyMix;
+    b[Target::revDecay] = c.revDecay;
+    b[Target::revShimmer] = c.revShimmer;
+    b[Target::revMix] = c.revMix;
+    b[Target::progression] = c.progression;
+    return b;
+}
+
+void Instrument::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEvent> events, int tickSamples) noexcept
+{
+    // 1. the controls glide on the tick grid; the activity slews over this tick
+    glideControls (target, tickSamples);
+    front.slewActivity (model, tickSamples);
+
+    // 2. the moving sources: onsets swell Onset and fire the envelope (in Onset mode)
+    for (const auto& e : events)
+        if (e.type == sky::SkyEvent::Type::onset)
+        {
+            onsetSwell.trigger();
+            env.onset();
+        }
+    onsetSwell.tick();
+    configureMotion (controls);
+    for (auto& l : lfos)
+        l.tick();
+    env.tick();
+
+    // 3. the grid, on this tick's sources (the breath cycle of the tick SkySound is about to run)
+    matrix.tick (sourceValues (skySound.ticks() + 1), basesFrom (controls), frame);
+    applyFrame (false);
+    ++modTicks;
+    modTicked = true;
+
+    // 4. the curtain and its companion, with the modulated settings
+    skySound.tick (model, events, tickSamples);
+    tickLength = tickSamples;
+    intoTick = 0;
+}
+
+void Instrument::applyFrame (bool atOnce) noexcept
+{
+    skySound.setSettings (settingsFrom (controls, frame));
+    front.setSettings (sourcesFrom (controls, frame));
+
+    const float progression = frame[Target::progression];
+    if (std::abs (progression - lastProgression) > 1.0e-4f)
+    {
+        skySound.harmony().setProgression (static_cast<double> (progression));
+        lastProgression = progression;
+    }
+
+    // the effects glide over this tick from the last tick's values to these
+    fxFrom = atOnce ? fxOf (frame) : fxTo;
+    fxTo = fxOf (frame);
+    fxMoving = fxFrom.differs (fxTo);
+    setEffects (fxTo);   // when moving, renderEffects sets them on its grid
+}
+
+Instrument::FxValues Instrument::fxOf (const mod::Frame& f) const noexcept
+{
+    FxValues x;
+    x.v = { f[Target::phMix], f[Target::chMix], f[Target::dlyFb], f[Target::dlyMix],
+            f[Target::revDecay], f[Target::revShimmer], f[Target::revMix] };
+    return x;
+}
+
+void Instrument::setEffects (const FxValues& x) noexcept
+{
     Phaser::Settings ps;
     ps.rateHz = controls.phRate;
     ps.depth = controls.phDepth;
     ps.feedback = controls.phFeedback;
-    ps.mix = controls.phMix;
+    ps.mix = x.v[0];
     ps.stages = controls.phStages;
     phaser.setSettings (ps);
 
     Chorus::Settings cs;
     cs.rateHz = controls.chRate;
     cs.depthMs = controls.chDepth;
-    cs.mix = controls.chMix;
+    cs.mix = x.v[1];
     chorus.setSettings (cs);
 
     StereoDelay::Settings ds;
     ds.timeSeconds = controls.dlyTime;
-    ds.feedback = controls.dlyFb;
+    ds.feedback = x.v[2];
     ds.tone = controls.dlyTone;
-    ds.mix = std::clamp (controls.dlyMix * macroGain (controls.space), 0.0f, 1.0f);
+    ds.mix = x.v[3];
     ds.pingPong = controls.dlyPingPong;
     delay.setSettings (ds);
 
     ShimmerReverb::Settings rs;
     rs.size = controls.revSize;
-    rs.decaySeconds = controls.revDecay;
+    rs.decaySeconds = x.v[4];
     rs.damping = controls.revDamp;
     rs.predelayMs = controls.revPreDelay;
-    rs.shimmer = std::clamp (controls.revShimmer * macroGain (controls.glow), 0.0f, 1.0f);
+    rs.shimmer = x.v[5];
     rs.modulation = controls.revMod;
-    rs.mix = std::clamp (controls.revMix * macroGain (controls.space), 0.0f, 1.0f);
+    rs.mix = x.v[6];
     reverb.setSettings (rs);
+}
 
-    limiter.setSettings (0.0f, controls.ceiling, controls.release);
-    masterGain = dbToGain (controls.masterDb);
+void Instrument::renderSamples (int offset, int numSamples) noexcept
+{
+    skySound.render (offset, numSamples);
+    renderEffects (outLeft + offset, outRight + offset, numSamples);
+}
+
+void Instrument::renderEffects (float* left, float* right, int numSamples) noexcept
+{
+    // A moving value glides linearly across the tick, set every kFxStepSamples counted from the
+    // tick's first sample, so the pieces fall on the same samples at any block size (rule 5).
+    for (int done = 0; done < numSamples;)
+    {
+        int piece = numSamples - done;
+        if (fxMoving && tickLength > 0)
+        {
+            const int at = intoTick + done;
+            const int next = std::min (tickLength, (at / kFxStepSamples + 1) * kFxStepSamples);
+            piece = std::max (1, std::min (piece, next - at));
+            const float w = std::min (1.0f, static_cast<float> (next) / static_cast<float> (tickLength));
+            FxValues x;
+            for (size_t i = 0; i < x.v.size(); ++i)
+                x.v[i] = fxFrom.v[i] + (fxTo.v[i] - fxFrom.v[i]) * w;
+            setEffects (x);
+        }
+        float* l = left + done;
+        float* r = right + done;
+        phaser.process (l, r, piece);
+        chorus.process (l, r, piece);
+        delay.process (l, r, piece);
+        reverb.process (l, r, piece);
+        done += piece;
+    }
+    intoTick += numSamples;
+}
+
+void Instrument::publishModulation() noexcept
+{
+    auto& t = modBuffer.back();
+    t.frame = frame;
+    for (size_t i = 0; i < lfos.size(); ++i)
+        t.lfo[i] = lfos[i].view();
+    t.envelope = env.view();
+    t.tick = modTicks;
+    modBuffer.publish();
 }
 
 //==================================================================================================
-void Instrument::handleMidi (const juce::MidiBuffer& midi) noexcept
-{
-    auto& h = skySound.harmony();
-    for (const auto meta : midi)
-    {
-        const auto m = meta.getMessage();
-        if (m.isNoteOn())
-            h.noteOn (m.getNoteNumber());
-        else if (m.isNoteOff())
-            h.noteOff (m.getNoteNumber());
-        else if (m.isAllNotesOff() || m.isAllSoundOff())
-            h.allNotesOff();
-    }
-    syncLatch();
-}
-
 void Instrument::syncLatch() noexcept
 {
     auto& h = skySound.harmony();
@@ -428,23 +675,64 @@ void Instrument::playEvent (const juce::MidiMessage& m) noexcept
         front.allNotesOff();
 }
 
-void Instrument::renderPlay (float* left, float* right, int numSamples, const juce::MidiBuffer& midi) noexcept
+void Instrument::renderSky (float* left, float* right, int numSamples) noexcept
+{
+    outLeft = left;
+    outRight = right;
+    skySound.setOutput (left, right);
+    runtime.process (numSamples, this);
+}
+
+void Instrument::render (float* left, float* right, int numSamples, const juce::MidiBuffer& midi, bool play) noexcept
 {
     // Each event lands on its sample: render up to it, apply it, go on. The sky's tick grid is
-    // absolute, so the split doesn't change the sound (rule 5).
+    // absolute, so the split doesn't change the sound (rule 5). Every note reaches the envelope
+    // there (T4.2: its Note trigger). In Play mode it plays; in drone mode it latches the chord,
+    // the events of one sample together (T4.2: at their sample too, no longer at the block's start).
+    auto& h = skySound.harmony();
     int pos = 0;
+    bool latchPending = false;
+    if (! play)
+        syncLatch();   // as every block: a latch let go hands the sky's chord back
     for (const auto meta : midi)
     {
         const int at = std::clamp (meta.samplePosition, pos, numSamples);
         if (at > pos)
         {
-            skySound.process (runtime, left + pos, right + pos, at - pos);
+            if (latchPending)
+            {
+                syncLatch();
+                latchPending = false;
+            }
+            renderSky (left + pos, right + pos, at - pos);
             pos = at;
         }
-        playEvent (meta.getMessage());
+        const auto m = meta.getMessage();
+        if (m.isNoteOn())
+            env.noteOn (m.getNoteNumber());
+        else if (m.isNoteOff())
+            env.noteOff (m.getNoteNumber());
+        else if (m.isAllNotesOff() || m.isAllSoundOff())
+            env.allNotesOff();
+        if (play)
+        {
+            playEvent (m);
+        }
+        else
+        {
+            if (m.isNoteOn())
+                h.noteOn (m.getNoteNumber());
+            else if (m.isNoteOff())
+                h.noteOff (m.getNoteNumber());
+            else if (m.isAllNotesOff() || m.isAllSoundOff())
+                h.allNotesOff();
+            latchPending = true;
+        }
     }
+    if (latchPending)
+        syncLatch();
     if (pos < numSamples)
-        skySound.process (runtime, left + pos, right + pos, numSamples - pos);
+        renderSky (left + pos, right + pos, numSamples - pos);
 }
 
 void Instrument::publishPlay() noexcept
@@ -576,7 +864,20 @@ void Instrument::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuff
     }
 
     readTarget (target);
-    glideControls (target, n);
+    snapControls (target);   // the rest glides on the sky's ticks (skyTicked)
+
+    // T4.2: a newer grid, and the Fire button
+    if (const int slot = depthsIn.take(); slot >= 0)
+    {
+        matrix.setDepths (depthsIn.slot (slot));
+        depthsIn.release (slot);
+    }
+    if (const auto fires = fireRequests.load (std::memory_order_acquire); fires != firesTaken)
+    {
+        firesTaken = fires;
+        env.fire();
+    }
+    modTicked = false;
 
     applyControls();
 
@@ -595,20 +896,9 @@ void Instrument::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuff
     }
 
     if (controls.play)
-    {
         syncLatch();   // a latch just cleared still hands the sky's chord back to the drone
-        renderPlay (left, right, n, midi);
-    }
-    else
-    {
-        handleMidi (midi);
-        skySound.process (runtime, left, right, n);
-    }
+    render (left, right, n, midi, controls.play);   // (drone mode syncs the latch there)   // the sky's ticks run the grid and the effects
 
-    phaser.process (left, right, n);
-    chorus.process (left, right, n);
-    delay.process (left, right, n);
-    reverb.process (left, right, n);
     autoGain.process (left, right, n);
     for (int i = 0; i < n; ++i)
     {
@@ -640,6 +930,8 @@ void Instrument::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuff
 
     publishChord();
     publishPlay();
+    if (modTicked)
+        publishModulation();
 }
 
 } // namespace worldtable::dsp

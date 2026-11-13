@@ -45,7 +45,8 @@
       depth = Math.round(clamp(Number(depth) || 0, -1, 1) * 100) / 100 || 0;
       mod.info.depths[i][j] = depth;   // at once, so the page answers before the plug-in's echo
       notify();
-      WT.native("modSet", src, dst, depth);
+      // the plug-in answers with the whole grid (false for an unknown key); it also sends `modulation`
+      WT.native("modSet", src, dst, depth).then((p) => { if (p && p.sources) setInfo(p); });
     },
     routesOf(paramId) {
       const info = mod.info, out = [];
@@ -109,8 +110,8 @@
     ].map(([key, label, group, lo, hi]) => ({ key, label, group, lo, hi }));
     const DESTINATIONS = [
       ["low_level", "Low", "Resonators", "mul"], ["red_level", "Red", "Resonators", "mul"], ["green_level", "Green", "Resonators", "mul"],
-      ["violet_level", "Violet", "Resonators", "mul"], ["excite", "Strike", "Resonators", "mul", []], ["detune", "Detune", "Resonators", "mul"],
-      ["drift", "Drift", "Resonators", "mul"], ["width", "Width", "Resonators", "mul"],
+      ["violet_level", "Violet", "Resonators", "mul"], ["detune", "Detune", "Resonators", "mul"],
+      ["drift", "Drift", "Resonators", "mul"], ["width", "Width", "Resonators", "mul"], ["excite", "Strike", "Resonators", "mul", []],
       ["eq1_gain", "Low", "EQ", "add"], ["eq2_gain", "Mid", "EQ", "add"], ["eq3_gain", "High", "EQ", "add"], ["eq4_freq", "Cut", "EQ", "oct"],
       ["eq_drive", "Drive", "EQ", "add", ["eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive"]],
       ["ph_mix", "Phaser mix", "Phaser", "mul"], ["ch_mix", "Chorus mix", "Chorus", "mul"], ["dly_fb", "Feed", "Delay", "mul"], ["dly_mix", "Mix", "Delay", "mul"],
@@ -186,7 +187,9 @@
       const val = [], lo = [], hi = [];
       targets.forEach((p, t) => {
         const j = targetCol[t], law = DESTINATIONS[j].law, m = p ? WT.META[p] : null;
-        const base = m ? WT.get(p) : 1, min = m ? m.min : 0, max = m ? (p.endsWith("_level") ? 2 * m.max : m.max) : 2;
+        // the modulated range (ModMatrix.h kTargets modMin … modMax): levels and Strike to 2, Detune and Drift × 1.5
+        const base = m ? WT.get(p) : 1, min = m ? m.min : 0;
+        const max = !m ? 2 : p.endsWith("_level") ? 2 * m.max : p === "detune" || p === "drift" ? 1.5 * m.max : m.max;
         let now = law === "mul" ? 1 : 0, l = now, h = now;
         SOURCES.forEach((s, i) => {
           const d = depths[i][j];

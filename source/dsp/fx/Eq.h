@@ -82,7 +82,8 @@ struct SvfStage
     the parameters (no block-rate glide), which keeps the output the same at any block size.
 
     **The sky** opens the high cut: `setSkyOctaves` multiplies its frequency by 2^octaves (the
-    caller slews the activity ≥ 2 s); at 20 kHz and above it is open.
+    caller slews the activity ≥ 2 s); at 20 kHz and above it is open. Since T4.2 the instrument
+    sends the cut already modulated (the grid's route Activity → Cut) and leaves this at 0.
 
     prepare() on the message thread; everything else is real-time safe (no allocation, locks or
     I/O). `process` works in place on a stereo pair. */

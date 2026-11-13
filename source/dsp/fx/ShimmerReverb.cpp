@@ -89,6 +89,8 @@ void ShimmerReverb::reset() noexcept
     shifterFifth.phase = 0.0f;
     shimmerHp = shimmerLp = shimmerFeedback = 0.0f;
     wetLevel = 0.0f;
+    meterEnergy = 0.0f;
+    meterCount = 0;
 }
 
 void ShimmerReverb::setSettings (const Settings& s) noexcept
@@ -126,7 +128,6 @@ void ShimmerReverb::process (float* left, float* right, int numSamples) noexcept
     const float mix = std::clamp (settings.mix, 0.0f, 1.0f);
     const float dryGain = std::min (1.0f, 2.0f * (1.0f - mix));
     const float wetGain = std::min (1.0f, 2.0f * mix);
-    float energy = 0.0f;
 
     std::array<float, kLines> state {};
 
@@ -195,14 +196,19 @@ void ShimmerReverb::process (float* left, float* right, int numSamples) noexcept
 
         const float wL = outL * 0.6f;
         const float wR = outR * 0.6f;
-        energy += wL * wL + wR * wR;
+        meterEnergy += wL * wL + wR * wR;
+        if (++meterCount >= kMeterSamples)
+        {
+            const float rms = std::sqrt (meterEnergy / static_cast<float> (2 * kMeterSamples));
+            wetLevel += 0.2f * (rms - wetLevel);
+            meterEnergy = 0.0f;
+            meterCount = 0;
+        }
 
         left[n]  = inL * dryGain + wL * wetGain;
         right[n] = inR * dryGain + wR * wetGain;
     }
 
-    const float rms = std::sqrt (energy / static_cast<float> (std::max (1, numSamples * 2)));
-    wetLevel += 0.2f * (rms - wetLevel);
 }
 
 } // namespace worldtable::dsp
