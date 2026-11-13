@@ -406,8 +406,7 @@ TEST_CASE ("migrateState accepts only known versions", "[state]")
     CHECK_FALSE (PluginProcessor::migrateState (juce::ValueTree ("Other")).isValid());
 }
 
-//===========================================================================================}
-
+//==================================================================================================
 // T6.9: the Journey transport — saved with the session, run/freeze, speeds, day, loop
 namespace
 {
@@ -648,7 +647,8 @@ TEST_CASE ("A day change and a loop wrap mid-play: no click, no swell, no alloca
         CHECK (daySwell < 1.5);
         CHECK (wrapSwell < 1.5);
     }
-=======
+}
+
 TEST_CASE ("The editor's taps read the sound without changing it", "[processor][telemetry][T6.12]")
 {
     // T6.12: the sources before the tone stage feed a second scope, the phaser's LFO phase a
