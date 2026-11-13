@@ -45,16 +45,86 @@ inline constexpr int kNumLayers = 3;
 inline constexpr int kSlots = 5;
 using Slots = std::array<int, kSlots>;
 
-/** Pitch classes per layer, padded to kSlots. red: root + fifth; green: the chord, padded with
-    root, fifth, then the rest; violet: the tones other than root and fifth. */
-Slots layerSlots (const Chord&, Layer) noexcept;
-
-/** MIDI range [lo, hi] of a layer at `registerSemitones` and `spread` (octaves per layer at 2). */
+/** A MIDI range [lo, hi], both ends included. */
 struct NoteRange
 {
     int lo, hi;
 };
-NoteRange layerRange (Layer, double registerSemitones, double spread) noexcept;
+
+//== Bands (T3.8, spec/tasks/T3.8-resonator-bands.md) ===============================================
+
+/** The four resonator bands share one pitch axis, cut by three crossovers between a floor and a
+    ceiling: low [floor, x1), red [x1, x2), green [x2, x3), violet [x3, ceiling). MIDI notes.
+    Moving a crossover lengthens one band and shortens its neighbour. `blend` (semitones) lets the
+    neighbours reach into each other. */
+struct BandEdges
+{
+    static constexpr int kCount = 5;            ///< floor, x1, x2, x3, ceiling
+    static constexpr int kMinLow = 12;          ///< the low band holds an octave: the root always has a place
+    static constexpr int kMinBand = 5;          ///< red, green and violet
+    static constexpr int kLowestFloor = 21;     ///< A0
+    static constexpr int kHighestFloor = 60;
+    static constexpr int kHighestCeiling = 108; ///< C8
+    static constexpr double kMaxBlend = 6.0;
+
+    int floor = 24;      ///< C1: the lowest note of the low band
+    int x1 = 36;         ///< C2: low │ red
+    int x2 = 50;         ///< D3: red │ green
+    int x3 = 73;         ///< C♯5: green │ violet
+    int ceiling = 91;    ///< G6: the first note above the violet band
+    double blend = 1.5;  ///< semitones, 0 … kMaxBlend
+
+    /** Edge i: 0 floor, 1–3 the crossovers, 4 the ceiling. */
+    int edge (int i) const noexcept;
+
+    bool operator== (const BandEdges& o) const noexcept
+    {
+        return floor == o.floor && x1 == o.x1 && x2 == o.x2 && x3 == o.x3 && ceiling == o.ceiling
+            && ! (blend < o.blend) && ! (blend > o.blend);
+    }
+};
+
+/** Order and minimum widths, whatever the host automates, clamped from the floor upward: the floor
+    into [kLowestFloor, kHighestFloor]; each further edge at least its band's minimum width above the
+    one below (kMinLow, then kMinBand); the ceiling at most kHighestCeiling; the blend into
+    [0, kMaxBlend]. The parameter ranges are such that pushing an edge up never passes its maximum. */
+BandEdges clampEdges (const BandEdges&) noexcept;
+
+/** The notes layer `l` rings: its band's span [edge, next edge − 1], widened by round(blend) on each
+    inner side (the sides that touch another band), never below the floor nor up to the ceiling.
+    The edges as given: clamp them first. */
+NoteRange bandRange (const BandEdges&, Layer) noexcept;
+
+/** The low band's note (the low resonator): the lowest note of `pitchClass` at or above `floor`. */
+int lowNote (int pitchClass, int floor) noexcept;
+
+/** Which chord tones a band rings (`red_tones`, `green_tones`, `violet_tones`; the parameter's choice
+    index). */
+enum class Tones : int { root = 0, rootFifth = 1, chord = 2, colours = 3, all = 4 };
+inline constexpr int kNumTones = 5;
+
+/** A band's pitch classes, padded to kSlots, every one moved `shiftSemitones` against the chord (a
+    pitch-class shift: ±12 is the same set). Root: the chord root. Root + fifth: the root, and the
+    fifth when the chord has one (red before T3.8). Chord: the chord, padded with root, fifth, then
+    the rest (green). Colours: the tones other than root and fifth, or fifth and root when there are
+    none (violet). All: the chord, as Chord. */
+Slots bandSlots (const Chord&, Tones, int shiftSemitones) noexcept;
+
+/** Everything the band voicing reads: the edges, and per layer (red, green, violet) its tones and
+    shift. The defaults are the parameters'. */
+struct Bands
+{
+    static constexpr int kMaxShift = 12;
+
+    BandEdges edges;
+    std::array<Tones, kNumLayers> tones { Tones::rootFifth, Tones::chord, Tones::colours };
+    std::array<int, kNumLayers> shift {};   ///< semitones, −kMaxShift … kMaxShift
+
+    bool operator== (const Bands&) const noexcept = default;
+};
+
+/** The edges clamped (clampEdges), the tones and shifts into their ranges. */
+Bands clampBands (const Bands&) noexcept;
 
 /** The MIDI note of pitch class `pc` nearest to `near` (within ± 6 semitones), folded into
     [lo, hi]. A range narrower than an octave keeps lo. */

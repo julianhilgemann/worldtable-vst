@@ -19,10 +19,6 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& apvts)
     jassert (progression != nullptr);
     transpose = apvts.getRawParameterValue (id::transpose);
     jassert (transpose != nullptr);
-    register_semis = apvts.getRawParameterValue (id::register_semis);
-    jassert (register_semis != nullptr);
-    spread = apvts.getRawParameterValue (id::spread);
-    jassert (spread != nullptr);
     detune = apvts.getRawParameterValue (id::detune);
     jassert (detune != nullptr);
     drift = apvts.getRawParameterValue (id::drift);
@@ -55,8 +51,30 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& apvts)
     jassert (low_level != nullptr);
     low_decay = apvts.getRawParameterValue (id::low_decay);
     jassert (low_decay != nullptr);
-    low_octave = apvts.getRawParameterValue (id::low_octave);
-    jassert (low_octave != nullptr);
+    band_floor = apvts.getRawParameterValue (id::band_floor);
+    jassert (band_floor != nullptr);
+    band_x1 = apvts.getRawParameterValue (id::band_x1);
+    jassert (band_x1 != nullptr);
+    band_x2 = apvts.getRawParameterValue (id::band_x2);
+    jassert (band_x2 != nullptr);
+    band_x3 = apvts.getRawParameterValue (id::band_x3);
+    jassert (band_x3 != nullptr);
+    band_ceiling = apvts.getRawParameterValue (id::band_ceiling);
+    jassert (band_ceiling != nullptr);
+    band_blend = apvts.getRawParameterValue (id::band_blend);
+    jassert (band_blend != nullptr);
+    red_tones = apvts.getRawParameterValue (id::red_tones);
+    jassert (red_tones != nullptr);
+    green_tones = apvts.getRawParameterValue (id::green_tones);
+    jassert (green_tones != nullptr);
+    violet_tones = apvts.getRawParameterValue (id::violet_tones);
+    jassert (violet_tones != nullptr);
+    red_shift = apvts.getRawParameterValue (id::red_shift);
+    jassert (red_shift != nullptr);
+    green_shift = apvts.getRawParameterValue (id::green_shift);
+    jassert (green_shift != nullptr);
+    violet_shift = apvts.getRawParameterValue (id::violet_shift);
+    jassert (violet_shift != nullptr);
     macro_storm = apvts.getRawParameterValue (id::macro_storm);
     jassert (macro_storm != nullptr);
     macro_breath = apvts.getRawParameterValue (id::macro_breath);
@@ -141,9 +159,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::progression, 1 }, "Progression",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 1.0f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::transpose, 1 }, "Transpose", -24, 24, 0, AudioParameterIntAttributes().withLabel ("st")));
-    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::register_semis, 1 }, "Register", -24, 24, 0, AudioParameterIntAttributes().withLabel ("st")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::spread, 1 }, "Voicing Spread",
-        NormalisableRange<float> (0.5f, 4.0f, 0.0f, 1.0f), 2.0f, AudioParameterFloatAttributes().withLabel ("oct")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::detune, 1 }, "Detune",
         NormalisableRange<float> (0.0f, 12.0f, 0.0f, 1.0f), 3.0f, AudioParameterFloatAttributes().withLabel ("ct")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::drift, 1 }, "Drift",
@@ -175,8 +190,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::low_decay, 1 }, "Low Decay",
         NormalisableRange<float> (1.0f, 30.0f, 0.0f, 0.48765594719222105f), 8.0f, AudioParameterFloatAttributes().withLabel ("s")));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::low_octave, 1 }, "Low Octave",
-        StringArray { "Sub", "Bass" }, 0));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::band_floor, 1 }, "Band Floor", 21, 60, 24, AudioParameterIntAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::band_x1, 1 }, "Crossover Low/Red", 28, 84, 36, AudioParameterIntAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::band_x2, 1 }, "Crossover Red/Green", 33, 96, 50, AudioParameterIntAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::band_x3, 1 }, "Crossover Green/Violet", 38, 103, 73, AudioParameterIntAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::band_ceiling, 1 }, "Band Ceiling", 43, 108, 91, AudioParameterIntAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::band_blend, 1 }, "Band Blend",
+        NormalisableRange<float> (0.0f, 6.0f, 0.0f, 1.0f), 1.5f, AudioParameterFloatAttributes().withLabel ("st")));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::red_tones, 1 }, "Red Tones",
+        StringArray { "Root", "Root + fifth", "Chord", "Colours", "All" }, 1));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::green_tones, 1 }, "Green Tones",
+        StringArray { "Root", "Root + fifth", "Chord", "Colours", "All" }, 2));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::violet_tones, 1 }, "Violet Tones",
+        StringArray { "Root", "Root + fifth", "Chord", "Colours", "All" }, 3));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::red_shift, 1 }, "Red Shift", -12, 12, 0, AudioParameterIntAttributes().withLabel ("st")));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::green_shift, 1 }, "Green Shift", -12, 12, 0, AudioParameterIntAttributes().withLabel ("st")));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { id::violet_shift, 1 }, "Violet Shift", -12, 12, 0, AudioParameterIntAttributes().withLabel ("st")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::macro_storm, 1 }, "Storm",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::macro_breath, 1 }, "Breath",

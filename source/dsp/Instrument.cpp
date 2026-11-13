@@ -21,6 +21,14 @@ int paramInt (const std::atomic<float>* p, int fallback = 0) noexcept
     return p != nullptr ? static_cast<int> (std::lround (p->load (std::memory_order_relaxed))) : fallback;
 }
 
+/** The band edges a voicing used, for the display (T3.8). */
+void putEdges (ChordState& s, const Bands& bands) noexcept
+{
+    for (int i = 0; i < BandEdges::kCount; ++i)
+        s.edges[static_cast<size_t> (i)] = static_cast<int16_t> (bands.edges.edge (i));
+    s.blend = static_cast<float> (bands.edges.blend);
+}
+
 /** The macros scale the values they move around a neutral 0.5 (see spec/tasks/T3.6). */
 float macroGain (float macro) noexcept { return 0.5f + macro; }
 float stormGain (float storm) noexcept  { return 0.4f + 1.2f * storm; }
@@ -47,6 +55,7 @@ void Instrument::prepare (double rate, int maximumBlockSize)
     settings.voicesPerNode = 1;
     skySound.prepare (sampleRate, numNodes, seed, settings, skySound.harmony().chord());
     front.prepare (sampleRate, seed, sourcesFrom (controls));
+    front.setLowFloor (skySound.bands().edges.floor);
     skySound.setCompanion (&front);
     lastPlay = controls.play;
 
@@ -115,9 +124,7 @@ void Instrument::readTarget (Controls& c) const noexcept
     c.scale = paramInt (p.scale, 0);
     c.shape = paramInt (p.chord_shape, 0);
     c.transpose = paramInt (p.transpose, 0);
-    c.registerSemis = paramInt (p.register_semis, 0);
     c.progression = param (p.progression, 1.0f);
-    c.spread = param (p.spread, 2.0f);
     c.detune = param (p.detune, 3.0f);
     c.drift = param (p.drift, 4.0f);
     c.width = param (p.width, 0.9f);
@@ -168,7 +175,20 @@ void Instrument::readTarget (Controls& c) const noexcept
     c.playDrone = param (p.play_drone, 0.0f);
     c.lowLevel = param (p.low_level, 0.5f);
     c.lowDecay = param (p.low_decay, 8.0f);
-    c.lowOctave = paramInt (p.low_octave, 0);
+
+    const BandEdges e;
+    c.bands.edges.floor = paramInt (p.band_floor, e.floor);
+    c.bands.edges.x1 = paramInt (p.band_x1, e.x1);
+    c.bands.edges.x2 = paramInt (p.band_x2, e.x2);
+    c.bands.edges.x3 = paramInt (p.band_x3, e.x3);
+    c.bands.edges.ceiling = paramInt (p.band_ceiling, e.ceiling);
+    c.bands.edges.blend = param (p.band_blend, static_cast<float> (e.blend));
+    c.bands.tones[0] = static_cast<Tones> (paramInt (p.red_tones, static_cast<int> (Tones::rootFifth)));
+    c.bands.tones[1] = static_cast<Tones> (paramInt (p.green_tones, static_cast<int> (Tones::chord)));
+    c.bands.tones[2] = static_cast<Tones> (paramInt (p.violet_tones, static_cast<int> (Tones::colours)));
+    c.bands.shift[0] = paramInt (p.red_shift, 0);
+    c.bands.shift[1] = paramInt (p.green_shift, 0);
+    c.bands.shift[2] = paramInt (p.violet_shift, 0);
     c.fltType = paramInt (p.flt_type, 0);
     c.fltCutoff = param (p.flt_cutoff, 20000.0f);
     c.fltReso = param (p.flt_reso, 0.1f);
@@ -183,7 +203,6 @@ void Instrument::glideControls (const Controls& t, int numSamples) noexcept
     const auto glide = [k] (float& v, float to) noexcept { v += (to - v) * k; };
 
     glide (controls.progression, t.progression);
-    glide (controls.spread, t.spread);
     glide (controls.detune, t.detune);
     glide (controls.drift, t.drift);
     glide (controls.width, t.width);
@@ -242,12 +261,11 @@ void Instrument::glideControls (const Controls& t, int numSamples) noexcept
     controls.scale = t.scale;
     controls.shape = t.shape;
     controls.transpose = t.transpose;
-    controls.registerSemis = t.registerSemis;
+    controls.bands = t.bands;   // SkySound waits until they are still, then crossfades (T3.8)
     controls.phStages = t.phStages;
     controls.dlyPingPong = t.dlyPingPong;
     // modes and choices snap: Sources glides the mode, the filter crossfades its type
     controls.play = t.play;
-    controls.lowOctave = t.lowOctave;
     controls.fltType = t.fltType;
 }
 
@@ -255,8 +273,7 @@ SkySound::Settings Instrument::settingsFrom (const Controls& c) const noexcept
 {
     SkySound::Settings s;
     s.voicesPerNode = 1;
-    s.registerSemitones = c.registerSemis;
-    s.spread = c.spread;
+    s.bands = c.bands;
 
     s.level[0] = c.level[0];
     s.level[1] = c.level[1];
@@ -295,7 +312,6 @@ Sources::Settings Instrument::sourcesFrom (const Controls& c) const noexcept
     s.driftCents = sky.driftCents;
     s.lowLevel = c.lowLevel;
     s.low.t60 = c.lowDecay;
-    s.low.octave = c.lowOctave + 1;
     s.filter.type = c.fltType;
     s.filter.cutoffHz = c.fltCutoff;
     s.filter.resonance = c.fltReso;
@@ -470,11 +486,13 @@ void Instrument::publishChord() noexcept
             mask[static_cast<size_t> (v.note / 64)] |= uint64_t { 1 } << (v.note % 64);
             ++held;
         }
-        if (chordPublished && publishedPlay && mask == publishedHeld)
+        const auto& bands = skySound.bands();
+        if (chordPublished && publishedPlay && mask == publishedHeld && bands == publishedBands)
             return;
 
         ChordState s {};
         s.play = true;
+        putEdges (s, bands);
         s.held = held;
         s.changes = skySound.chordChanges();
         s.tick = static_cast<uint32_t> (skySound.ticks());
@@ -508,13 +526,15 @@ void Instrument::publishChord() noexcept
         chordPublished = true;
         publishedPlay = true;
         publishedHeld = mask;
+        publishedBands = bands;
         return;
     }
 
     const bool latched = skySound.harmony().isLatched();
     const bool pending = skySound.hasPendingChord();
+    const auto& bands = skySound.bankBands (skySound.currentBank());
     if (chordPublished && ! publishedPlay && publishedChanges == skySound.chordChanges()
-        && publishedLatched == latched && publishedPending == pending)
+        && publishedLatched == latched && publishedPending == pending && bands == publishedBands)
         return;
 
     const auto& chord = skySound.chord();
@@ -531,6 +551,7 @@ void Instrument::publishChord() noexcept
     s.pending = pending;
     s.changes = skySound.chordChanges();
     s.tick = static_cast<uint32_t> (skySound.ticks());
+    putEdges (s, bands);
     const int v = std::min (s.voices, ChordState::kMaxNotes);
     for (int l = 0; l < kNumLayers; ++l)
         for (int i = 0; i < v; ++i)
@@ -543,6 +564,7 @@ void Instrument::publishChord() noexcept
     publishedChanges = s.changes;
     publishedLatched = latched;
     publishedPending = pending;
+    publishedBands = bands;
 }
 
 //==================================================================================================

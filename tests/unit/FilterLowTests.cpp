@@ -179,15 +179,16 @@ std::vector<float> runLow (dsp::LowResonator& low, double seconds, double excita
 }
 } // namespace
 
-TEST_CASE ("the low resonator sits on the bass note in its octave", "[low]")
+TEST_CASE ("the low resonator sits on the bass note in the low band", "[low]")
 {
-    CHECK (dsp::LowResonator::noteFor (2, 1) == 26);    // D1
-    CHECK (dsp::LowResonator::noteFor (0, 2) == 36);    // C2
-    CHECK (dsp::LowResonator::noteFor (11, 1) == 35);   // B1
+    CHECK (dsp::lowNote (2, 24) == 26);    // D1 above the default floor (C1)
+    CHECK (dsp::lowNote (0, 36) == 36);    // C2 with the floor on C2
+    CHECK (dsp::lowNote (11, 24) == 35);   // B1
 
     dsp::LowResonator low;
     low.prepare (kRate, 1);
-    low.setSettings ({ 4.0, 1 });
+    low.setSettings ({ 4.0 });
+    low.setFloor (24);
     low.setNote (9, 4.0);   // A1, 55 Hz
     REQUIRE (low.note() == 33);
     const auto out = runLow (low, 12.0, 0.4, 1.0);
@@ -208,8 +209,8 @@ TEST_CASE ("the low resonator moves to a new note without a click", "[low]")
 {
     dsp::LowResonator low;
     low.prepare (kRate, 3);
-    low.setSettings ({ 8.0, 1 });
-    low.setNote (2, 4.0);   // D1
+    low.setSettings ({ 8.0 });
+    low.setNote (2, 4.0);   // D1 (the default floor, C1)
     const auto out = runLow (low, 16.0, 0.5, 1.0, [&low] (int t)
     {
         if (t == 800)
@@ -233,7 +234,8 @@ TEST_CASE ("a strike rings at once without a click, the same seed gives the same
     for (auto* low : { &a, &b })
     {
         low->prepare (kRate, 9);
-        low->setSettings ({ 3.0, 2 });
+        low->setSettings ({ 3.0 });
+        low->setFloor (36);   // C2
         low->setNote (0, 0.02);
     }
     const auto run = [] (dsp::LowResonator& low)

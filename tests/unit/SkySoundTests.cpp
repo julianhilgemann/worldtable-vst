@@ -243,25 +243,18 @@ TEST_CASE ("ResonatorBank: retuning a ringing resonator doesn't jump; the guard 
 }
 
 //==================================================================================================
-TEST_CASE ("Voicing: slots, ranges, nearest notes and voice-leading as in the sketch", "[sound][voicing]")
+TEST_CASE ("Voicing: slots, nearest notes and voice-leading as in the sketch", "[sound][voicing]")
 {
+    // the sketch's red, green and violet slots are the bands' default tone choices (T3.8); the
+    // sketch's fixed ranges gave way to the band edges (BandTests.cpp)
     const dsp::Chord sus2 { 2, 0, { 0, 2, 7, 11, 0 }, 4 };   // D maj7sus2: D E A C♯
-    CHECK (dsp::layerSlots (sus2, Layer::red) == dsp::Slots { 2, 9, 2, 9, 2 });
-    CHECK (dsp::layerSlots (sus2, Layer::green) == dsp::Slots { 2, 4, 9, 1, 2 });
-    CHECK (dsp::layerSlots (sus2, Layer::violet) == dsp::Slots { 4, 1, 4, 1, 4 });
+    CHECK (dsp::bandSlots (sus2, dsp::Tones::rootFifth, 0) == dsp::Slots { 2, 9, 2, 9, 2 });
+    CHECK (dsp::bandSlots (sus2, dsp::Tones::chord, 0) == dsp::Slots { 2, 4, 9, 1, 2 });
+    CHECK (dsp::bandSlots (sus2, dsp::Tones::colours, 0) == dsp::Slots { 4, 1, 4, 1, 4 });
 
     const dsp::Chord m11 { 0, 0, { 0, 3, 7, 10, 17 }, 5 };   // C m11: C E♭ G B♭ F
-    CHECK (dsp::layerSlots (m11, Layer::green) == dsp::Slots { 0, 3, 7, 10, 5 });
-    CHECK (dsp::layerSlots (m11, Layer::violet) == dsp::Slots { 3, 10, 5, 3, 10 });
-
-    // spec/05 §12: red 31–49, green 50–74, violet 72–90 at Register 0, spread 2
-    CHECK (dsp::layerRange (Layer::red, 0.0, 2.0).lo == 31);
-    CHECK (dsp::layerRange (Layer::red, 0.0, 2.0).hi == 49);
-    CHECK (dsp::layerRange (Layer::green, 0.0, 2.0).lo == 50);
-    CHECK (dsp::layerRange (Layer::green, 0.0, 2.0).hi == 74);
-    CHECK (dsp::layerRange (Layer::violet, 0.0, 2.0).lo == 72);
-    CHECK (dsp::layerRange (Layer::violet, 0.0, 2.0).hi == 90);
-    CHECK (dsp::layerRange (Layer::violet, 0.0, 0.5).hi - dsp::layerRange (Layer::violet, 0.0, 0.5).lo == 12);
+    CHECK (dsp::bandSlots (m11, dsp::Tones::chord, 0) == dsp::Slots { 0, 3, 7, 10, 5 });
+    CHECK (dsp::bandSlots (m11, dsp::Tones::colours, 0) == dsp::Slots { 3, 10, 5, 3, 10 });
 
     CHECK (dsp::nearestNote (2, 40.3, 31, 49) == 38);    // D near E
     CHECK (dsp::nearestNote (9, 40.3, 31, 49) == 45);    // A: up 5 rather than down 7
@@ -310,9 +303,187 @@ int noteMismatches (const dsp::SkySound& sound, int bank, const juce::var& notes
                 ++bad;
     return bad;
 }
+
+/** The notes of `bank`, per layer and voice, as the golden stores them. */
+juce::var notesOf (const dsp::SkySound& sound, int bank)
+{
+    juce::Array<juce::var> layers;
+    for (int l = 0; l < dsp::kNumLayers; ++l)
+    {
+        juce::Array<juce::var> voices;
+        for (int v = 0; v < sound.voices(); ++v)
+            voices.add (sound.note (bank, static_cast<Layer> (l), v));
+        layers.add (voices);
+    }
+    return layers;
+}
+
+/** JSON with numbers at 9 significant digits, as the sketch's exporter wrote them
+    (`Number(x.toPrecision(9))`), and object properties in their order. */
+void writeJson (juce::MemoryOutputStream& out, const juce::var& v)
+{
+    if (auto* o = v.getDynamicObject())
+    {
+        out << "{";
+        bool first = true;
+        for (const auto& p : o->getProperties())
+        {
+            out << (first ? "" : ",") << juce::JSON::toString (p.name.toString()) << ":";
+            writeJson (out, p.value);
+            first = false;
+        }
+        out << "}";
+    }
+    else if (auto* a = v.getArray())
+    {
+        out << "[";
+        for (int i = 0; i < a->size(); ++i)
+        {
+            out << (i > 0 ? "," : "");
+            writeJson (out, (*a)[i]);
+        }
+        out << "]";
+    }
+    else if (v.isDouble())
+    {
+        char text[32] {};
+        std::snprintf (text, sizeof (text), "%.9g", static_cast<double> (v));
+        out << text;
+    }
+    else
+    {
+        out << juce::JSON::toString (v, true);
+    }
+}
 } // namespace
 
-TEST_CASE ("SkySound matches the T1.3 sketch on the 10 May 2024 storm (dry, 120 s)", "[sound][golden]")
+TEST_CASE ("Re-export the sound golden from SkySound (by hand: WorldtableTests \"[.regen-sound-golden]\")", "[.regen-sound-golden]")
+{
+    // T3.8: the band edges replaced the sketch's fixed layer ranges, so the sketch can no longer
+    // write this golden. The chord requests and onsets stay the sketch's (the progression doesn't
+    // depend on the voicing); the notes, the RMS and the sample windows are SkySound's at the
+    // default bands. Run only when the sound changes on purpose, with the reason in the task file.
+    const auto& g = soundGolden();
+    const auto& old = g.json;
+    auto rt = stormRuntime (48000.0, g.startUtc, old["speed"]);
+    dsp::SkySound sound;
+    sound.prepare (48000.0, kNodes, static_cast<uint32_t> (static_cast<int> (old["seed"])), dsp::SkySound::Settings {}, chordOf (old["start"]));
+
+    auto* golden = new juce::DynamicObject();
+    const juce::var result (golden);
+    golden->setProperty ("about", "Sound golden, dry: the resonator bank before any effect. The C++ SkySound replays the chord "
+                                  "requests at their ticks and must match the notes, the RMS and the sample windows. Until T3.8 it "
+                                  "came from the T1.3 sketch (prototype/sky/export-sound-golden.mjs); since T3.8 (the band edges "
+                                  "replace the sketch's fixed layer ranges) the notes, RMS and windows are SkySound's own at the "
+                                  "default bands, re-exported by WorldtableTests \"[.regen-sound-golden]\"; the requests and onsets "
+                                  "are still the sketch's.");
+    for (const auto* key : { "day", "from", "seconds", "seed", "speed", "sampleRate", "voicesPerNode", "voices" })
+        golden->setProperty (key, old[key]);
+
+    auto* settings = old["sound"].getDynamicObject()->clone().release();
+    settings->removeProperty ("register");
+    settings->removeProperty ("spread");
+    {
+        const dsp::Bands bands;
+        auto* b = new juce::DynamicObject();
+        b->setProperty ("edges", juce::Array<juce::var> { bands.edges.floor, bands.edges.x1, bands.edges.x2, bands.edges.x3, bands.edges.ceiling });
+        b->setProperty ("blend", bands.edges.blend);
+        b->setProperty ("tones", juce::Array<juce::var> { "Root + fifth", "Chord", "Colours" });
+        b->setProperty ("shift", juce::Array<juce::var> { 0, 0, 0 });
+        settings->setProperty ("bands", juce::var (b));
+    }
+    golden->setProperty ("sound", juce::var (settings));
+
+    auto* start = old["start"].getDynamicObject()->clone().release();
+    start->setProperty ("notes", notesOf (sound, 0));
+    golden->setProperty ("start", juce::var (start));
+    golden->setProperty ("requests", old["requests"]);
+
+    const auto* requests = old["requests"].getArray();
+    const auto* oldApplied = old["applied"].getArray();
+    juce::Array<juce::var> applied;
+    size_t nextRequest = 0;
+    uint32_t changesSeen = 0;
+    const auto out = play (*rt, sound, 48000.0, g.seconds, [] (int) { return 480; }, [&] (int, int)
+    {
+        if (sound.chordChanges() != changesSeen)
+        {
+            changesSeen = sound.chordChanges();
+            const auto i = applied.size();
+            REQUIRE (i < oldApplied->size());
+            auto* a = (*oldApplied)[i].getDynamicObject()->clone().release();
+            CHECK (static_cast<uint64_t> (static_cast<int> (a->getProperty ("tick"))) == sound.ticks());
+            CHECK (static_cast<int> (a->getProperty ("bank")) == sound.currentBank());
+            a->setProperty ("notes", notesOf (sound, sound.currentBank()));
+            applied.add (juce::var (a));
+        }
+        const auto tick = sound.ticks() + 1;
+        while (nextRequest < static_cast<size_t> (requests->size())
+               && static_cast<uint64_t> (static_cast<int> ((*requests)[static_cast<int> (nextRequest)]["tick"])) == tick)
+        {
+            const auto& q = (*requests)[static_cast<int> (nextRequest++)];
+            sound.requestChord (chordOf (q), q["urgent"]);
+        }
+    });
+    REQUIRE (applied.size() == oldApplied->size());
+    golden->setProperty ("applied", applied);
+    golden->setProperty ("onsets", old["onsets"]);
+
+    const int window = old["rms"]["window"];
+    auto* rms = new juce::DynamicObject();
+    rms->setProperty ("window", window);
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const auto& x = ch == 0 ? out.left : out.right;
+        juce::Array<juce::var> levels;
+        for (size_t a = 0; a + static_cast<size_t> (window) <= x.size(); a += static_cast<size_t> (window))
+            levels.add (rmsOf (x.data() + a, window));
+        rms->setProperty (ch == 0 ? "left" : "right", levels);
+    }
+    golden->setProperty ("rms", juce::var (rms));
+
+    // the same moments as before: the start, steady ringing, the strike, both changes, the end
+    juce::Array<juce::var> windows;
+    for (const auto& w : *old["windows"].getArray())
+    {
+        const int at = w["start"], n = w["left"].size();
+        auto* nw = new juce::DynamicObject();
+        nw->setProperty ("start", at);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const auto& x = ch == 0 ? out.left : out.right;
+            juce::Array<juce::var> samples;
+            for (int i = 0; i < n; ++i)
+                samples.add (static_cast<double> (x[static_cast<size_t> (at + i)]));
+            nw->setProperty (ch == 0 ? "left" : "right", samples);
+        }
+        windows.add (juce::var (nw));
+    }
+    golden->setProperty ("windows", windows);
+
+    float peak = 0.0f;
+    double sumSq = 0.0;
+    for (size_t i = 0; i < out.left.size(); ++i)
+    {
+        peak = std::max ({ peak, std::abs (out.left[i]), std::abs (out.right[i]) });
+        sumSq += 0.5 * (static_cast<double> (out.left[i]) * out.left[i] + static_cast<double> (out.right[i]) * out.right[i]);
+    }
+    auto* stats = new juce::DynamicObject();
+    stats->setProperty ("peak", static_cast<double> (peak));
+    stats->setProperty ("rms", std::sqrt (sumSq / static_cast<double> (out.left.size())));
+    stats->setProperty ("resets", sound.resets());
+    golden->setProperty ("stats", juce::var (stats));
+
+    juce::MemoryOutputStream text;
+    writeJson (text, result);
+    text << "\n";
+    const auto file = juce::File (WORLDTABLE_GOLDEN_DIR).getChildFile ("sound/2024-05-10-1720.json");
+    REQUIRE (file.replaceWithText (text.toString()));
+    std::printf ("Sound golden re-exported: %d changes, peak %.1f dBFS, rms %.1f dBFS -> %s\n", applied.size(),
+                 dbOf (peak), dbOf (std::sqrt (sumSq / static_cast<double> (out.left.size()))), file.getFullPathName().toRawUTF8());
+}
+
+TEST_CASE ("SkySound matches the sound golden on the 10 May 2024 storm (dry, 120 s)", "[sound][golden]")
 {
     const auto& g = soundGolden();
     const auto& json = g.json;

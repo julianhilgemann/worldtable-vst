@@ -24,7 +24,8 @@ namespace worldtable::dsp
 
     Mode: `play` glides a mix from drone to Play over kModeSeconds (rule 4). The drone gain goes to
     `droneUnder` in Play mode; the low resonator follows the chord root (drone) or the lowest held
-    note (Play). The note events are Play mode's (the instrument routes MIDI here only then).
+    note (Play), folded into the low band from SkySound's applied floor (T3.8). The note events are
+    Play mode's (the instrument routes MIDI here only then).
 
     prepare() on the message thread; everything else is real-time safe. */
 class Sources final : public SkySound::Companion
@@ -54,6 +55,9 @@ public:
 
     void prepare (double sampleRate, uint32_t seed, const Settings&) noexcept;
     void setSettings (const Settings&) noexcept;
+
+    /** The low band's floor before the first tick (after it, every tick reads SkySound's bands). */
+    void setLowFloor (int floorNote) noexcept { low.setFloor (floorNote); }
 
     //== Play mode events (audio thread, between samples) =============================================
     void noteOn (int note, float velocity) noexcept;

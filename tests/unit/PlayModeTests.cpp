@@ -230,8 +230,8 @@ TEST_CASE ("Play mode: silent without notes, the chord readout names what is hel
     CHECK (c.held == 3);
     CHECK (juce::String::fromUTF8 (c.label.data()) == "Dmaj");
 
-    // the low resonator follows the lowest held note (D) in the sub octave
-    CHECK (p.getInstrument().sources().lowResonator().note() == dsp::LowResonator::noteFor (2, 1));
+    // the low resonator follows the lowest held note (D) in the low band (from the floor, C1)
+    CHECK (p.getInstrument().sources().lowResonator().note() == dsp::lowNote (2, 24));
 }
 
 TEST_CASE ("Play mode: the same MIDI gives the same sound at any block size", "[processor][play][determinism]")

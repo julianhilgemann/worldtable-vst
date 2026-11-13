@@ -12,13 +12,14 @@ the chain and the MIDI latch inside `PluginProcessor`, driven by the v1 paramete
 Sparkles, whistlers and the full Breath cycle are T3.4; the raw-field layer (§5) is
 T3.6b and stays off. The default Journey opens at 17:20 UT on the storm day (the M3
 render window) rather than at 00:00. T3.7 (owner, 2026-11-09) adds Play mode (§13,
-ADR-0008), the low resonator (§14) and the filter (§15).
+ADR-0008), the low resonator (§14) and the filter (§15). T3.8 (owner, 2026-11-13) replaces the
+fixed layer ranges, Register, Spread and the low octave with the resonator bands (§16).
 
 ```
 SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet layers) × drone gain ─┐
      │                                ▲ tuning                                           │
      │                    Harmony (chord hold, progression, voice-leading)               │
-     ├─► LowResonator (the bass note, sub or bass octave; §14) ──────────────────────────┤
+     ├─► LowResonator (the bass note, in the low band from its floor; §14, §16) ─────────┤
      ├─► PlayVoices (Play mode: MIDI notes, the curtain's colours; §13) ─────────────────┼─► mix ─► Filter (§15) ─► Drive
      ├─► Sparkles / whistlers ───────────────────────────────────────────────────────────┤   ─► Phaser ─► Chorus/Ensemble
      └─► (optional) raw-field wavetable layer ───────────────────────────────────────────┘   ─► Tape Delay ─► Shimmer Reverb
@@ -31,8 +32,8 @@ SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet 
   one-pole (rotating phasor) resonators, so frequency and decay can change
   smoothly without clicks.
 - **Tuning:** each node is assigned a chord tone and an octave/harmonic within
-  Register and Voicing spread. Neighbouring nodes get different chord tones,
-  so a fold travelling along the curtain moves across pitches and the stereo
+  its layer's band (§16: floor, three crossovers, ceiling). Neighbouring nodes get different
+  chord tones, so a fold travelling along the curtain moves across pitches and the stereo
   field. Only scale and chord tones; detune ≤ a few cents for thickness.
 - **Per node:** brightness → partial gain; displacement → micro-detune
   (± few cents) and stereo position; dome azimuth → pan; elevation ×
@@ -72,8 +73,8 @@ SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet 
   neighbouring scale tone with a probability.
 - **Voice-leading:** voices move by the smallest steps (minimal total
   semitone movement); changes take minutes; long resonator crossfades.
-- **Pitch range:** global Transpose (semitones) and Register (low and deep →
-  high and airy).
+- **Pitch range:** global Transpose (semitones), and the bands (§16): moving all edges is
+  what Register was (low and deep → high and airy), their spacing what Voicing spread was.
 
 ## 4. Life in the detail
 - **Sparkles:** sparse, scale-quantised high bleeps triggered by sky events
@@ -189,6 +190,8 @@ on 2026-11-05 ("sounds fine … run with it"), constants unchanged. N = 64 per l
 - **Layers:** red = root + fifth, MIDI 31–49 (T60 20 s); green = the chord,
   50–74 (6 s); violet = chord tones above root and fifth, 72–90 (2.5 s). Register
   shifts them; Voicing spread scales their width. Default key D, Mood bright.
+  *Since T3.8 the ranges are the bands' (§16): red 34–51, green 48–74, violet 71–90 at the
+  defaults; the sketch keeps the ranges above.*
 - **Resonators:** complex one-pole, input × √(1−r²); double-banked. A change
   moves the bed excitation to the retuned bank over 12 s (equal power) while the
   old bank rings out. A sky or user change that finds the old bank still ringing
@@ -247,10 +250,10 @@ Ableton clip. A **Play** button (`play`) switches MIDI from latching the chord t
 ## 14. The low resonator (T3.7)
 The owner's request: "the sound generally needs some more low end … some resonator around the
 low end that we can set up using the UI". A resonator layer under red (`dsp/LowResonator`), mono:
-- **Tuning:** the chord's root (drone mode) or the lowest held note (Play mode), in the sub octave
-  (C1–B1, `low_octave` Sub, the default) or the bass octave (C2–B2, Bass). A pair of resonators
-  ± 1.5 ct around the note (slow beating) and one an octave up at 0.35 (the body, so it speaks on
-  small speakers).
+- **Tuning:** the chord's root (drone mode) or the lowest held note (Play mode), as the lowest note
+  of its pitch class at or above the low band's floor (§16, `band_floor`; C1 by default, so
+  C1–B1: T3.7's Sub octave; a floor of C2 is its Bass). A pair of resonators ± 1.5 ct around the
+  note (slow beating) and one an octave up at 0.35 (the body, so it speaks on small speakers).
 - **Excitation:** drone mode, the exciter's bed × (0.5 + activity) plus the onset swell (80 ms
   attack, τ 6 s); Play mode, a bow (1.4 × the bed) while a note is held and a strike when a new
   lowest note comes in, through the Play envelope.
@@ -272,3 +275,33 @@ Drive, inside the sources' tick so the sky reaches it on the tick grid:
 - **Sky:** the activity, slewed 2 s, opens it by up to 3 octaves × `flt_sky` (LP and BP upward, HP
   downward). Default: LP12 open at 20 kHz, so the drone is unchanged until it is used.
 
+
+## 16. The resonator bands (T3.8)
+The owner's request (2026-11-13): "the resonators need to have a way of being tuned somehow
+separately"; "resonator crossover frequencies that change the bands of colors … if dragged, one
+band gets elongated, while the other one gets shorter." `dsp/Voicing` (`BandEdges`, `bandRange`,
+`bandSlots`, `lowNote`), applied by `SkySound`:
+- **One pitch axis, four bands:** low [floor, x1), red [x1, x2), green [x2, x3), violet
+  [x3, ceiling), MIDI notes (`band_floor` 24, `band_x1` 36, `band_x2` 50, `band_x3` 73,
+  `band_ceiling` 91). Minimum widths: low 12 (the root always has a place), the others 5. The
+  engine keeps the order and the widths whatever is automated, clamped from the floor upward.
+- **Blend** (`band_blend`, 1.5 st): a layer rings its band widened by round(blend) on each side
+  that touches another band, never below the floor nor up to the ceiling. Defaults: red 34–51,
+  green 48–74, violet 71–90.
+- **Tones** per band (`red_tones` Root + fifth, `green_tones` Chord, `violet_tones` Colours; also
+  Root and All = Chord): the pitch classes the band's voices take, padded to five slots as before.
+  **Shift** (`*_shift`, ±12 st) moves the band's pitch classes against the chord (±12 is the same
+  set: the band's range sets the octave).
+- **Low:** the low resonator's note is the lowest of its pitch class at or above the floor.
+- **Applying a change:** once the bands have been still for 300 ms (30 ticks), the current chord
+  is voiced again into the other bank and the bed crossfades over (12 s), as a key change by hand;
+  a chord already waiting is voiced with the new bands when it lands. An old bank still ringing
+  is damped to a T60 of 0.5 s (not 3 s), so a change is heard within a second. A voice keeps its
+  place within a band that moved (its old note mapped onto the new range), so a band moved an
+  octave keeps its voices spread. A blend move that keeps its rounding re-voices nothing. Play
+  mode's voices keep their own partials; only the low note's folding follows the floor.
+- **Telemetry:** the chord readout carries the five edges and the blend the current bank was
+  voiced with (`ChordState::edges`, `blend`; the editor's `chord.edges`, `chord.blend`).
+- **Removed:** `register_semis`, `spread`, `low_octave` (state version 3: an older state loads with
+  the default bands). The sound golden is the port's own since T3.8 (the sketch keeps its fixed
+  ranges): `WorldtableTests "[.regen-sound-golden]"` re-exports it.

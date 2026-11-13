@@ -26,6 +26,12 @@ namespace worldtable::dsp
     old bank still rings, unless it is urgent (a sky move or a user change): then the old bank is
     damped to a T60 of 3 s. A newer request replaces a pending one.
 
+    The bands (T3.8): each layer rings its band of the pitch axis (`Settings::bands`: the edges, the
+    tones, the shift; dsp::Voicing). A band change is applied once it has been still for
+    kRevoiceStillTicks: the current chord is voiced again into the other bank, through the same
+    crossfade, as a key change by hand; an old bank still ringing is damped to kRevoiceDampT60 so
+    the new voicing is heard within a second. Ringing energy is never retuned.
+
     Deterministic (CLAUDE.md rule 5): the sound changes only on ticks and samples, so the output
     doesn't depend on the block size. prepare() runs on the message thread; everything else is
     real-time safe and allocation-free. */
@@ -39,8 +45,7 @@ public:
     struct Settings
     {
         int    voicesPerNode = 1;                         ///< 1: V = nodes; 2: a voice between neighbours too
-        double registerSemitones = 0.0;
-        double spread = 2.0;                              ///< voicing spread, octaves per layer at 2
+        Bands  bands;                                     ///< the bands' edges, tones and shifts (T3.8)
         std::array<double, kNumLayers> level { 1.0, 0.7, 0.4 };     ///< red, green, violet
         std::array<double, kNumLayers> t60 { 20.0, 6.0, 2.5 };      ///< s
         Exciter::Settings exciter;
@@ -57,6 +62,8 @@ public:
     static constexpr double kBreathHz = 5.0 / 60.0;
 
     static constexpr double kDampT60 = 3.0;               ///< s: an urgent change damps the old bank
+    static constexpr int kRevoiceStillTicks = 30;         ///< 300 ms: a band change waits until it is still
+    static constexpr double kRevoiceDampT60 = 0.5;        ///< s: a re-voice damps a still-ringing old bank
     static constexpr double kPanAltitudeKm = 110.0;       ///< the green line's altitude, for the pan
 
     /** Something else that plays on the sky's clock (T3.7: the played notes, the low resonator and
@@ -107,6 +114,12 @@ public:
     int  resets() const noexcept              { return guardResets; }
     int  voices() const noexcept              { return numVoices; }
     int  note (int bank, Layer, int voice) const noexcept;
+    /** The bands as applied: what the next voicing uses (the settings' bands once they have been
+        still for kRevoiceStillTicks). */
+    const Bands& bands() const noexcept       { return settled; }
+    /** The bands bank `b` was voiced with. */
+    const Bands& bankBands (int bank) const noexcept { return voicedWith[static_cast<size_t> (bank)]; }
+    bool revoicing() const noexcept           { return revoiceWanted; }   ///< a band change waits for the bank
     /** The Breath cycle at the last tick, ½ − ½cos: 0 = out, 1 = full in, whatever the depth (the UI
         mirrors it, spec/06). */
     double breathCycle() const noexcept       { return breath01; }
@@ -155,6 +168,13 @@ private:
     double xf = 1.0, xfStart = 0.0, xfEnd = 0.0;
     double breath01 = 0.0;
     double dampStart = -1.0;              ///< real s when damping began; < 0: not damping
+    double dampT60 = kDampT60;            ///< of the damping under way
+
+    // bands (T3.8): the settings' bands become `settled` once still for kRevoiceStillTicks
+    Bands settled {};
+    std::array<Bands, ResonatorBank::kBanks> voicedWith {};
+    uint64_t bandsMovedTick = 0;
+    bool revoiceWanted = false;
     Chord applied {}, pending {};
     bool pendingValid = false, pendingUrgent = false, pendingFromHarmony = false;
     uint32_t changes = 0;

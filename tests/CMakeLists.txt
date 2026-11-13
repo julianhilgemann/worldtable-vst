@@ -17,6 +17,7 @@ target_sources(WorldtableTests PRIVATE
     unit/TrackBuilderTests.cpp
     unit/FilterLowTests.cpp
     unit/PlayModeTests.cpp
+    unit/BandTests.cpp
     unit/AllocationCounter.cpp)
 
 target_compile_definitions(WorldtableTests PRIVATE
