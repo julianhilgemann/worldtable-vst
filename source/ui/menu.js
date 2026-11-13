@@ -6,8 +6,8 @@
  * the browser mock the stage scales and the choice lives in localStorage.
  *
  * The context menu replaces the web view's own (Reload, Inspect), which never shows. On a control
- * (a knob, a picture's handle, a choice): its hint, dimmed, then Reset to default and, for a slider,
- * Enter value…, the same paths as double-click and Enter. Anywhere else: the sizes, the welcome
+ * (a knob, a picture's handle, a choice): its hint, dimmed, then Reset to default and, where Enter
+ * opens a value field, Enter value…: the keyboard's own paths (Backspace, Enter). Anywhere else: the sizes, the welcome
  * tour, About. It is clamped to the stage; Escape, a click outside or a choice closes it. Everything
  * in it is reachable without a right-click too (the bottom bar, double-click, Enter).
  * T4.2 adds "Modulate with ▸" to the control menu (`controlMenu`).
@@ -147,9 +147,14 @@
     return UI.format(id, v);
   }
 
-  /** A control (a knob, a handle's proxy, a choice, a switch): its hint, Reset, Enter value. */
+  /** The key a control takes (spec/09 §5), sent to it as the keyboard would: its own code path. */
+  const press = (ctl, key) => ctl.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+
+  /** A control (a knob, a handle or its proxy, a value chip, a choice, a switch): its hint, Reset to
+   *  default (Backspace: every control's default, a crossover kept between its neighbours), Enter
+   *  value… where Enter opens a value field (every slider but a value chip, a button that steps). */
   function controlMenu(ctl) {
-    const id = ctl.dataset.param, v0 = UI.defaultValue(id);
+    const id = ctl.dataset.param;
     menu.dataset.kind = "control";
     menu.dataset.param = id;
     const hint = document.createElement("div");
@@ -157,13 +162,9 @@
     hint.setAttribute("role", "none");
     hint.textContent = ctl.dataset.hint || UI.hintOf(id);
     menu.appendChild(hint);
-    item("Reset to default", defaultText(ctl, id, v0), () => UI.commit(id, v0), { right: true, action: "reset" });
-    // Enter on a slider opens its value field (widgets.js Knob; a handle's proxy follows spec/09 §5)
-    if (ctl.getAttribute("role") === "slider")
-      item("Enter value…", "", () => {
-        ctl.focus({ preventScroll: true });
-        ctl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
-      }, { action: "enter" });
+    item("Reset to default", defaultText(ctl, id, UI.defaultValue(id)), () => press(ctl, "Backspace"), { right: true, action: "reset" });
+    if (ctl.getAttribute("role") === "slider" && ctl.tagName !== "BUTTON")
+      item("Enter value…", "", () => { ctl.focus({ preventScroll: true }); press(ctl, "Enter"); }, { action: "enter" });
   }
 
   /** Opens the menu at (x, y) in stage pixels, kept inside the stage. */

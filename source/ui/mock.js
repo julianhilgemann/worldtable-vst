@@ -4,7 +4,8 @@
  * the plug-in the mock is inactive and nothing is imported.
  *
  * Serve the repo root (python3 -m http.server 8765) and open /source/ui/. The URL hash picks the
- * moment, like the sketch: #day=2024-05-10&t=2024-05-11T08:00&speed=24 */
+ * moment, like the sketch: #day=2024-05-10&t=2024-05-11T08:00&speed=24. The transport's journeySet
+ * (T6.9) runs on the sketch's model: speed, freeze, loop, and a new day loaded in its place. */
 (function () {
   "use strict";
   const WT = window.WT;
@@ -14,6 +15,15 @@
   const DAY = hash.get("day") || "2024-05-10";
   const START = { "2024-05-10": "2024-05-10T17:20", "2025-01-19": "2025-01-19T09:30", "2025-01-25": "2025-01-25T09:00" };
   const SPEED = Number(hash.get("speed")) || 24;
+  // T6.9: the transport, as the plug-in has it (data::kSkyDays, JourneyState::kSpeeds)
+  const DAYS = [
+    { id: "2024-05-10", label: "10–11 May 2024 · Gannon storm (Kp 9)" },
+    { id: "2025-01-19", label: "19–20 Jan 2025 · moderate, substorms" },
+    { id: "2025-01-25", label: "25–26 Jan 2025 · quiet" },
+  ];
+  const SPEEDS = [1, 24, 60, 240, 1440];
+  const snap = (v) => SPEEDS.reduce((b, s) => (Math.abs(Math.log(v / s)) < Math.abs(Math.log(v / b)) ? s : b), SPEEDS[0]);
+  const J = { day: DAY, speed: snap(SPEED), frozen: false, loop: false };
   const base = new URL("../../prototype/sky/", location.href).href;
 
   Promise.all(["data.js", "model.js", "observer.js", "sound/harmony.js"].map((f) => import(base + f)))
@@ -22,25 +32,33 @@
 
   async function start(D, M, O, H) {
     const observer = new O.Observer();
-    const track = await D.loadDay(DAY);
-    const startMs = Date.parse((hash.get("t") || START[DAY] || START["2024-05-10"]) + "Z");
-    const model = new M.SkyModel(track, { seed: 1, startMs, speed: SPEED, observer });
-
-    // ---- the day chart, as SkyFeed builds it from the timeline
-    const trace = M.runSlow(track, { seed: 1, observer });
-    const st = observer.station;
-    WT.dispatch("day", {
-      day: DAY, sequence: 1, t0: track.startMs / 1000, step: 60,
-      station: { code: st.code, name: st.name, lat: st.lat, lon: st.lon, elevKm: st.elevKm, mlat: observer.mlat, mlon: observer.mlon,
-        poleLat: O.DIPOLE_POLE.lat, poleLon: O.DIPOLE_POLE.lon, mzAz: observer.magZenith.az, mzEl: observer.magZenith.el },
-      dh: Array.from(trace.dh), dhModel: Array.from(trace.dhModel), coupling: Array.from(trace.coupling),
-      energy: Array.from(trace.energy), threshold: Array.from(trace.threshold), phase: Array.from(trace.phase),
-      onsets: trace.events.filter((e) => e.type === "onset").map((e) => ({ utc: e.t / 1000, kind: e.kind, strength: e.strength })),
-      // T6.10: the keogram's inputs, two decimals as the editor sends them
-      ...Object.fromEntries(["eqLat", "poleLat", "activity", "gain", "unloading", "stormRed", "mlt", "kp"]
-        .map((k) => [k, Array.from(trace[k], (v) => Math.round(v * 100) / 100)])),
-      stationMlat: Math.round(observer.mlat * 100) / 100, dayShift: M.DEFAULTS.dayShiftDeg, arcPosition: M.DEFAULTS.arcPosition,
-    });
+    let track = null, model = null, sequence = 0;
+    /** A day, as SkyFeed::loadJourney: built, then landed at `startMs` (its Journey start by default). */
+    async function loadDay(id, startMs) {
+      const t = await D.loadDay(id);
+      track = t;
+      model = new M.SkyModel(t, { seed: 1, startMs: startMs ?? Date.parse(START[id] + "Z"), speed: J.frozen ? 0 : J.speed, observer });
+      J.day = id;
+      // ---- the day chart, as SkyFeed builds it from the timeline
+      const trace = M.runSlow(t, { seed: 1, observer });
+      const st = observer.station;
+      WT.dispatch("day", {
+        day: id, sequence: ++sequence, t0: t.startMs / 1000, step: 60,
+        station: { code: st.code, name: st.name, lat: st.lat, lon: st.lon, elevKm: st.elevKm, mlat: observer.mlat, mlon: observer.mlon,
+          poleLat: O.DIPOLE_POLE.lat, poleLon: O.DIPOLE_POLE.lon, mzAz: observer.magZenith.az, mzEl: observer.magZenith.el },
+        dh: Array.from(trace.dh), dhModel: Array.from(trace.dhModel), coupling: Array.from(trace.coupling),
+        energy: Array.from(trace.energy), threshold: Array.from(trace.threshold), phase: Array.from(trace.phase),
+        onsets: trace.events.filter((e) => e.type === "onset").map((e) => ({ utc: e.t / 1000, kind: e.kind, strength: e.strength })),
+        // T6.10: the keogram's inputs, two decimals as the editor sends them
+        ...Object.fromEntries(["eqLat", "poleLat", "activity", "gain", "unloading", "stormRed", "mlt", "kp"]
+          .map((k) => [k, Array.from(trace[k], (v) => Math.round(v * 100) / 100)])),
+        stationMlat: Math.round(observer.mlat * 100) / 100, dayShift: M.DEFAULTS.dayShiftDeg, arcPosition: M.DEFAULTS.arcPosition,
+        days: DAYS, speeds: SPEEDS,
+      });
+    }
+    await loadDay(DAY, Date.parse((hash.get("t") || START[DAY] || START["2024-05-10"]) + "Z"));
+    const atEnd = () => model.modelMs >= track.endMs - 1000;
+    const journey = () => ({ day: J.day, frozen: J.frozen, speed: J.speed, loop: J.loop, ended: atEnd() && !J.loop });
 
     // ---- harmony: the sketch's progression, voiced like SkySound (5 slots per layer) in the bands
     // (T3.8: dsp::Voicing's clampEdges, bandRange, bandSlots, without the per-voice spread)
@@ -71,16 +89,33 @@
     }
     voice(chord);
     // T6.6: a click on the day strip seeks (T6.10: a drag scrubs), as SkyRuntime::seek does in the plug-in
-    window.WT_MOCK_NATIVE = { seek(utc) {
-      const before = model.snapshot().phase;
-      model.seek(utc * 1000);
+    /** A jump (a seek, a new day, a loop): tell the harmony where it landed, as SkySound does. */
+    function landed(before) {
       const s = model.snapshot();
       if (s.phase !== before) {
         const minute = Math.floor(s.modelTimeUtc / 60000);
         if (M.PHASE_NAMES[s.phase] === "onset") harmony.onOnset(0.8, minute); else harmony.onPhase(s.phase, minute);
       }
-      return true;
-    } };
+    }
+    window.WT_MOCK_NATIVE = {
+      seek(utc) {
+        const before = model.snapshot().phase;
+        model.seek(utc * 1000);
+        landed(before);
+        return true;
+      },
+      // T6.9: the transport, as PluginProcessor::setJourney
+      async journeySet(c) {
+        const ended = journey().ended, before = model.snapshot().phase;
+        if (c.speed !== undefined) J.speed = snap(Number(c.speed));
+        if (c.loop !== undefined) J.loop = !!c.loop;
+        if (c.frozen !== undefined) J.frozen = !!c.frozen;
+        if (c.day && c.day !== J.day && START[c.day]) { await loadDay(c.day); landed(before); }
+        else if (c.frozen === false && ended) { model.seek(track.startMs); landed(before); }   // Run after the end
+        model.setSpeed(J.frozen ? 0 : J.speed);
+        return journey();
+      },
+    };
     WT.onParam("key", (v) => harmony.setKey(Math.round(v)));
     WT.onParam("mood", (v) => harmony.setMood(H.MOODS[Math.round(v)]));
     WT.onParam("progression", (v) => harmony.setProgression(v));
@@ -102,6 +137,7 @@
       const want = Math.floor(realS() * 100);
       const newOnsets = [];
       for (let n = 0; ticks < want && n < 50; n++, ticks++) {
+        if (J.loop && model.speed > 0 && atEnd()) { const before = model.snapshot().phase; model.seek(track.startMs); landed(before); }   // T6.9 loop
         model.step();
         for (const e of model.takeEvents()) {
           const minute = Math.floor(e.t / 60000);
@@ -141,7 +177,10 @@
       return { voices: live, low: lowNoteOf(cur.notes[0]), chord: { play: true, held: heldNotes.length, label: cur.label, roman: "", notes: lay, voices: lay[0].length, changes } };
     }
 
+    let phaserPhase = 0, lastR = 0;   // T6.12: the phaser's LFO, as fx/Phaser.h runs it (only while it is on)
     function telemetry(s, newOnsets, r) {
+      if (WT.get("ph_mix") > 0) phaserPhase = (phaserPhase + WT.get("ph_rate") * Math.max(0, r - lastR)) % 1;
+      lastR = r;
       const nd = s.nodes, n = s.nodeCount;
       const act = s.activity, breath = 0.5 - 0.5 * Math.cos(2 * Math.PI * (5 / 60) * r);
       const level = 0.14 + 0.22 * act + 0.05 * Math.sin(r * 0.7);
@@ -155,8 +194,10 @@
         peakL: level * (1 + 0.04 * Math.sin(r * 3.1)), peakR: level * (1 + 0.04 * Math.cos(r * 2.7)),
         gr: level > 0.3 ? 0.96 : 1, autoGain: 1.4, verb: 0.18 + 0.14 * act, breath,
         spectrum: spectrumFor(notes, act),
+        journey: journey(),
+        spectrumIn: spectrumFor(notes, act), phaser: Math.round(phaserPhase * 1000) / 1000,   // T6.12: before the EQ; the LFO
         sky: {
-          day: DAY, utc: s.modelTimeUtc / 1000, speed: SPEED, phase: M.PHASE_NAMES[s.phase], progress: s.phaseProgress,
+          day: J.day, utc: s.modelTimeUtc / 1000, speed: model.speed, phase: M.PHASE_NAMES[s.phase], progress: s.phaseProgress,
           kp: s.kp, bz: s.bz, wind: s.speed, dh: s.dh, dhModel: s.dhModel, energy: s.energy, activity: act,
           unloading: s.unloading, gain: s.gain, coupling: s.coupling, density: s.density, mlt: s.mlt, arcLat: s.ovalLatitude,
           onsets: s.onsetCount, whistlers: s.whistlerCount, newOnsets,

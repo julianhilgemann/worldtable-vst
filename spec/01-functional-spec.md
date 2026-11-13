@@ -43,7 +43,10 @@ long-form arc. With no network, Live falls back to the newest cached day.
   goes on.
 - Journey speeds go up to **1440×** (24 h per real minute; owner, T2.1
   review, 2026-11-05).
-- DECIDE (with the UI): which speeds get buttons (proposal: 1×, 6×, 24×, 96×).
+- Speeds with buttons (T6.9, the UI v2 mockup): 1×, 24×, 60×, 240×, 1440×. One table,
+  `JourneyState::kSpeeds` in `PluginProcessor.h`; the page gets it with the day. The owner may change it.
+- The Journey (day, speed, frozen, loop, model time) is saved with the session (T6.9). Loop starts
+  the recording again at its end; without Loop it holds there and Run plays it again from the start.
 
 ## 4. Harmony: a slow progression engine
 - **Chord Hold:** root, scale and chord shape set in the UI, or latched from

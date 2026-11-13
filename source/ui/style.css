@@ -169,8 +169,8 @@ header {
 .clock b { font: 500 17px/1 var(--mono); color: var(--ink-hi); }
 #cv-hmeter { width: 120px; height: 22px; display: block; }
 
-/* chips: Journey, Ping-pong, Details (spec/09 §4: 22–28 high, radius 5–7) */
-.chip, .mode {
+/* chips: Loop, Ping-pong, Details (spec/09 §4: 22–28 high, radius 5–7) */
+.chip {
   display: inline-flex; align-items: center; gap: 7px;
   height: 28px; padding: 0 11px;
   border: 1px solid var(--line-hi); border-radius: 7px;
@@ -180,15 +180,50 @@ header {
 }
 .chip { height: 24px; padding: 0 7px; border-radius: 6px; border-color: var(--line); color: var(--muted); }
 .chip:hover { background: rgba(201, 211, 230, 0.07); color: var(--ink-hi); }
-.chip.on, .chip[aria-expanded="true"], .mode {
+.chip.on, .chip[aria-expanded="true"] {
   background: var(--selected); color: var(--ink-hi); border-color: var(--line-hi);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-/* Journey is running, so its dot breathes; slowly, and in ink */
-.mode { cursor: default; }
-.mode i { width: 6px; height: 6px; border-radius: 3px; background: var(--ink-hi); animation: breathe-dot 4s ease-in-out infinite; }
-.mode b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
-@keyframes breathe-dot { 50% { opacity: 0.4; } }
+
+/* the Journey transport (T6.9, mockup top bar): run or freeze, the clock, speed, day, loop */
+.transport { display: flex; align-items: center; gap: 10px; }
+.ibtn {
+  width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--line-hi);
+  display: grid; place-items: center; color: var(--ink-hi);
+  transition: background-color 0.2s;
+}
+.ibtn svg { display: block; }
+.ibtn:hover, .drop:hover { background: rgba(201, 211, 230, 0.07); }
+.seg.tp-speed { padding: 2px; }
+.seg.tp-speed button { height: 22px; padding: 0 9px; border-radius: 5px; font: 400 11.5px/1 var(--mono); }
+.drop {
+  height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line-hi);
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  font: 400 12px/1 var(--sans); color: var(--muted);
+  transition: background-color 0.2s;
+}
+.drop b { font-weight: 500; color: var(--ink-hi); }
+.drop .chev { color: var(--ink); transition: transform 0.2s; }
+.drop[aria-expanded="true"] { background: var(--selected); }
+.drop[aria-expanded="true"] .chev { transform: rotate(180deg); }
+#tp-loop { height: 22px; }
+/* the day menu drops over the strip and the dome: its own compositing layer (spec/06 §Rendering) */
+.tp-menu {
+  position: absolute; z-index: 30; transform: translateZ(0);
+  min-width: 250px; padding: 5px; border-radius: 9px;
+  background: #121826; border: 1px solid var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.tp-menu button {
+  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 7px 9px; border-radius: 6px; text-align: left;
+  font: 400 12.5px/1.2 var(--sans); color: var(--ink);
+}
+.tp-menu button:hover:not([disabled]), .tp-menu button:focus-visible { background: rgba(201, 211, 230, 0.08); }
+.tp-menu button small { margin-left: 10px; font: 400 12px/1 var(--sans); color: var(--muted); }
+.tp-menu button[disabled] { opacity: 0.45; cursor: default; }
+.tp-menu button.on::after { content: "✓"; color: var(--ink-hi); }
+.tp-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px; }
 
 /* ---------------------------------------------------------------- bottom bar: details, the hint line, auto-gain */
 #hintbar {
@@ -289,20 +324,46 @@ header {
 #delay { padding: 10px 10px; }
 #delay .head { gap: 4px; }
 #delay .head .chip { margin-left: auto; padding: 0 6px; font-stretch: 90%; }
+/* T6.12: pictures are controls. Dragging inside a picture sets its values; each value set there has a
+   focusable proxy on its handle (views.js places it), which shows the focus ring and takes the keys
+   but lets the pointer through to the picture */
+#cv-phaser, #cv-chorus, #cv-delay, #cv-reverb { cursor: ew-resize; touch-action: none; }
+#cv-output { cursor: ns-resize; touch-action: none; }
+.handle { position: absolute; left: 0; top: 0; width: 18px; height: 18px; border-radius: 9px; pointer-events: none; }
+.handle:focus-visible { outline-offset: 1px; }
+.handle .handle-field { top: calc(100% + 4px); pointer-events: auto; }
+.head .chip b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
 
-/* resonators: the picture over two rows of knobs (level over decay per band │ detune, drift, width) */
-.res-knobs { display: flex; justify-content: space-between; align-items: center; flex: none; padding: 0 2px; }
-.res-knobs .kcol { display: flex; flex-direction: column; }
-.res-knobs .kcol > .knob + .knob { margin-top: -4px; }
-.res-knobs .vr { align-self: stretch; width: 1px; margin: 8px 0; background: var(--line); }
+/* ======== T6.11: the resonator display over the band row (the selected band │ detune, drift, width) */
 .head .low-note { overflow: visible; font-size: 12px; }
 .head .low-note b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
-/* the Bands popover (T3.8's parameters, until T6.11 draws them in the picture) */
-.more.wide .head { margin-bottom: 2px; }
-.more.wide .head .cap { font-size: 12px; }
-.module .more.wide .knobs { justify-content: space-between; gap: 0; }
-.band-rows { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 0; margin-top: 2px; }
-.band-rows > .cap { font: 400 12px/1 var(--sans); color: var(--muted); }
+#resonators-more .head { margin-bottom: 2px; }
+#resonators-more .head .cap { font-size: 12px; }
+.res-well { position: relative; flex: 1 1 0; min-height: 0; margin: 6px 0 4px; overflow: hidden; }
+/* sized by the well, never by its own backing store (spec/06 §Rendering) */
+.res-well canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+/* a handle's proxy (spec/09 §5): the picture takes the pointer, the proxy the focus and the keys */
+.proxy { position: absolute; left: 0; top: 0; pointer-events: none; border-radius: 5px; }
+.proxy.grip { width: 14px; height: 28px; margin: -14px 0 0 -7px; }
+.proxy.level { width: 24px; height: 12px; margin: -6px 0 0 -12px; }
+.proxy:focus-visible { outline: 1.5px solid var(--ink-hi); outline-offset: 1px; }
+.proxy-field { pointer-events: auto; top: calc(100% + 4px); }
+.bandrow { display: flex; align-items: flex-start; gap: 6px; flex: none; }
+.bn-band { display: flex; align-items: flex-start; gap: 6px; }
+.bn-band[hidden] { display: none; }
+.bandsel { display: flex; flex-direction: column; gap: 5px; width: 128px; padding-top: 5px; }
+.bandsel .nm { display: flex; align-items: center; gap: 7px; font: 500 13px/1 var(--sans); color: var(--ink-hi); height: 16px; }
+.bandsel .nm i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.bandrow .kr { display: flex; align-items: flex-start; gap: 2px; flex: none; }
+.bandrow .res-globals { flex: 1; justify-content: space-around; }
+.bandrow .vr { align-self: stretch; width: 1px; margin: 4px 2px; background: var(--line); }
+/* a chip that steps through a parameter's values: its caption, then the value */
+.chip.vchip { height: 22px; padding: 0 8px; gap: 6px; font-size: 11.5px; min-width: 0; overflow: hidden; }
+.chip.vchip b { font-weight: 500; color: var(--ink-hi); overflow: hidden; text-overflow: ellipsis; }
+.chip.vchip.off { cursor: default; }
+.chip.vchip.off:hover { background: none; color: var(--muted); }
+.chip.vchip.off b { color: var(--muted); }
+/* ======== end T6.11 */
 
 /* the tone module: T3.9's EQ as plain knobs until its display (T6.14): a column per band, the drive
    under the gain; the frequencies, widths and the sky in its More popover */
@@ -440,7 +501,6 @@ header {
 .shot *, .shot *::before, .shot *::after { transition: none !important; animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
-  .mode i { animation: none; }
 }
 
 /* ---------------------------------------------------------------- T6.13: sizes, the context menu, About, the tour

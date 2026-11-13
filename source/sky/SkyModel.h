@@ -153,8 +153,9 @@ public:
     /** Adopts a published timeline: its track, seed and params. nullptr = none: model time holds and
         the curtain keeps moving on the last slow state. The timeline must stay alive until a later
         setTimeline() has returned (the hand-off pool owns it, ADR-0003).
-        If the seed or params differ from the previous timeline's, the slow state is re-seeked to the
-        current model time. The curtain is kept, so nothing jumps. */
+        If the track (T6.9: another day), the seed or the params differ from the previous timeline's,
+        the slow state is re-seeked to the current model time, clamped to the track: that counts as a
+        seek (seeks()). The curtain is kept, so nothing jumps. */
     void setTimeline (const SkyTimeline* timeline) noexcept;
 
     /** Moves model time, clamped to the track: copies the checkpoint at or before it and replays at

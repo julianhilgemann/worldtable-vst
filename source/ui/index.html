@@ -25,10 +25,15 @@
         </svg>
         <div class="word">Worldtable</div>
       </div>
-      <!-- T6.9 replaces the Journey pill with the transport (run/freeze, speed, day, loop) -->
-      <div class="mode" id="mode" data-hint="Journey: a recorded day, time-lapsed. Day and speed arrive with the transport."><i></i>Journey <b id="mode-speed">24×</b></div>
-      <div class="clock" id="clock" data-hint="Model time: the moment of the recorded day you are hearing.">
-        <span id="ro-date">—</span><span id="ro-ut"><b>--:--</b> UT</span>
+      <!-- T6.9: the Journey transport (transport.js): run or freeze, the clock, the speed, the day, loop -->
+      <div class="transport" id="transport" aria-label="Journey">
+        <button type="button" class="ibtn" id="tp-run" aria-label="Freeze the journey" data-hint="Freeze the journey. Frozen, the curtain keeps breathing in place."></button>
+        <div class="clock" id="clock" data-hint="Model time: the moment of the recorded day you are hearing.">
+          <span id="ro-date">—</span><span id="ro-ut"><b>--:--</b> UT</span>
+        </div>
+        <div class="seg tp-speed" id="tp-speed" role="radiogroup" aria-label="Journey speed" data-hint="How fast the day passes. 24× plays a whole day in one hour."></div>
+        <button type="button" class="drop" id="tp-day" aria-haspopup="menu" aria-expanded="false" aria-controls="tp-days" data-hint="Which recorded day to travel through. A new day starts where its story does."></button>
+        <button type="button" class="chip" id="tp-loop" role="switch" aria-checked="false" data-hint="At the end of the recording, start again from the beginning.">Loop</button>
       </div>
       <span class="spacer"></span>
       <canvas id="cv-hmeter" data-hint="Output level, left and right. The white line is the limiter's ceiling."></canvas>
@@ -63,38 +68,44 @@
       <div class="col" id="col-left">
         <div class="module frame" id="resonators">
           <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="resonators-more" data-hint="The bands: where each sits on the pitch axis, which chord tones it rings, its shift.">Resonators</button>
-            <!-- More: T3.8's band parameters, plain, until the resonator display (T6.11) draws them -->
-            <div class="more frame wide" id="resonators-more" aria-label="Bands" hidden>
+            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="resonators-more" data-hint="More: how far neighbouring bands reach into each other.">Resonators</button>
+            <!-- More: the blend (T6.11: the edges are grips in the picture, tones and shift in the band row) -->
+            <div class="more frame" id="resonators-more" aria-label="Bands" hidden>
               <div class="head"><span class="cap">Bands</span><span class="note">a move re-voices after 300 ms</span></div>
-              <div class="knobs">
-                <div data-knob="band_floor" data-label="Floor"></div>
-                <div data-knob="band_x1" data-label="Low|Red"></div>
-                <div data-knob="band_x2" data-label="Red|Grn"></div>
-                <div data-knob="band_x3" data-label="Grn|Vio"></div>
-                <div data-knob="band_ceiling" data-label="Ceiling"></div>
-                <div data-knob="band_blend" data-label="Blend"></div>
-              </div>
-              <div class="band-rows">
-                <span class="cap">Red</span><div data-seg="red_tones" data-labels="Root,Root+5,Chord,Colours,All"></div><div data-knob="red_shift" data-label="Shift" data-color="red"></div>
-                <span class="cap">Green</span><div data-seg="green_tones" data-labels="Root,Root+5,Chord,Colours,All"></div><div data-knob="green_shift" data-label="Shift" data-color="green"></div>
-                <span class="cap">Violet</span><div data-seg="violet_tones" data-labels="Root,Root+5,Chord,Colours,All"></div><div data-knob="violet_shift" data-label="Shift" data-color="violet"></div>
-              </div>
+              <div class="knobs"><div data-knob="band_blend" data-label="Blend"></div></div>
             </div>
-            <span class="note">the low resonator and three bands</span>
+            <span class="note">drag a grip for a crossover, a band for its level</span>
             <span class="spacer"></span>
             <span class="note low-note" id="low-note" data-hint="The low resonator's note: the chord's root, or the lowest note you hold."></span>
           </div>
-          <canvas class="view" id="cv-layers" data-hint="Each band's level and how long it rings on; the low resonator in grey."></canvas>
-          <div class="res-knobs">
-            <div class="kcol"><div data-knob="low_level" data-label="Low"></div><div data-knob="low_decay" data-label="Decay"></div></div>
-            <div class="kcol"><div data-knob="red_level" data-label="Red" data-color="red"></div><div data-knob="red_decay" data-label="Decay" data-color="red"></div></div>
-            <div class="kcol"><div data-knob="green_level" data-label="Green" data-color="green"></div><div data-knob="green_decay" data-label="Decay" data-color="green"></div></div>
-            <div class="kcol"><div data-knob="violet_level" data-label="Violet" data-color="violet"></div><div data-knob="violet_decay" data-label="Decay" data-color="violet"></div></div>
-            <i class="vr"></i>
-            <div class="kcol"><div data-knob="detune" data-label="Detune"></div><div data-knob="drift" data-label="Drift"></div></div>
-            <div class="kcol"><div data-knob="width" data-label="Width"></div></div>
+          <!-- ======== T6.11: the resonator display (resonators.js); the grips' and levels' proxies are added into the well -->
+          <div class="well res-well">
+            <canvas class="res-view" id="cv-res" data-hint="The resonators on a pitch axis. Each line is one note ringing."></canvas>
           </div>
+          <!-- the band row: the selected band's name, Tones, Shift, Level (a view: its binding is the band's handle), Decay │ Detune, Drift, Width -->
+          <div class="bandrow">
+            <div class="bn-band" id="bn-low">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#c9d3e6"></i>Low band</div>
+                <button type="button" class="chip vchip off" tabindex="-1" aria-disabled="true" data-hint="The low resonator rings the chord's root, within an octave above the floor."><span>Tones</span><b>the root</b></button>
+                <button type="button" class="chip vchip off" tabindex="-1" aria-disabled="true" data-hint="The low resonator follows the root; move the floor to move it."><span>Shift</span><b>0 st</b></button></div>
+              <div class="kr"><div data-knob="low_level" data-view data-label="Level" data-hint="Level of the low resonator. Dragging the band in the picture does the same."></div><div data-knob="low_decay" data-label="Decay"></div></div>
+            </div>
+            <div class="bn-band" id="bn-red">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#ff6b6b"></i>Red band</div></div>
+              <div class="kr"><div data-knob="red_level" data-view data-label="Level" data-color="red" data-hint="Level of the red band. Dragging the band in the picture does the same."></div><div data-knob="red_decay" data-label="Decay" data-color="red"></div></div>
+            </div>
+            <div class="bn-band" id="bn-green">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#5cf2a0"></i>Green band</div></div>
+              <div class="kr"><div data-knob="green_level" data-view data-label="Level" data-color="green" data-hint="Level of the green band. Dragging the band in the picture does the same."></div><div data-knob="green_decay" data-label="Decay" data-color="green"></div></div>
+            </div>
+            <div class="bn-band" id="bn-violet">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#8f7bff"></i>Violet band</div></div>
+              <div class="kr"><div data-knob="violet_level" data-view data-label="Level" data-color="violet" data-hint="Level of the violet band. Dragging the band in the picture does the same."></div><div data-knob="violet_decay" data-label="Decay" data-color="violet"></div></div>
+            </div>
+            <i class="vr"></i>
+            <div class="kr res-globals"><div data-knob="detune" data-label="Detune"></div><div data-knob="drift" data-label="Drift"></div><div data-knob="width" data-label="Width"></div></div>
+          </div>
+          <!-- ======== end T6.11 -->
         </div>
 
         <!-- the tone module: T3.9's EQ as plain knobs (gain over drive per band) until its display (T6.14) -->
@@ -196,16 +207,11 @@
     <section id="lower">
       <div class="grp" id="grp-left">
         <div class="module frame" id="phaser">
-          <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="phaser-more" data-hint="More phaser controls: Depth and Stages.">Phaser</button>
-            <div class="more frame" id="phaser-more" aria-label="Phaser, more" hidden>
-              <div class="knobs">
-                <div data-knob="ph_depth" data-label="Depth"></div>
-                <div data-knob="ph_stages" data-label="Stages"></div>
-              </div>
-            </div>
-          </div>
-          <canvas class="view" id="cv-phaser" data-hint="The phaser's notches over the sound's spectrum, sweeping at its rate."></canvas>
+          <!-- T6.12: pictures are controls. A parameter set in a picture has its focusable proxy on the
+               handle ([data-handle], placed by views.js); the picture's drag and the proxy's keys set it -->
+          <div class="head"><span class="cap">Phaser</span><span class="spacer"></span><button type="button" class="chip" data-cycle="ph_stages" data-values="2,4,6,8"></button></div>
+          <canvas class="view" id="cv-phaser" data-hint="Bright: the sound after the phaser; outline: before. Drag: sideways sweep, up feedback."></canvas>
+          <div data-handle="ph_depth" data-label="Sweep depth"></div>
           <div class="knobs">
             <div data-knob="ph_rate" data-label="Rate"></div>
             <div data-knob="ph_feedback" data-label="Feed"></div>
@@ -214,7 +220,7 @@
         </div>
         <div class="module frame" id="chorus">
           <div class="head"><span class="cap">Chorus</span></div>
-          <canvas class="view" id="cv-chorus" data-hint="The three chorus voices swinging around the dry sound."></canvas>
+          <canvas class="view" id="cv-chorus" data-hint="The three chorus voices swinging around the dry sound. Drag sideways for their speed."></canvas>
           <div class="knobs">
             <div data-knob="ch_rate" data-label="Rate"></div>
             <div data-knob="ch_depth" data-label="Depth"></div>
@@ -238,16 +244,12 @@
       <div class="grp" id="grp-right">
         <div class="module frame" id="delay">
           <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="delay-more" data-hint="More delay controls: Time and Feedback.">Delay</button>
-            <div class="more frame" id="delay-more" aria-label="Delay, more" hidden>
-              <div class="knobs">
-                <div data-knob="dly_time" data-label="Time"></div>
-                <div data-knob="dly_fb" data-label="Feed"></div>
-              </div>
-            </div>
+            <span class="cap">Delay</span>
             <div data-toggle="dly_pingpong" data-label="Ping-pong"></div>
           </div>
-          <canvas class="view" id="cv-delay" data-hint="The echoes, left above and right below, fading with the feedback."></canvas>
+          <canvas class="view" id="cv-delay" data-hint="The echoes, left above, right below. Drag the handle: sideways time, up and down feedback."></canvas>
+          <div data-handle="dly_time" data-label="Delay time"></div>
+          <div data-handle="dly_fb" data-label="Delay feedback"></div>
           <div class="knobs">
             <div data-knob="dly_tone" data-label="Tone"></div>
             <div data-knob="dly_mix" data-label="Mix"></div>
@@ -258,15 +260,15 @@
             <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="reverb-more" data-hint="More reverb controls: Decay, Damping, Pre-delay and Modulation.">Reverb</button>
             <div class="more frame" id="reverb-more" aria-label="Reverb, more" hidden>
               <div class="knobs">
-                <div data-knob="rev_decay" data-label="Decay"></div>
                 <div data-knob="rev_damp" data-label="Damp"></div>
                 <div data-knob="rev_predelay" data-label="Pre"></div>
                 <div data-knob="rev_mod" data-label="Mod"></div>
               </div>
             </div>
-            <span class="note" id="verb-note" data-hint="How long the tail rings on: Decay, in the More popover."></span>
+            <span class="note" id="verb-note" data-hint="How long the tail rings on. Drag the handle in the picture to change it."></span>
           </div>
-          <canvas class="view" id="cv-reverb" data-hint="The reverb's tail; the brighter line is its damped top, the dots the shimmer."></canvas>
+          <canvas class="view" id="cv-reverb" data-hint="The reverb's tail over time, the shimmer inside it. Drag sideways for a longer tail."></canvas>
+          <div data-handle="rev_decay" data-label="Reverb decay"></div>
           <div class="knobs">
             <div data-knob="rev_size" data-label="Size"></div>
             <div data-knob="rev_shimmer" data-label="Shimmer"></div>
@@ -275,15 +277,15 @@
         </div>
         <div class="module frame" id="output">
           <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="output-more" data-hint="More output controls: the limiter's Ceiling and Release.">Output</button>
+            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="output-more" data-hint="More output controls: the limiter's Release.">Output</button>
             <div class="more frame r" id="output-more" aria-label="Output, more" hidden>
               <div class="knobs">
-                <div data-knob="lim_ceiling" data-label="Ceil"></div>
                 <div data-knob="lim_release" data-label="Rel"></div>
               </div>
             </div>
           </div>
-          <canvas class="view" id="cv-output" data-hint="Output meters. The white line is the limiter's ceiling; the thin bar, how hard it works."></canvas>
+          <canvas class="view" id="cv-output" data-hint="Output meters. Drag the white line, the limiter's ceiling. The bar: how hard it works."></canvas>
+          <div data-handle="lim_ceiling" data-label="Ceiling"></div>
           <div class="knobs">
             <div data-knob="master" data-label="Out"></div>
           </div>
@@ -304,6 +306,8 @@
     </footer>
 
     <!-- ============================================================ details popover -->
+    <div class="tp-menu" id="tp-days" role="menu" aria-label="Recorded day" hidden></div>
+
     <div class="details frame" id="details" hidden>
       <div class="module" style="width: 300px">
         <div class="head"><span class="cap">Observer</span><span class="note">the station is the point of view</span></div>
@@ -360,7 +364,9 @@
   <script src="dome.js"></script>
   <script src="widgets.js"></script>
   <script src="views.js"></script>
+  <script src="resonators.js"></script>
   <script src="app.js"></script>
+  <script src="transport.js"></script>
   <script src="menu.js"></script>
   <script src="tour.js"></script>
   <script src="mock.js"></script>

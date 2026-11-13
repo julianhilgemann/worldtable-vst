@@ -132,15 +132,8 @@ int UiSettings::openingSize (int saved, juce::Rectangle<int> usableArea)
 }
 
 PluginEditor::PluginEditor (PluginProcessor& p)
-    : AudioProcessorEditor (p), wtProcessor (p),
-      history (static_cast<size_t> (kFftSize), 0.0f),
-      fftData (static_cast<size_t> (2 * kFftSize), 0.0f),
-      window (static_cast<size_t> (kFftSize), 0.0f)
+    : AudioProcessorEditor (p), wtProcessor (p)
 {
-    for (int i = 0; i < kFftSize; ++i)
-        window[static_cast<size_t> (i)] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * static_cast<float> (i) / kFftSize);
-    bands.fill (-100.0f);
-
    #if WORLDTABLE_WEB_UI
     auto options = juce::WebBrowserComponent::Options {}
         .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
@@ -195,6 +188,22 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                              {
                                  settings.setTourSeen (true);
                                  complete (true);
+                             })
+        .withNativeFunction ("journeySet", [this] (const juce::Array<juce::var>& args, auto complete)
+                             {
+                                 // T6.9: the transport. { frozen?, speed?, loop?, day? }; answers
+                                 // with the Journey as it now is.
+                                 JourneyChange change;
+                                 if (! args.isEmpty() && args[0].isObject())
+                                 {
+                                     const auto& a = args[0];
+                                     if (a.hasProperty ("frozen")) change.frozen = static_cast<bool> (a["frozen"]);
+                                     if (a.hasProperty ("speed"))  change.speed = static_cast<double> (a["speed"]);
+                                     if (a.hasProperty ("loop"))   change.loop = static_cast<bool> (a["loop"]);
+                                     if (a.hasProperty ("day"))    change.day = a["day"].toString();
+                                 }
+                                 wtProcessor.setJourney (change);
+                                 complete (makeJourneyTelemetry());
                              });
 
     for (auto* param : wtProcessor.getParameters())
@@ -321,9 +330,18 @@ std::optional<juce::WebBrowserComponent::Resource> PluginEditor::getResource (co
 }
 
 //==============================================================================
-void PluginEditor::updateAnalyzer()
+PluginEditor::Analyzer::Analyzer()
+    : history (static_cast<size_t> (kFftSize), 0.0f),
+      fftData (static_cast<size_t> (2 * kFftSize), 0.0f),
+      window (static_cast<size_t> (kFftSize), 0.0f)
 {
-    auto& scope = wtProcessor.getInstrument().getScope();
+    for (int i = 0; i < kFftSize; ++i)
+        window[static_cast<size_t> (i)] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * static_cast<float> (i) / kFftSize);
+    bands.fill (-100.0f);
+}
+
+void PluginEditor::Analyzer::update (dsp::ScopeFifo& scope, double sr)
+{
     std::array<float, 2048> chunk {};
     for (int n; (n = scope.pull (chunk.data(), static_cast<int> (chunk.size()))) > 0;)
         for (int i = 0; i < n; ++i)
@@ -337,7 +355,6 @@ void PluginEditor::updateAnalyzer()
     std::fill (fftData.begin() + kFftSize, fftData.end(), 0.0f);
     fft.performFrequencyOnlyForwardTransform (fftData.data(), true);
 
-    const double sr = wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0;
     const double binHz = sr / kFftSize;
     const float norm = 4.0f / kFftSize;   // Hann window coherent gain, single-sided
 
@@ -354,6 +371,23 @@ void PluginEditor::updateAnalyzer()
         auto& band = bands[static_cast<size_t> (b)];
         band = db > band ? db : band + 0.18f * (db - band);   // fast attack, slow fall
     }
+}
+
+juce::var PluginEditor::Analyzer::toVar() const
+{
+    juce::Array<juce::var> spec;
+    spec.ensureStorageAllocated (kBands);
+    for (auto b : bands)
+        spec.add (std::round (b * 10.0f) / 10.0f);
+    return spec;
+}
+
+void PluginEditor::updateAnalyzer()
+{
+    auto& instrument = wtProcessor.getInstrument();
+    const double sr = wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0;
+    outAnalyzer.update (instrument.getScope(), sr);
+    inAnalyzer.update (instrument.getInputScope(), sr);   // T6.12: the sources before the tone stage
 }
 
 juce::var PluginEditor::makeSkyTelemetry()
@@ -511,6 +545,33 @@ juce::var PluginEditor::makeDayEvent() const
     o->setProperty ("stationMlat", std::round (c.stationMlatDeg * 100.0) / 100.0);
     o->setProperty ("dayShift", std::round (c.dayShiftDeg * 100.0) / 100.0);
     o->setProperty ("arcPosition", std::round (c.arcPosition * 100.0) / 100.0);
+
+    // T6.9: what the transport offers: the bundled days and the speeds
+    juce::Array<juce::var> days, speeds;
+    for (const auto& d : data::kSkyDays)
+    {
+        auto* day = new juce::DynamicObject();
+        day->setProperty ("id", juce::String (d.id));
+        day->setProperty ("label", juce::String::fromUTF8 (d.label));
+        days.add (juce::var (day));
+    }
+    for (const double s : JourneyState::kSpeeds)
+        speeds.add (s);
+    o->setProperty ("days", days);
+    o->setProperty ("speeds", speeds);
+    return juce::var (o);
+}
+
+juce::var PluginEditor::makeJourneyTelemetry() const
+{
+    // T6.9: the transport's state; `speed` is the running speed, also while frozen
+    const auto j = wtProcessor.getJourney();
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("day", j.day);
+    o->setProperty ("frozen", j.frozen);
+    o->setProperty ("speed", j.speed);
+    o->setProperty ("loop", j.loop);
+    o->setProperty ("ended", wtProcessor.journeyEnded());
     return juce::var (o);
 }
 
@@ -590,6 +651,7 @@ juce::var PluginEditor::makeTelemetry()
     o->setProperty ("verb", round3 (t.reverbLevel.load()));
     o->setProperty ("breath", round3 (t.breath.load()));
     o->setProperty ("sky", makeSkyTelemetry());
+    o->setProperty ("journey", makeJourneyTelemetry());
     o->setProperty ("dome", makeDomeTelemetry());
     o->setProperty ("chord", makeChordTelemetry());
     o->setProperty ("play", makePlayTelemetry());
@@ -600,12 +662,13 @@ juce::var PluginEditor::makeTelemetry()
         o->setProperty ("low", juce::var (low));
     }
     o->setProperty ("eqCutHz", std::round (static_cast<double> (t.eqCutHz.load())));   // T3.9: 20000 = open
-    o->setProperty ("sampleRate", wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0);   // for the EQ's curve (T6.14)
+    o->setProperty ("sampleRate", wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0);   // for the EQ's curve (T6.14) and the phaser's (T6.12)
 
-    juce::Array<juce::var> spec;
-    for (auto b : bands)
-        spec.add (std::round (b * 10.0f) / 10.0f);
-    o->setProperty ("spectrum", spec);
+    o->setProperty ("spectrum", outAnalyzer.toVar());
+    // T6.12: the sources' spectrum before the tone stage (same bands) and the phaser's LFO phase,
+    // for the phaser picture (which also reads sampleRate, for its exact response)
+    o->setProperty ("spectrumIn", inAnalyzer.toVar());
+    o->setProperty ("phaser", round3 (t.phaserPhase.load()));
 
     return juce::var (o);
 }
