@@ -24,7 +24,7 @@ plug-in renderer → OSC.
 | M6: T6.4 UI cost pass | open |
 | M3: T3.7 Play mode, the low resonator, the filter (owner, 2026-11-09; ADR-0008) | done |
 | M6: T6.6 filter picture, click-to-seek on the magnetogram, a smoother aurora (owner, 2026-11-09) | done |
-| UI v2 (owner, 2026-11-13): brief `09-ui-v2.md`, mockup `spec/mockups/ui-v2.html`, tasks T6.7–T6.13, T3.8, T4.2 | specified; waiting for the owner's OK on the mockup |
+| UI v2 (owner, 2026-11-13): brief `09-ui-v2.md`, mockup `spec/mockups/ui-v2.html`, tasks T6.7–T6.14, T3.8, T3.9, T4.2 | specified and approved ("ok I think we can give it a go"); T6.7 is next |
 
 **Reused from the POC:** CMake/CI, `gen_params.py`, `WorldtableRender`,
 `WorldtableUICheck`, WebView bridge and mock backend, Drive, SVF, LFO, ADSR,
@@ -79,12 +79,13 @@ Exit: owner signs off the look and the sound direction; mapping recorded in
 - T3.7 Play mode (MIDI notes play the resonators, ADR-0008), the low resonator, the filter
   (owner, 2026-11-09). (Done.)
 - T3.8 Resonator bands: crossovers, tones and shift per band (owner, 2026-11-13; `09-ui-v2.md`).
+- T3.9 The EQ: four bands with drive, in place of the Filter and Drive stages (owner, 2026-11-13).
 **Hear:** the plug-in plays the storm day, in a DAW and in TouchDesigner.
 
 ## M4 — Modulation and autopilot
 - T4.1 Slow LFOs ×4, random walkers ×2, env follower, sky channels.
-- T4.2 Modulation as a grid: sources × destinations, rings on driven knobs, a drawer
-  (re-cut 2026-11-13, `tasks/T4.2-modulation-grid.md`; it takes T4.1's sources with it).
+- T4.2 Modulation: two LFOs, a triggerable envelope, a source × destination grid, rings on driven
+  knobs (re-cut 2026-11-13, `tasks/T4.2-modulation-grid.md`; it takes T4.1's sources with it).
 - T4.3 Triggers with probability.
 - T4.4 Autopilot: Live / Journey / Freeze; state persistence.
 
@@ -104,7 +105,8 @@ Pulled forward after M3 on the owner's review of the T3.6 shell (2026-11-06).
 - T6.6 The filter's moving slope, seeking from the magnetogram, the dome's fidelity pass. (Done.)
 - **UI v2** (`09-ui-v2.md`, owner 2026-11-13), in order: T6.7 the language and the parts; T6.8
   regroup the page; T6.9 Journey transport; T6.10 the day strip as a keogram; T6.11 the resonator
-  display (needs T3.8); T6.12 pictures as controls; T6.13 sizes, context menu, welcome tour.
+  display (needs T3.8); T6.14 the EQ display (needs T3.9); T6.12 pictures as controls; T6.13 sizes,
+  context menu, welcome tour.
 
 ## M7 — OSC and TouchDesigner
 - T7.1 `OscOut` (address map in `03-architecture.md`).

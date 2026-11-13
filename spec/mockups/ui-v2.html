@@ -1,8 +1,9 @@
 <!doctype html>
-<!-- Design reference for spec/09-ui-v2.md. Open this file in a browser; no server needed.
-     It is a picture of the design, not the implementation: one file, fake parameters, a synthetic
-     spectrum, a still of the dome. Take layout, sizes, colours, copy and gestures from it; take the
-     code structure from source/ui/. Day data: the three bundled days as prototype/sky sees them. -->
+<!-- Design reference for spec/09-ui-v2.md (third pass, approved by the owner 2026-11-13).
+     Open this file in a browser; no server needed. It is a picture of the design, not the
+     implementation: one file, fake parameters, a synthetic spectrum, a still of the dome.
+     Take layout, sizes, colours, copy and gestures from it; take the code structure from source/ui/.
+     Day data: the three bundled days as prototype/sky sees them. -->
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Worldtable UI Mockup</title>
 </head><body style="margin:0">
@@ -159,13 +160,53 @@ ul { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .kwrap { position: relative; }
 .kwrap .note { position: absolute; font: 400 12px/1.35 var(--sans); color: var(--ink-hi); max-width: 196px; padding: 5px 9px; border-left: 2px solid var(--ink-hi); background: rgba(5, 7, 13, 0.78); border-radius: 0 5px 5px 0; pointer-events: none; }
 @media (max-width: 760px) { .kwrap .note { display: none; } }
+
+/* ------------------------------------------------------------------ third pass: the owner's arrangement */
+.striprow { margin: 0 10px; display: grid; grid-template-columns: 1110px 213px; column-gap: 7px; min-height: 0; }
+.striprow .strip { margin: 0; }
+.skyc { padding: 8px 12px 7px; }
+.skyc .ttl { height: 16px; gap: 8px; }
+.skyc .ph { font: 500 12px/1 var(--sans); color: var(--ink-hi); }
+.skyc .bar { height: 4px; }
+.skyc .ttl .bar { flex: 1; }
+.skyc .nums { font: 400 10.5px/1 var(--mono); color: var(--ink-hi); white-space: nowrap; margin-top: 7px; }
+.skyc .nums span { color: var(--muted); }
+.skyc .two { display: grid; grid-template-columns: auto 1fr auto 1fr; column-gap: 6px; align-items: center; font-size: 10.5px; line-height: 1; color: var(--muted); margin-top: 7px; }
+.skyc .ev { font-size: 10.5px; line-height: 1; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 8px; }
+.skyc .ev b { font: 400 10.5px/1 var(--mono); color: var(--faint); margin-right: 6px; }
+.lower { margin: 0 10px; display: grid; grid-template-columns: 435px 448px 433px; column-gap: 7px; min-height: 0; }
+.grp { display: flex; gap: 7px; min-height: 0; min-width: 0; }
+.motion { display: grid; grid-template-rows: 112px minmax(0, 1fr); row-gap: 7px; min-height: 0; }
+.motion .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 7px; min-height: 0; }
+.macros { flex-direction: row; align-items: center; padding: 8px 14px 8px 12px; }
+.macros .side { width: 62px; flex: none; display: flex; flex-direction: column; gap: 5px; align-self: flex-start; padding-top: 4px; }
+.macros .side b { font: 500 13px/1 var(--sans); color: var(--ink-hi); }
+.macros .side span { font-size: 11px; line-height: 13px; color: var(--muted); }
+.macros .kr { flex: 1; justify-content: space-between; }
+.src .body { display: flex; gap: 4px; flex: 1 1 0; min-height: 0; margin-top: 6px; align-items: stretch; }
+.src .body .well { flex: 1 1 0; margin: 0; min-width: 0; }
+.src .body .kr { align-items: center; }
+.icos { display: flex; gap: 1px; padding: 2px; border-radius: 7px; background: var(--well); border: 1px solid var(--line); }
+#stage .ico { width: 22px; height: 18px; border-radius: 4px; display: grid; place-items: center; color: var(--muted); }
+#stage .ico:hover { color: var(--ink-hi); }
+#stage .ico[aria-pressed="true"] { background: #1b2334; color: var(--ink-hi); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+#stage .fire { height: 22px; padding: 0 10px; border-radius: 6px; background: var(--ink-hi); color: #05070d; font: 500 11.5px/1 var(--sans); }
+#stage .fire:active { transform: translateY(1px); }
+.eqsay { font: 400 11px/1 var(--mono); color: var(--muted); white-space: nowrap; }
+.ttl .eqsay b, #stage .ttl .chip b { font: inherit; font-weight: 500; color: var(--ink-hi); }
+.hrow { margin-top: 10px; }
+.rule { margin-top: 10px; }
+#drawer { left: 452px; right: 10px; top: 150px; height: 448px; }
+#drawer canvas { left: 0; top: 34px; width: 886px; height: 404px; cursor: default; }
+.kn:focus-visible { outline: 1.5px solid rgba(238, 242, 250, 0.7); outline-offset: 1px; border-radius: 9px; }
+#stage canvas:focus-visible, #stage button:focus-visible { outline: 1.5px solid rgba(238, 242, 250, 0.7); outline-offset: 2px; border-radius: 6px; }
 </style>
 
 <div class="page">
 <header>
-  <div class="meta">Mockup for review, second pass, 13 November 2026. A picture of the design, not the plug-in: the sound is not connected.</div>
+  <div class="meta">Mockup for review, third pass on your arrangement, 13 November 2026. A picture of the design, not the plug-in: the sound is not connected.</div>
   <h1>Worldtable UI mockup</h1>
-  <p>The whole window at its real size, drawn from the real 10–11 May 2024 storm as the Sky Model replays it. The dome is a still of the one you have now. Things to try: drag the white grips between the colour bands, drag a band up or down, click the day strip, change the day and the speed, drag the dot in the filter, turn Space.</p>
+  <p>The whole window at its real size, drawn from the real 10–11 May 2024 storm. The dome is a still of the one you have now. Things to try: drag the white grips between the colour bands; drag the dots in the EQ and pull a drive bar up; press Fire on the envelope and watch Shimmer; open Modulation and drag a dot; click the day strip.</p>
 </header>
 
 <section>
@@ -191,24 +232,33 @@ ul { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
     <canvas id="topmeter" style="width:120px;height:22px" data-hint="Output level, left and right."></canvas>
   </div>
 
-  <div class="strip panel" id="strip"><canvas id="keo"></canvas></div>
+  <div class="striprow">
+    <div class="strip panel" id="strip"><canvas id="keo"></canvas></div>
+    <div class="panel skyc" id="sky">
+      <div class="ttl"><b>Sky</b><span class="ph" id="sky-ph" data-hint="Where the sky is in its cycle: the field loads, lets go, recovers."></span><div class="bar" data-hint="How far through this phase."><i id="b-ph"></i></div></div>
+      <div class="nums" id="sky-nums" data-hint="Solar-wind speed, its field's north–south part (south feeds energy in), and the Kp index."></div>
+      <div class="two"><span>energy</span><div class="bar" data-hint="Energy stored in the field. At the mark it lets go: a substorm onset."><i id="b-w"></i><u id="b-thr"></u></div><span>activity</span><div class="bar" data-hint="How lively the curtain is. This is what excites the resonators."><i id="b-a"></i></div></div>
+      <div class="ev" id="sky-ev" data-hint="The last thing that happened in the sky."></div>
+    </div>
+  </div>
 
   <div class="mid">
-    <div class="col">
-      <div class="panel" id="sky" style="flex:0 0 254px">
-        <div class="ttl"><b>Sky</b><span id="sky-say"></span></div>
-        <div class="phase" id="phase" data-hint="The substorm cycle: the field loads, lets go, recovers. The line under the name is how far through."><div>Quiet<i></i></div><div>Growth<i></i></div><div>Onset<i></i></div><div>Recovery<i></i></div></div>
-        <div class="cause">
-          <span class="k">Solar wind</span><span class="v" style="grid-column:2 / 4;text-align:left" id="c-wind" data-hint="Speed of the solar wind and its magnetic field's north–south part. Southward couples energy in."></span>
-          <span class="k">Coupling</span><div class="bar" data-hint="How strongly the solar wind is feeding energy into the field right now."><i id="b-e"></i></div><span class="v" id="c-e"></span>
-          <span class="k">Energy</span><div class="bar" data-hint="Energy stored in the field. At the mark it lets go: a substorm onset."><i id="b-w"></i><u id="b-thr"></u></div><span class="v" id="c-w"></span>
-          <span class="k">Activity</span><div class="bar" data-hint="How lively the curtain is. This is what excites the resonators."><i id="b-a"></i></div><span class="v" id="c-a"></span>
+    <div class="col" id="voice">
+      <div class="panel mod" style="flex:0 0 264px">
+        <div class="ttl"><b>Resonators</b><span>drag a grip to move a crossover, drag a band for its level</span></div>
+        <div class="well"><canvas id="res" style="touch-action:none"></canvas></div>
+        <div class="bandrow">
+          <div class="bandsel"><div class="nm"><i id="bn-sw"></i><span id="bn-name"></span></div>
+            <button class="chip" id="bn-tones" data-hint="Which notes of the chord this band rings."></button>
+            <button class="chip" id="bn-shift" data-hint="Transpose this band against the chord. +7 rings a fifth above."></button></div>
+          <div id="bn-knobs" class="kr" style="gap:2px"></div>
+          <div class="vr"></div>
+          <div id="res-globals" class="kr" style="gap:2px;flex:1"></div>
         </div>
-        <ul id="tick"></ul>
       </div>
-      <div class="panel" id="macros" style="flex:1 1 0">
-        <div class="ttl"><b>Macros</b><span>each line says what the macro moves</span><span class="sp"></span></div>
-        <div class="kr" id="macro-row" style="margin-top:14px"></div>
+      <div class="panel mod" style="flex:1 1 0">
+        <div class="ttl"><b>EQ</b><span class="sp"></span><span class="eqsay" id="eq-say"></span></div>
+        <div class="well" style="margin-bottom:0"><canvas id="eq" style="touch-action:none"></canvas></div>
       </div>
     </div>
 
@@ -220,68 +270,70 @@ ul { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
       <div class="chord"><b id="h-chord"></b><span id="h-roman"></span></div>
       <div class="why" id="h-why"></div>
       <div class="rule" id="h-rule" data-hint="The rule: each phase of the sky asks for one kind of chord."><div><b>Quiet</b>home</div><div><b>Growth</b>tension</div><div><b>Onset</b>the awe move</div><div><b>Recovery</b>borrowed</div></div>
-      <div class="well" style="height:54px;margin-top:9px;flex:none" data-hint="The notes sounding now, coloured by the band that plays them. In Play mode: the keys you hold."><canvas id="kbd"></canvas></div>
-      <div class="hrow"><span>Key</span><div class="keys12" id="h-key" data-hint="The key the sky's chords are in."></div></div>
+      <div class="well" style="height:70px;margin-top:12px;flex:none" data-hint="The notes sounding now, coloured by the band that plays them. In Play mode: the keys you hold."><canvas id="kbd"></canvas></div>
+      <div class="hrow" style="margin-top:12px"><span>Key</span><div class="keys12" id="h-key" data-hint="The key the sky's chords are in."></div></div>
       <div class="hrow"><span>Mood</span><div class="segc sans" id="h-mood" data-hint="Which chord vocabulary the sky draws from."><button aria-pressed="true">Bright</button><button aria-pressed="false">Bittersweet</button><button aria-pressed="false">Nocturnal</button></div></div>
       <div class="hrow"><span>Scale</span><div class="segc sans" id="h-scale" data-hint="The scale for sparkles and passing tones."><button aria-pressed="true">Major</button><button aria-pressed="false">Lydian</button><button aria-pressed="false">Penta</button><button aria-pressed="false">Minor</button><button aria-pressed="false">Dorian</button></div></div>
       <div class="kr" id="h-knobs" style="margin-top:auto;justify-content:flex-start;gap:26px"></div>
     </div>
   </div>
 
-  <div class="chain" id="chain">
-    <div class="panel mod" style="width:428px">
-      <div class="ttl"><b>Resonators</b><span>drag a grip to move a crossover, drag a band for its level</span></div>
-      <div class="well"><canvas id="res" style="touch-action:none"></canvas></div>
-      <div class="bandrow">
-        <div class="bandsel"><div class="nm"><i id="bn-sw"></i><span id="bn-name"></span></div>
-          <button class="chip" id="bn-tones" data-hint="Which notes of the chord this band rings."></button>
-          <button class="chip" id="bn-shift" data-hint="Transpose this band against the chord. +7 rings a fifth above."></button></div>
-        <div id="bn-knobs" class="kr" style="gap:2px"></div>
-        <div class="vr"></div>
-        <div id="res-globals" class="kr" style="gap:2px;flex:1"></div>
+  <div class="lower">
+    <div class="grp">
+      <div class="panel mod" style="flex:1 1 0">
+        <div class="ttl"><b>Phaser</b><span class="sp"></span><button class="chip" id="ph-st" data-hint="Stages: two per notch."></button></div>
+        <div class="well"><canvas id="pha" style="touch-action:none;cursor:ew-resize"></canvas></div>
+        <div class="kr" id="k-pha"></div>
+      </div>
+      <div class="panel mod" style="flex:1 1 0">
+        <div class="ttl"><b>Chorus</b></div>
+        <div class="well"><canvas id="cho" style="touch-action:none;cursor:ew-resize"></canvas></div>
+        <div class="kr" id="k-cho"></div>
       </div>
     </div>
-    <div class="panel mod" style="width:186px">
-      <div class="ttl"><b>Filter</b><span class="sp"></span><button class="chip" id="f-type" data-hint="Filter shape: low-pass 12 or 24 dB, band-pass, high-pass. Click to step through."></button></div>
-      <div class="well"><canvas id="flt" style="touch-action:none;cursor:grab"></canvas></div>
-      <div class="kr" id="k-flt"></div>
+
+    <div class="motion" id="motion">
+      <div class="panel macros" id="macros"><div class="side"><b>Macros</b><span>point at one to see what it moves</span></div><div class="kr" id="macro-row"></div></div>
+      <div class="pair">
+        <div class="panel src" id="lfop">
+          <div class="ttl"><b>LFO</b><div class="segc" id="lfo-n" data-hint="Two LFOs. Pick which one you are looking at."><button aria-pressed="true">1</button><button aria-pressed="false">2</button></div><span class="sp"></span><div class="icos" id="lfo-shape" data-hint="The LFO's shape: sine, triangle, smooth random, stepped random."></div></div>
+          <div class="body"><div class="well"><canvas id="lfo" style="touch-action:none;cursor:ew-resize"></canvas></div><div id="k-lfo" class="kr"></div></div>
+        </div>
+        <div class="panel src" id="envp">
+          <div class="ttl"><b>Envelope</b><span class="sp"></span><button class="chip" id="env-trig" data-hint="What fires the envelope: a substorm onset, a MIDI note, or only the Fire button."></button><button class="fire" id="env-fire" data-hint="Fire the envelope now.">Fire</button></div>
+          <div class="body"><div class="well"><canvas id="env" style="touch-action:none"></canvas></div></div>
+        </div>
+      </div>
     </div>
-    <div class="panel mod" style="width:146px">
-      <div class="ttl"><b>Phaser</b><span class="sp"></span><button class="chip" id="ph-st" data-hint="Stages: two per notch."></button></div>
-      <div class="well"><canvas id="pha" style="touch-action:none;cursor:ew-resize"></canvas></div>
-      <div class="kr" id="k-pha"></div>
-    </div>
-    <div class="panel mod" style="width:108px">
-      <div class="ttl"><b>Chorus</b></div><!-- rate: drag the picture sideways -->
-      <div class="well"><canvas id="cho"></canvas></div>
-      <div class="kr" id="k-cho"></div>
-    </div>
-    <div class="panel mod" style="width:146px">
-      <div class="ttl"><b>Delay</b><span class="sp"></span><button class="chip" id="dl-pp" aria-pressed="true" data-hint="Echoes alternate left and right.">Ping-pong</button></div>
-      <div class="well"><canvas id="dly" style="touch-action:none;cursor:ew-resize"></canvas></div>
-      <div class="kr" id="k-dly"></div>
-    </div>
-    <div class="panel mod" style="width:176px">
-      <div class="ttl"><b>Reverb</b><span id="rv-say" class="num"></span></div>
-      <div class="well"><canvas id="rev" style="touch-action:none;cursor:ew-resize"></canvas></div>
-      <div class="kr" id="k-rev"></div>
-    </div>
-    <div class="panel mod" style="width:98px">
-      <div class="ttl"><b>Output</b></div>
-      <div class="well"><canvas id="out"></canvas></div>
-      <div class="kr" id="k-out"></div>
+
+    <div class="grp">
+      <div class="panel mod" style="width:146px">
+        <div class="ttl"><b>Delay</b><span class="sp"></span><button class="chip" id="dl-pp" aria-pressed="true" data-hint="Echoes alternate left and right.">Ping-pong</button></div>
+        <div class="well"><canvas id="dly" style="touch-action:none;cursor:ew-resize"></canvas></div>
+        <div class="kr" id="k-dly"></div>
+      </div>
+      <div class="panel mod" style="flex:1 1 0">
+        <div class="ttl"><b>Reverb</b><span id="rv-say" class="num"></span></div>
+        <div class="well"><canvas id="rev" style="touch-action:none;cursor:ew-resize"></canvas></div>
+        <div class="kr" id="k-rev"></div>
+      </div>
+      <div class="panel mod" style="width:98px">
+        <div class="ttl"><b>Output</b></div>
+        <div class="well"><canvas id="out"></canvas></div>
+        <div class="kr" id="k-out"></div>
+      </div>
     </div>
   </div>
 
   <div class="bottom">
-    <button class="chip" id="bt-mod" aria-pressed="false" data-hint="Open the modulation grid: which source moves which knob, and how far.">Modulation</button>
+    <button class="chip" id="bt-mod" aria-pressed="false" data-hint="Open the modulation grid: which source moves which control, and how far.">Modulation</button>
     <button class="chip" id="bt-tour" data-hint="A five-step walk through the window.">Tour</button>
     <div class="segc" id="bt-size" data-hint="Window size. Also on right-click."><button aria-pressed="false">S</button><button aria-pressed="true">M</button><button aria-pressed="false">L</button></div>
     <div id="hint">Point at anything to read what it does.</div>
     <span class="num" id="bt-out"></span>
   </div>
 
-  <div id="drawer" hidden><div class="ttl"><b>Modulation</b><div class="segc sans" style="margin-left:8px"><button aria-pressed="true">Macros</button><button aria-pressed="false">Sky</button><button aria-pressed="false">Motion</button></div><span>each dot sits over the knob it moves; drag a dot for depth, double-click to clear</span></div><canvas id="grid"></canvas></div>
+  <div id="drawer" hidden><div class="ttl"><b>Modulation</b><span>rows move columns. Drag a dot up for more, down past zero to push the other way, double-click to clear.</span></div><canvas id="grid" style="touch-action:none"></canvas></div>
   <div class="menu" id="daymenu" hidden></div>
   <div class="menu" id="ctx" hidden></div>
   <div id="spot" hidden></div>
@@ -298,14 +350,14 @@ ul { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 </section>
 
 <section>
-  <h2>What changed, against your notes</h2>
+  <h2>What changed in this pass</h2>
   <div class="cols">
-    <div><h3>Clustering</h3><p>Three stories, each in one place. Sky, on the left: what is happening and why. Harmony, on the right: the chord, its rule and its settings together. Sound, along the bottom: resonators, filter, phaser, chorus, delay, reverb, output, in the order the signal takes.</p></div>
-    <div><h3>Journey</h3><p>A transport in the top bar: run or freeze, the time, the speed, the day, loop. The strip under it is the timeline you scrub.</p></div>
-    <div><h3>Resonators</h3><p>One display on a pitch axis. The four bands sit side by side; dragging a grip lengthens one band and shortens its neighbour. The lines inside are the notes ringing. Level, decay, tones and shift belong to the band you clicked.</p></div>
-    <div><h3>Pictures are controls</h3><p>The FabFilter idea. Filter: drag the dot for cutoff and resonance. Phaser: the notches carve the real spectrum, drag to widen the sweep. Delay and reverb: drag the echoes and the tail. Fewer knobs as a result: 24, down from 46.</p></div>
-    <div><h3>Colour</h3><p>Red, green and violet mean the three bands and nothing else. Everything you set is in starlight ink. A ring round a knob means something else is moving it.</p></div>
-    <div><h3>The hint line</h3><p>The bar at the bottom says what the thing under the pointer does, in a sentence. No legends to decode.</p></div>
+    <div><h3>Your arrangement</h3><p>The sky's data sits small beside the keogram. Resonators top left. Harmony as it was. Macros under the dome, squished to one row. Effects along the bottom: phaser and chorus on the left, delay, reverb and output on the right.</p></div>
+    <div><h3>An EQ in place of the filter</h3><p>Four bands. Drag a dot sideways for frequency, up and down for gain, scroll for width. Under each dot a bar: pull it up to drive only that part of the sound. The sky still opens the high cut; the bar on the top edge shows how far.</p></div>
+    <div><h3>LFO and envelope</h3><p>Two LFOs with four shapes, scrolling under a fixed "now". An envelope with three points to drag; it fires on a substorm onset, on a note, or from the Fire button. Both are sources like the macros.</p></div>
+    <div><h3>One modulation grid</h3><p>Every source against every destination, behind the Modulation button. Drag a dot and a ring appears on that knob at once; in the pictures the live value is a white dot.</p></div>
+    <div><h3>Two placements I chose</h3><p>The EQ went under the resonators: it needs the width, and generator then tone reads top to bottom. The LFO and envelope went beside the macros: everything that moves things is one block under the dome. Phaser and chorus took the freed width.</p></div>
+    <div><h3>Kept from before</h3><p>The keogram and transport, the crossover bands, the colour rule (red, green and violet only for the bands), the hint line, the sizes and the tour.</p></div>
   </div>
 </section>
 </div>
@@ -360,15 +412,62 @@ const hint = (t) => { $("hint").textContent = t || "Point at anything to read wh
 $("stage").addEventListener("pointerover", (e) => { const n = e.target.closest("[data-hint]"); hint(n ? n.dataset.hint : ""); });
 function segc(root, onPick) { const bs = [...root.querySelectorAll("button")]; bs.forEach((b, i) => b.addEventListener("click", () => { bs.forEach((x) => x.setAttribute("aria-pressed", String(x === b))); if (onPick) onPick(i); })); }
 
-// ---------------------------------------------------------------- parameters (0…1) and knobs
-const P = { storm: 0.5, breath: 0.35, glow: 0.5, space: 0.5, driftm: 0.5, prog: 1, transpose: 0.5, detune: 0.25, drift: 0.2, width: 0.9,
-  cut: 0.86, reso: 0.18, fsky: 0.3, drive: 0.15, ftype: 0, phrate: 0.5, phdepth: 0.6, phfb: 0.38, phmix: 0.4, phst: 6,
-  chrate: 0.3, chdepth: 0.3, chmix: 0.25, dtime: 0.42, dfb: 0.37, dtone: 0.5, dmix: 0.25, pp: true,
-  rdecay: 0.62, rsize: 0.85, rshim: 0.2, rmix: 0.35, out: 1, ceil: 0.92 };
+// ---------------------------------------------------------------- parameters (0…1), sources, routes, knobs
+const P = { storm: 0.5, breath: 0.35, glow: 0.5, space: 0.5, driftm: 0.5, prog: 1, transpose: 0.5, detune: 0.25, drift: 0.2, width: 0.72,
+  phrate: 0.5, phdepth: 0.6, phfb: 0.38, phmix: 0.4, phst: 6, chrate: 0.3, chdepth: 0.3, chmix: 0.25,
+  dtime: 0.42, dfb: 0.37, dtone: 0.5, dmix: 0.25, pp: true, rdecay: 0.62, rsize: 0.85, rshim: 0.2, rmix: 0.35, out: 1, ceil: 0.92 };
 const pct = (v) => Math.round(v * 100) + " %";
 const signed = (v) => { const p = Math.round((v - 0.5) * 200); return p === 0 ? "neutral" : (p > 0 ? "+" : "−") + Math.abs(p) + " %"; };
-const MACRO = { space: ["dmix", "rmix"], glow: ["rshim", "L3"], storm: ["L0", "L1", "L2", "L3", "prog"], breath: ["L1", "L2", "L3"], driftm: ["detune", "drift"] };
+
+// what moves things: the macros, two channels of the sky, two LFOs and an envelope
+const LFO = [{ rate: 0.47, shape: 0, cyc: 0, out: 0 }, { rate: 0.22, shape: 2, cyc: 0.3, out: 0 }];
+let lfoSel = 0;
+const ENV = { a: 0.33, d: 0.6, s: 0.35, r: 0.72, trig: 0, t: -1, seg: -1, fr: 0, out: 0 };
+const SKYV = { act: 0.5, onset: 0, breath: 0 };
+const SRC = [
+  { id: "storm", name: "Storm", grp: "Macros", rng: () => [-1, 1], val: () => 2 * (P.storm - 0.5) },
+  { id: "breath", name: "Breath", grp: "Macros", rng: () => [0, P.breath], val: () => SKYV.breath * P.breath },
+  { id: "glow", name: "Glow", grp: "Macros", rng: () => [-1, 1], val: () => 2 * (P.glow - 0.5) },
+  { id: "space", name: "Space", grp: "Macros", rng: () => [-1, 1], val: () => 2 * (P.space - 0.5) },
+  { id: "driftm", name: "Drift", grp: "Macros", rng: () => [-1, 1], val: () => 2 * (P.driftm - 0.5) },
+  { id: "act", name: "Activity", grp: "Sky", rng: () => [0, 1], val: () => SKYV.act },
+  { id: "onset", name: "Onset", grp: "Sky", rng: () => [0, 1], val: () => SKYV.onset },
+  { id: "lfo1", name: "LFO 1", grp: "Motion", rng: () => [-1, 1], val: () => LFO[0].out },
+  { id: "lfo2", name: "LFO 2", grp: "Motion", rng: () => [-1, 1], val: () => LFO[1].out },
+  { id: "env", name: "Envelope", grp: "Motion", rng: () => [0, 1], val: () => ENV.out },
+];
+// what can be moved: [id, column name, module]
+const DST = [["L0", "Low", "Resonators"], ["L1", "Red", "Resonators"], ["L2", "Green", "Resonators"], ["L3", "Violet", "Resonators"], ["detune", "Detune", "Resonators"], ["drift", "Drift", "Resonators"], ["width", "Width", "Resonators"],
+  ["eq0", "Low", "EQ"], ["eq1", "Mid", "EQ"], ["eq2", "High", "EQ"], ["eqcut", "Cut", "EQ"], ["eqdrive", "Drive", "EQ"],
+  ["phmix", "Phaser mix", "Phaser"], ["chmix", "Chorus mix", "Chorus"], ["dfb", "Feed", "Delay"], ["dmix", "Mix", "Delay"],
+  ["rdecay", "Decay", "Reverb"], ["rshim", "Shimmer", "Reverb"], ["rmix", "Mix", "Reverb"], ["prog", "Progression", "Harmony"]];
+const DSTIDS = new Set(DST.map((d) => d[0]));
+// the routes: depth −1 … +1. These defaults are today's hard-wired macros, plus one route each for the new sources.
+const ROUTE = {};
+[["storm", "L0", 0.6], ["storm", "L1", 0.6], ["storm", "L2", 0.6], ["storm", "L3", 0.6], ["storm", "prog", 0.6], ["breath", "L1", 0.5], ["breath", "L2", 0.5], ["breath", "L3", 0.5],
+  ["glow", "L3", 0.5], ["glow", "rshim", 0.5], ["space", "dmix", 0.5], ["space", "rmix", 0.5], ["driftm", "detune", 0.5], ["driftm", "drift", 0.5],
+  ["act", "eqcut", 0.3], ["lfo1", "width", 0.3], ["env", "rshim", 0.9]].forEach((r) => { ROUTE[r[0] + ">" + r[1]] = r[2]; });
+/** What the routes add to a destination, as a fraction of its own value: [least, most, now], or null. */
+function modSum(dst) {
+  let lo = 0, hi = 0, now = 0, any = false;
+  for (const s of SRC) { const d = ROUTE[s.id + ">" + dst]; if (!d) continue; any = true; const r = s.rng(); lo += Math.min(d * r[0], d * r[1]); hi += Math.max(d * r[0], d * r[1]); now += d * s.val(); }
+  return any ? [lo, hi, now] : null;
+}
+const modOf = (dst, base) => { const m = modSum(dst); return m ? [clamp(base * (1 + m[0]), 0, 1), clamp(base * (1 + m[1]), 0, 1), clamp(base * (1 + m[2]), 0, 1)] : null; };
+const live = (dst, base) => { const m = modSum(dst); return m ? clamp(base * (1 + m[2]), 0, 1) : base; };
+const targetsOf = (src) => DST.filter((d) => ROUTE[src + ">" + d[0]]).map((d) => d[0]);
+const destName = (d) => (d[2] === "Resonators" || d[2] === "Harmony" || d[1].startsWith(d[2]) ? d[1] : d[2] + " " + d[1].toLowerCase());
+const movesText = (src) => DST.filter((d) => ROUTE[src + ">" + d[0]]).map(destName).join(", ");
+
 const KN = [];
+function light(src, on) { const t = on ? targetsOf(src) : []; KN.forEach((k) => k.root.classList.toggle("lit", t.includes(k.o.id))); }
+/** A source lights the knobs it moves and says so in the hint line. `src` may be a function (the LFO shown). */
+function sourceHover(node, src, base) {
+  const id = () => (typeof src === "function" ? src() : src);
+  const on = () => { light(id(), true); node.dataset.hint = base + " Moves: " + (movesText(id()) || "nothing yet") + "."; hint(node.dataset.hint); };
+  node.addEventListener("pointerenter", on); node.addEventListener("focus", on);
+  node.addEventListener("pointerleave", () => light(id(), false)); node.addEventListener("blur", () => light(id(), false));
+}
 function knob(host, o) {
   const d = o.d || 28, R = d / 2, W = d + 20, c = W / 2;
   const root = el("div", "kn" + (o.big ? " big" : ""), host); root.dataset.hint = o.hint || o.label; root.tabIndex = 0;
@@ -379,49 +478,48 @@ function knob(host, o) {
   const arc = (r, a0, a1) => { if (a1 < a0) [a0, a1] = [a1, a0]; if (a1 - a0 < 0.01) a1 = a0 + 0.01; const p0 = pol(r, a0), p1 = pol(r, a1); return `M${p0[0].toFixed(2)},${p0[1].toFixed(2)} A${r},${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${p1[0].toFixed(2)},${p1[1].toFixed(2)}`; };
   sv("path", { d: arc(R + 3.5, -135, 135), stroke: "rgba(201,211,230,0.13)", "stroke-width": 2.5, fill: "none", "stroke-linecap": "round" }, s);
   const val = sv("path", { stroke: o.color || "#dfe6f3", "stroke-width": 2.5, fill: "none", "stroke-linecap": "round" }, s);
-  const ring = sv("g", { class: "ring" }, s), rr = sv("path", { stroke: "#c9d3e6", "stroke-width": 1.5, fill: "none", "stroke-linecap": "round" }, ring), live = sv("circle", { r: 2.7, fill: "#fff" }, ring);
+  const ring = sv("g", { class: "ring" }, s), rr = sv("path", { stroke: "#c9d3e6", "stroke-width": 1.5, fill: "none", "stroke-linecap": "round" }, ring), dot = sv("circle", { r: 2.7, fill: "#fff" }, ring);
   sv("circle", { cx: c, cy: c, r: R - 1.5, fill: "url(#kg)", stroke: "rgba(201,211,230,0.22)" }, s);
   const ptr = sv("line", { stroke: "#eef2fa", "stroke-width": 2, "stroke-linecap": "round" }, s);
-  el("div", "lab", root, o.label); const vt = el("div", "val", root); if (o.sub) el("div", "sub", root, o.sub);
+  el("div", "lab", root, o.label); const vt = el("div", "val", root);
   let shown = null;
   const k = { root, o, draw() {
-    const v = o.get(), m = o.mod ? o.mod() : null, sig = v + "|" + (m ? m.join() : "") + "|" + (o.color || "");
+    const v = o.get(), m = o.mod ? o.mod() : null, sig = v.toFixed(4) + "|" + (m ? m.map((x) => x.toFixed(3)).join() : "") + "|" + (o.colorFn ? o.colorFn() : "");
     if (sig === shown) return; shown = sig;
     val.setAttribute("d", arc(R + 3.5, o.bip ? 0 : -135, A(v))); val.setAttribute("stroke", o.colorFn ? o.colorFn() : o.color || "#dfe6f3");
     const p0 = pol(R * 0.32, A(v)), p1 = pol(R * 0.8, A(v));
     ptr.setAttribute("x1", p0[0]); ptr.setAttribute("y1", p0[1]); ptr.setAttribute("x2", p1[0]); ptr.setAttribute("y2", p1[1]);
-    if (m) { ring.style.display = ""; rr.setAttribute("d", arc(R + 8, A(m[0]), A(m[1]))); const q = pol(R + 8, A(m[2])); live.setAttribute("cx", q[0]); live.setAttribute("cy", q[1]); } else ring.style.display = "none";
-    vt.textContent = o.fmt ? o.fmt(m ? m[2] : v) : pct(m ? m[2] : v);
+    if (m) { ring.style.display = ""; rr.setAttribute("d", arc(R + 8, A(m[0]), A(m[1]))); const q = pol(R + 8, A(m[2])); dot.setAttribute("cx", q[0]); dot.setAttribute("cy", q[1]); } else ring.style.display = "none";
+    vt.textContent = o.fmt ? o.fmt(v) : pct(v);     // the value you set; the ring's dot is the value now
     root.setAttribute("aria-valuetext", vt.textContent);
   } };
   dragOn(root, (p0, e) => { root.focus(); const v0 = o.get(), y0 = e.clientY; return { move: (p, ev) => o.set(clamp(v0 + (y0 - ev.clientY) / (170 * S.scale) * (ev.shiftKey ? 0.2 : 1), 0, 1)) }; });
   root.addEventListener("dblclick", () => o.set(o.def === undefined ? 0.5 : o.def));
   root.addEventListener("keydown", (e) => { const dd = e.key === "ArrowUp" || e.key === "ArrowRight" ? 0.02 : e.key === "ArrowDown" || e.key === "ArrowLeft" ? -0.02 : 0; if (dd) { e.preventDefault(); o.set(clamp(o.get() + dd, 0, 1)); } });
-  if (o.macro) { const lit = (on) => KN.forEach((x) => x.root.classList.toggle("lit", on && MACRO[o.macro].includes(x.o.id))); root.addEventListener("pointerenter", () => lit(true)); root.addEventListener("pointerleave", () => lit(false)); root.addEventListener("focus", () => lit(true)); root.addEventListener("blur", () => lit(false)); }
+  if (o.src) sourceHover(root, o.src, o.hint || o.label);
   KN.push(k); return k;
 }
-const pk = (host, id, label, o = {}) => knob($(host), Object.assign({ id, label, get: () => P[id], set: (v) => { P[id] = v; }, def: P[id] }, o));
-const macroMod = (id, macro) => () => [P[id] * 0.5, Math.min(1, P[id] * 1.5), clamp(P[id] * (0.5 + P[macro]), 0, 1)];
+const pk = (host, id, label, o = {}) => knob($(host), Object.assign({ id, label, get: () => P[id], set: (v) => { P[id] = v; }, def: P[id], mod: DSTIDS.has(id) ? () => modOf(id, P[id]) : undefined }, o));
 
-[["storm", "Storm", "levels, chord pace"], ["breath", "Breath", "a slow swell"], ["glow", "Glow", "violet, shimmer"], ["space", "Space", "delay, reverb"], ["driftm", "Drift", "detune, drift"]].forEach((m) =>
-  pk("macro-row", m[0], m[1], { d: 50, big: true, bip: m[0] !== "breath", macro: m[0], sub: m[2], fmt: m[0] === "breath" ? (v) => (v < 0.01 ? "off" : pct(v)) : signed,
-    hint: { storm: "Storm: how hard the sky excites every band, and how often it changes chord.", breath: "Breath: a slow swell on the band levels, five times a minute.", glow: "Glow: more violet band and more shimmer in the reverb.", space: "Space: scales the delay and reverb mix together.", driftm: "Drift: scales detune and pitch drift, towards worn tape." }[m[0]] }));
-pk("h-knobs", "prog", "Progression", { fmt: (v) => (v < 0.01 ? "hold" : v > 0.99 ? "follow sky" : pct(v)), hint: "From holding one chord to following every move of the sky.", mod: () => [P.prog * 0.4, Math.min(1, P.prog * 1.6), clamp(P.prog * (0.4 + 1.2 * P.storm), 0, 1)] });
+[["storm", "Storm", "How hard the sky excites every band, and how often it changes chord."], ["breath", "Breath", "A slow swell, five times a minute."], ["glow", "Glow", "More violet and more shimmer."],
+  ["space", "Space", "More or less room around the sound."], ["driftm", "Drift", "Towards worn tape: pitch drifts further."]].forEach((m) =>
+  pk("macro-row", m[0], m[1], { d: 40, big: true, bip: m[0] !== "breath", src: m[0], hint: m[1] + ": " + m[2].charAt(0).toLowerCase() + m[2].slice(1), fmt: m[0] === "breath" ? (v) => (v < 0.01 ? "off" : pct(v)) : signed }));
+pk("h-knobs", "prog", "Progression", { fmt: (v) => (v < 0.01 ? "hold" : v > 0.99 ? "follow sky" : pct(v)), hint: "From holding one chord to following every move of the sky." });
 pk("h-knobs", "transpose", "Transpose", { bip: true, fmt: (v) => { const n = Math.round((v - 0.5) * 48); return (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n) + " st"; }, hint: "Shift every chord and played note by semitones." });
-pk("res-globals", "detune", "Detune", { fmt: (v) => (v * 12).toFixed(1) + " ct", hint: "A few cents between neighbouring resonators, for thickness.", mod: macroMod("detune", "driftm") });
-pk("res-globals", "drift", "Drift", { fmt: (v) => (v * 20).toFixed(1) + " ct", hint: "Slow wander of each resonator's pitch.", mod: macroMod("drift", "driftm") });
+pk("res-globals", "detune", "Detune", { fmt: (v) => (v * 12).toFixed(1) + " ct", hint: "A few cents between neighbouring resonators, for thickness." });
+pk("res-globals", "drift", "Drift", { fmt: (v) => (v * 20).toFixed(1) + " ct", hint: "Slow wander of each resonator's pitch." });
 pk("res-globals", "width", "Width", { hint: "How wide the curtain is spread between the speakers." });
-pk("k-flt", "fsky", "Sky", { fmt: (v) => (v < 0.01 ? "still" : "+" + (3 * v).toFixed(1) + " oct"), hint: "How far the sky's activity opens the filter." });
-pk("k-flt", "drive", "Drive", { hint: "Gentle saturation after the filter." });
 pk("k-pha", "phrate", "Rate", { fmt: (v) => (0.005 * Math.pow(100, v)).toFixed(3) + " Hz", hint: "How fast the notches travel." });
+pk("k-pha", "phfb", "Feed", { fmt: (v) => (v * 0.8).toFixed(2), hint: "Feedback: sharper, more resonant notches." });
 pk("k-pha", "phmix", "Mix", { hint: "Phaser mix." });
+pk("k-cho", "chrate", "Rate", { fmt: (v) => (0.01 * Math.pow(100, v)).toFixed(2) + " Hz", hint: "How fast the three chorus voices swing." });
 pk("k-cho", "chdepth", "Depth", { fmt: (v) => (v * 10).toFixed(1) + " ms", hint: "How far the three chorus voices swing." });
 pk("k-cho", "chmix", "Mix", { hint: "Chorus mix." });
 pk("k-dly", "dtone", "Tone", { hint: "Darker or brighter echoes." });
-pk("k-dly", "dmix", "Mix", { hint: "Delay mix. Space moves it.", mod: macroMod("dmix", "space") });
+pk("k-dly", "dmix", "Mix", { hint: "Delay mix." });
 pk("k-rev", "rsize", "Size", { hint: "Size of the room." });
-pk("k-rev", "rshim", "Shimmer", { hint: "Octave and fifth above, fed back into the tail. Glow moves it.", mod: macroMod("rshim", "glow") });
-pk("k-rev", "rmix", "Mix", { hint: "Reverb mix. Space moves it.", mod: macroMod("rmix", "space") });
+pk("k-rev", "rshim", "Shimmer", { hint: "Octave and fifth above, fed back into the tail." });
+pk("k-rev", "rmix", "Mix", { hint: "Reverb mix." });
 pk("k-out", "out", "Out", { fmt: (v) => (v > 0.995 ? "0.0 dB" : v < 0.01 ? "−∞" : (-60 * (1 - v)).toFixed(1) + " dB"), hint: "Output level, after the limiter." });
 
 // ---------------------------------------------------------------- the day strip: keogram + magnetometer
@@ -504,7 +602,7 @@ function drawStrip(c, w, h, G, key, idx, opts = {}) {
   c.beginPath(); c.moveTo(xn - 5, G.ky0 - 4); c.lineTo(xn + 5, G.ky0 - 4); c.lineTo(xn, G.ky0 + 3); c.closePath(); c.fill();
   if (opts.hover !== undefined && opts.hover !== null) { const xh = X(opts.hover); c.fillStyle = "rgba(255,255,255,0.55)"; c.fillRect(Math.round(xh), G.ky0, 1, G.dy1 - G.ky0); }
 }
-const SG = { x0: 62, x1: 1318, ky0: 7, ky1: 56, ty: 83, dy0: 61, dy1: 88 };
+const SG = { x0: 62, x1: 1098, ky0: 7, ky1: 56, ty: 83, dy0: 61, dy1: 88 };
 let keoHover = null;
 function drawKeo() { const f = fit($("keo")); drawStrip(f.c, f.w, f.h, SG, S.day, S.idx, { hover: keoHover }); }
 {
@@ -568,7 +666,7 @@ function showBand() {
 $("bn-tones").addEventListener("click", () => { BANDS[sel].tones = (BANDS[sel].tones + 1) % 5; revoice(); });
 $("bn-shift").addEventListener("click", (e) => { const b = BANDS[sel], cyc = [0, 7, 12, -12, 5]; b.shift = cyc[(cyc.indexOf(b.shift) + 1) % cyc.length]; revoice(); });
 const bandColor = () => { const c = RGB[BANDS[sel].c]; return BANDS[sel].c === "ink" ? "#dfe6f3" : `rgb(${c.join()})`; };
-knob($("bn-knobs"), { id: "bandLevel", label: "Level", get: () => BANDS[sel].level, set: (v) => { BANDS[sel].level = v; }, colorFn: bandColor, hint: "Level of the selected band. Dragging the band in the picture does the same.", mod: () => { const L = BANDS[sel].level, g = 0.4 + 1.2 * P.storm; return [L * 0.4, Math.min(1, L * 1.6), clamp(L * g, 0, 1)]; } });
+knob($("bn-knobs"), { id: "bandLevel", label: "Level", get: () => BANDS[sel].level, set: (v) => { BANDS[sel].level = v; }, colorFn: bandColor, hint: "Level of the selected band. Dragging the band in the picture does the same.", mod: () => modOf("L" + sel, BANDS[sel].level) });
 knob($("bn-knobs"), { id: "bandDecay", label: "Decay", get: () => BANDS[sel].decay, set: (v) => { BANDS[sel].decay = v; }, colorFn: bandColor, fmt: (v) => (1 + 59 * v * v).toFixed(1) + " s", hint: "How long the selected band rings on." });
 
 const spec = new Float32Array(120);   // the sound's spectrum on a pitch axis, MIDI 12 … 132
@@ -589,12 +687,13 @@ function drawRes(t, act) {
     const gl = c.createLinearGradient(x0, 0, x1, 0); gl.addColorStop(0, rgba(col, 0)); gl.addColorStop(Math.min(0.49, e0), rgba(col, on ? 1 : 0.7)); gl.addColorStop(Math.max(0.51, 1 - e0), rgba(col, on ? 1 : 0.7)); gl.addColorStop(1, rgba(col, 0));
     c.strokeStyle = gl; c.lineWidth = on ? 2 : 1.5; c.beginPath(); c.moveTo(x0, y); c.lineTo(x1, y); c.stroke();
     c.fillStyle = rgba(col, 1); c.beginPath(); c.roundRect((X(lo) + X(hi)) / 2 - 8, y - 2.5, 16, 5, 2.5); c.fill();
+    { const lv = live("L" + k, b.level), xm = (X(lo) + X(hi)) / 2 + 15, yl = base - HH * lv; if (Math.abs(lv - b.level) > 0.004) { c.strokeStyle = "rgba(255,255,255,0.4)"; c.lineWidth = 1; c.beginPath(); c.moveTo(xm, y); c.lineTo(xm, yl); c.stroke(); c.fillStyle = "#fff"; c.beginPath(); c.arc(xm, yl, 2.5, 0, 6.2832); c.fill(); } }
     if (X(hi) - X(lo) > 34) { c.font = SANS(11, on ? 600 : 500); c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillStyle = rgba(col, on ? 1 : 0.8); c.fillText(b.name, X(lo) + 6, Math.max(top + 9, y - 5)); }
   });
   const fade = c.createLinearGradient(0, top, 0, base); fade.addColorStop(0, "rgba(7,10,18,0)"); fade.addColorStop(1, "rgba(7,10,18,0.55)"); c.fillStyle = fade; c.fillRect(px, top, w - 2 * px, base - top);
   // the notes ringing
   for (const v of VOICES) {
-    const b = BANDS[v.k], col = RGB[b.c], g = 0.4 + 1.2 * P.storm, tgt = b.level * clamp(g * (0.5 + 0.6 * act) * (0.72 + 0.28 * Math.sin(v.ph + t * (0.5 + 2.2 * (1 - b.decay)))), 0.08, 1);
+    const b = BANDS[v.k], col = RGB[b.c], tgt = live("L" + v.k, b.level) * clamp((0.55 + 0.6 * act) * (0.72 + 0.28 * Math.sin(v.ph + t * (0.5 + 2.2 * (1 - b.decay)))), 0.08, 1);
     v.a += (tgt - v.a) * 0.12;
     const x = X(v.m), y = base - HH * v.a;
     c.strokeStyle = rgba(col, 0.95); c.lineWidth = 2; c.beginPath(); c.moveTo(x, base); c.lineTo(x, y); c.stroke();
@@ -626,38 +725,84 @@ function drawRes(t, act) {
   });
 }
 
-// ---------------------------------------------------------------- filter, phaser and the small pictures
+// ---------------------------------------------------------------- the EQ: four bands, each with gain and drive
 const FX0 = Math.log(20), FX1 = Math.log(20000);
-const cutHz = (n) => Math.exp(lerp(FX0, FX1, n));
-function fltMag(fr, fc, type) {
-  const wq = fr / fc, q = 1 / lerp(2, 0.25, P.reso), den = Math.sqrt((1 - wq * wq) ** 2 + (wq / q) ** 2) + 1e-9;
-  if (type === 3) return wq * wq / den;
-  if (type === 2) return (wq / q) / den;
-  const lp = 1 / den; return type === 1 ? lp / Math.sqrt((1 - wq * wq) ** 2 + (wq * 1.414) ** 2 + 1e-9) : lp;
-}
 let specNorm = 1;
 const specAt = (fr) => { const x = 69 + 12 * Math.log2(fr / 440) - 12, i = Math.floor(x), a = spec[i] || 0, b = spec[i + 1] || 0; return clamp((a + (b - a) * (x - i)) * specNorm, 0, 1); };
-function drawFlt(t, act) {
-  const f = fit($("flt")), c = f.c, w = f.w, h = f.h, X = (fr) => (Math.log(fr) - FX0) / (FX1 - FX0) * w, Y = (db) => h * 0.42 - db / 30 * h * 0.42;
-  c.clearRect(0, 0, w, h);
-  [100, 1000, 10000].forEach((fr, i) => { const x = Math.round(X(fr)) + 0.5; c.strokeStyle = "rgba(201,211,230,0.07)"; c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); c.fillStyle = "#6e7991"; c.font = MONO(10); c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillText(["100", "1k", "10k"][i], x + 3, h - 5); });
-  const fc = cutHz(P.cut), sky = Math.min(20000, fc * Math.pow(2, 3 * P.fsky * act)), reach = Math.min(20000, fc * Math.pow(2, 3 * P.fsky));
-  c.beginPath(); c.moveTo(0, h);
-  for (let x = 0; x <= w; x += 2) { const fr = Math.exp(lerp(FX0, FX1, x / w)); c.lineTo(x, h - h * 0.8 * specAt(fr) * Math.min(1, fltMag(fr, sky, P.ftype))); }
-  c.lineTo(w, h); c.closePath(); c.fillStyle = "rgba(201,211,230,0.13)"; c.fill();
-  const curve = (cf, style, lw, fill) => { c.beginPath(); for (let x = 0; x <= w; x += 2) { const y = clamp(Y(20 * Math.log10(fltMag(Math.exp(lerp(FX0, FX1, x / w)), cf, P.ftype))), -4, h + 4); if (x) c.lineTo(x, y); else c.moveTo(x, y); } if (fill) { c.lineTo(w, h); c.lineTo(0, h); c.closePath(); const g = c.createLinearGradient(0, 0, 0, h); g.addColorStop(0, "rgba(201,211,230,0.16)"); g.addColorStop(1, "rgba(201,211,230,0)"); c.fillStyle = g; c.fill(); } else { c.strokeStyle = style; c.lineWidth = lw; c.stroke(); } };
-  curve(sky, "", 0, true); curve(fc, "rgba(201,211,230,0.35)", 1); curve(sky, "#eef2fa", 1.8);
-  if (P.fsky > 0.01 && reach > fc * 1.02) { c.fillStyle = "rgba(201,211,230,0.35)"; c.fillRect(X(fc), 5, X(reach) - X(fc), 2); c.fillStyle = "#fff"; c.beginPath(); c.arc(X(sky), 6, 2.6, 0, 6.2832); c.fill(); }
-  const nx = X(fc), ny = Y(20 * Math.log10(1 / lerp(2, 0.25, P.reso)));
-  c.fillStyle = "#05070d"; c.beginPath(); c.arc(nx, ny, 7, 0, 6.2832); c.fill(); c.strokeStyle = "#eef2fa"; c.lineWidth = 2; c.stroke(); c.fillStyle = "#eef2fa"; c.beginPath(); c.arc(nx, ny, 2.5, 0, 6.2832); c.fill();
-  c.fillStyle = "#c9d3e6"; c.font = MONO(10.5); c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillText(fc >= 19900 ? "open" : fc >= 1000 ? (fc / 1000).toFixed(1) + " kHz" : Math.round(fc) + " Hz", 7, 16);
+const EQ = [{ kind: 0, f: 110, g: 2.5, q: 0.7, drive: 0.1, name: "low shelf" }, { kind: 1, f: 420, g: -2.5, q: 1, drive: 0.45, name: "bell" }, { kind: 1, f: 2400, g: 3, q: 1.1, drive: 0, name: "bell" }, { kind: 2, f: 6500, g: 0, q: 0.7, drive: 0, name: "high cut" }];
+let eqSel = 1, eqHot = -1, eqBar = -1, eqSaid = "";
+/** The bands as they are right now, with whatever moves them: the sky opens the high cut. */
+function eqLive() {
+  return EQ.map((b, k) => {
+    if (k === 3) { const m = modSum("eqcut"), up = (x) => clamp(b.f * Math.pow(2, 3 * x), 30, 20000); return { f: m ? up(m[2]) : b.f, g: 0, reach: m ? [up(m[0]), up(m[1])] : null }; }
+    const m = modSum("eq" + k); return { f: b.f, g: clamp(b.g * (1 + (m ? m[2] : 0)), -14, 14) };
+  });
 }
-{ const cv = $("flt"); cv.dataset.hint = "Drag the dot: left and right for cutoff, up and down for resonance. The bar on top is how far the sky opens it.";
-  dragOn(cv, (p) => { const set = (q) => { P.cut = clamp(q.x / cv.clientWidth, 0, 1); P.reso = clamp(1 - q.y / (cv.clientHeight * 0.75), 0, 1); }; set(p); return { move: set }; });
-  const FT = ["Low-pass 12", "Low-pass 24", "Band-pass", "High-pass"], show = () => { $("f-type").innerHTML = `<b>${FT[P.ftype]}</b>`; }; $("f-type").addEventListener("click", () => { P.ftype = (P.ftype + 1) % 4; show(); }); show(); }
+let EQL = eqLive();
+function eqDb(fr, liveOn) {
+  let db = 0;
+  for (let k = 0; k < 4; k++) {
+    const b = EQ[k], f0 = liveOn ? EQL[k].f : b.f, g = liveOn ? EQL[k].g : b.g;
+    db += b.kind === 0 ? g / (1 + Math.pow(fr / f0, 2.2)) : b.kind === 1 ? g / (1 + Math.pow(b.q * 1.6 * Math.log2(fr / f0), 2)) : -10 * Math.log10(1 + Math.pow(fr / f0, 4));
+  }
+  return db;
+}
+const toneAt = (fr) => clamp(specAt(fr) * Math.pow(10, eqDb(fr, true) / 20), 0, 1.1);
+const fmtHz = (f) => (f >= 19900 ? "open" : f >= 1000 ? (f / 1000).toFixed(1) + " kHz" : Math.round(f) + " Hz");
+function eqG() {
+  const cv = $("eq"), w = cv.clientWidth, h = cv.clientHeight, bh = 22, by = h - 5, floor = by - bh - 5, mid = 8 + (floor - 8) * 0.5, span = mid - 12;
+  return { w, h, bh, by, floor, mid, X: (fr) => (Math.log(fr) - FX0) / (FX1 - FX0) * w, F: (x) => Math.exp(lerp(FX0, FX1, clamp(x / w, 0, 1))), Y: (db) => mid - db / 12 * span, G: (y) => (mid - y) / span * 12 };
+}
+function drawEq() {
+  const f = fit($("eq")), c = f.c, g = eqG(), w = g.w, h = g.h;
+  c.clearRect(0, 0, w, h);
+  [100, 1000, 10000].forEach((fr, i) => { const x = Math.round(g.X(fr)) + 0.5; c.strokeStyle = "rgba(201,211,230,0.07)"; c.beginPath(); c.moveTo(x, 0); c.lineTo(x, g.floor); c.stroke(); c.fillStyle = "#6e7991"; c.font = MONO(10); c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillText(["100", "1k", "10k"][i], x + 4, 13); });
+  c.strokeStyle = "rgba(201,211,230,0.16)"; c.beginPath(); c.moveTo(0, Math.round(g.mid) + 0.5); c.lineTo(w, Math.round(g.mid) + 0.5); c.stroke();
+  // the sound as the EQ leaves it
+  c.beginPath(); c.moveTo(0, g.floor);
+  for (let x = 0; x <= w; x += 2) c.lineTo(x, g.floor - (g.floor - 12) * 0.82 * toneAt(g.F(x)));
+  c.lineTo(w, g.floor); c.closePath(); c.fillStyle = "rgba(201,211,230,0.11)"; c.fill();
+  // drive: a glow where a band is driven
+  const dm = modSum("eqdrive"), dk = 1 + (dm ? dm[2] : 0);
+  EQ.forEach((b, k) => { const dr = clamp(b.drive * dk, 0, 1); if (dr < 0.01) return; const x = g.X(EQL[k].f), rg = c.createRadialGradient(x, g.floor, 2, x, g.floor, 24 + 52 * dr); rg.addColorStop(0, `rgba(238,242,250,${(0.1 + 0.3 * dr).toFixed(3)})`); rg.addColorStop(1, "rgba(238,242,250,0)"); c.fillStyle = rg; c.fillRect(x - 80, 0, 160, g.floor); });
+  // the curve: as set (thin) and as it is now
+  const path = (liveOn) => { c.beginPath(); for (let x = 0; x <= w; x += 2) { const y = clamp(g.Y(eqDb(g.F(x), liveOn)), 2, g.floor); if (x) c.lineTo(x, y); else c.moveTo(x, y); } };
+  path(true); c.lineTo(w, g.mid); c.lineTo(0, g.mid); c.closePath(); c.fillStyle = "rgba(201,211,230,0.13)"; c.fill();
+  path(false); c.strokeStyle = "rgba(201,211,230,0.32)"; c.lineWidth = 1; c.stroke();
+  path(true); c.strokeStyle = "#eef2fa"; c.lineWidth = 1.8; c.stroke();
+  // how far the sky opens the high cut
+  const hc = EQL[3];
+  if (hc.reach && hc.reach[1] > hc.reach[0] * 1.02) { c.fillStyle = "rgba(201,211,230,0.38)"; c.fillRect(g.X(hc.reach[0]), 4, g.X(hc.reach[1]) - g.X(hc.reach[0]), 2); c.fillStyle = "#fff"; c.beginPath(); c.arc(g.X(hc.f), 5, 2.6, 0, 6.2832); c.fill(); }
+  // dots and drive bars
+  c.fillStyle = "#6e7991"; c.font = SANS(10); c.textAlign = "left"; c.textBaseline = "middle"; c.fillText("drive", 6, g.by - g.bh / 2);
+  EQ.forEach((b, k) => {
+    const x = g.X(b.f), y = b.kind === 2 ? g.Y(-3) : g.Y(b.g), on = k === eqSel, hot = k === eqHot;
+    const xl = g.X(EQL[k].f), yl = b.kind === 2 ? y : g.Y(EQL[k].g);
+    if (Math.abs(xl - x) + Math.abs(yl - y) > 1.5) { c.strokeStyle = "rgba(255,255,255,0.4)"; c.lineWidth = 1; c.beginPath(); c.moveTo(x, y); c.lineTo(xl, yl); c.stroke(); c.fillStyle = "#fff"; c.beginPath(); c.arc(xl, yl, 2.6, 0, 6.2832); c.fill(); }
+    c.fillStyle = "#05070d"; c.beginPath(); c.arc(x, y, on || hot ? 8 : 7, 0, 6.2832); c.fill(); c.strokeStyle = on ? "#fff" : "#c9d3e6"; c.lineWidth = on ? 2 : 1.6; c.stroke();
+    c.fillStyle = on ? "#fff" : "#c9d3e6"; c.font = SANS(9.5, 600); c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(String(k + 1), x, y + 0.5);
+    const top = g.by - g.bh, fill = g.bh * clamp(b.drive, 0, 1);
+    c.fillStyle = k === eqBar ? "#283248" : "#182031"; c.beginPath(); c.roundRect(x - 4.5, top, 9, g.bh, 3); c.fill();
+    if (fill > 0.5) { c.fillStyle = on ? "#fff" : "#dfe6f3"; c.beginPath(); c.roundRect(x - 4.5, g.by - fill, 9, fill, 3); c.fill(); }
+  });
+  const b = EQ[eqSel], say = `band <b>${eqSel + 1}</b> ${b.name} <b>${fmtHz(b.f)}</b>${b.kind === 2 ? "" : ` <b>${b.g >= 0 ? "+" : "−"}${Math.abs(b.g).toFixed(1)} dB</b>`} drive <b>${Math.round(b.drive * 100)} %</b>`;
+  if (say !== eqSaid) { eqSaid = say; $("eq-say").innerHTML = say; }
+}
+{ const cv = $("eq");
+  const hit = (p) => { const g = eqG(); let node = -1, bar = -1; EQ.forEach((b, k) => { const x = g.X(b.f), y = b.kind === 2 ? g.Y(-3) : g.Y(b.g); if (Math.hypot(p.x - x, p.y - y) < 11) node = k; if (Math.abs(p.x - x) < 9 && p.y > g.by - g.bh - 4) bar = k; }); return { node, bar }; };
+  cv.addEventListener("pointermove", (e) => { const hh = hit(local(e, cv)); eqHot = hh.node; eqBar = hh.node >= 0 ? -1 : hh.bar; cv.style.cursor = hh.node >= 0 ? "grab" : hh.bar >= 0 ? "ns-resize" : "default";
+    hint(hh.node >= 0 ? `Band ${hh.node + 1}, ${EQ[hh.node].name}: drag sideways for frequency${EQ[hh.node].kind === 2 ? "" : ", up and down for gain"}${EQ[hh.node].kind === 1 ? ", scroll for width" : ""}.` : hh.bar >= 0 ? `Drive for band ${hh.bar + 1}: pull it up to saturate only this part of the sound.` : "The tone of the sound: four bands, each with its own gain and drive. The bar on the top edge is how far the sky opens the high cut."); });
+  cv.addEventListener("pointerleave", () => { eqHot = eqBar = -1; });
+  dragOn(cv, (p) => { const hh = hit(p), g = eqG();
+    if (hh.node >= 0) { eqSel = hh.node; const b = EQ[eqSel]; return { move: (q) => { b.f = clamp(g.F(q.x), 30, 18000); if (b.kind !== 2) b.g = clamp(g.G(q.y), -12, 12); } }; }
+    if (hh.bar >= 0) { eqSel = hh.bar; const b = EQ[eqSel], set = (q) => { b.drive = clamp((g.by - q.y) / g.bh, 0, 1); }; set(p); return { move: set }; }
+    return null; });
+  cv.addEventListener("wheel", (e) => { const k = eqHot >= 0 ? eqHot : eqSel; if (EQ[k].kind !== 1) return; e.preventDefault(); EQ[k].q = clamp(EQ[k].q * (e.deltaY < 0 ? 1.12 : 0.89), 0.3, 6); }, { passive: false });
+}
 
+// ---------------------------------------------------------------- phaser, chorus, delay, reverb, output
 function phMag(fr, fc) {
-  const th = -2 * Math.atan(fr / fc) * P.phst, fb = P.phfb * 0.8, mix = P.phmix, cr = Math.cos(th), si = Math.sin(th);
+  const th = -2 * Math.atan(fr / fc) * P.phst, fb = P.phfb * 0.8, mix = live("phmix", P.phmix), cr = Math.cos(th), si = Math.sin(th);
   const dr = 1 - fb * cr, di = -fb * si, dd = dr * dr + di * di, wr = (cr * dr + si * di) / dd, wi = (si * dr - cr * di) / dd;
   const or = (1 - mix) + mix * wr, oi = mix * wi; return Math.sqrt(or * or + oi * oi) / Math.sqrt((1 - mix) ** 2 + mix * mix);
 }
@@ -667,32 +812,41 @@ function drawPha(t, dt) {
   phPhase = (phPhase + dt * 0.005 * Math.pow(100, P.phrate) * (reduced ? 0 : 1)) % 1;
   const lfo = Math.sin(6.2832 * phPhase), fc = 200 * Math.pow(10, 0.5 + 0.5 * P.phdepth * lfo), fLo = 200 * Math.pow(10, 0.5 - 0.5 * P.phdepth), fHi = 200 * Math.pow(10, 0.5 + 0.5 * P.phdepth);
   c.clearRect(0, 0, w, h);
-  const path = (carved) => { c.beginPath(); c.moveTo(0, base); for (let x = 0; x <= w; x += 1.5) { const fr = Math.exp(lerp(FX0, FX1, x / w)); c.lineTo(x, base - H * 0.86 * specAt(fr) * (carved ? Math.min(1.12, phMag(fr, fc)) : 1)); } c.lineTo(w, base); c.closePath(); };
+  const path = (carved) => { c.beginPath(); c.moveTo(0, base); for (let x = 0; x <= w; x += 1.5) { const fr = Math.exp(lerp(FX0, FX1, x / w)); c.lineTo(x, base - H * 0.8 * toneAt(fr) * (carved ? Math.min(1.12, phMag(fr, fc)) : 1)); } c.lineTo(w, base); c.closePath(); };
   path(false); c.fillStyle = "rgba(201,211,230,0.06)"; c.fill(); c.strokeStyle = "rgba(201,211,230,0.3)"; c.lineWidth = 1; c.stroke();       // what went in
   path(true); const g = c.createLinearGradient(0, 8, 0, base); g.addColorStop(0, "rgba(238,242,250,0.75)"); g.addColorStop(1, "rgba(201,211,230,0.14)"); c.fillStyle = g; c.fill();   // what comes out
-  // the notches: where the phaser is cutting right now
   const n = P.phst / 2; for (let k = 0; k < n; k++) { const fr = fc * Math.tan((2 * k + 1) * Math.PI / (2 * P.phst)); if (fr < 20 || fr > 20000) continue; const x = X(fr); c.strokeStyle = "rgba(238,242,250,0.5)"; c.setLineDash([2, 3]); c.beginPath(); c.moveTo(x, 6); c.lineTo(x, base); c.stroke(); c.setLineDash([]); }
-  // the sweep: how far they travel
   const y = h - 8; c.fillStyle = "rgba(201,211,230,0.3)"; c.fillRect(X(fLo), y - 1, X(fHi) - X(fLo), 2);
   c.fillStyle = "#c9d3e6"; [fLo, fHi].forEach((fr) => { c.beginPath(); c.roundRect(X(fr) - 2, y - 5, 4, 10, 2); c.fill(); });
   c.fillStyle = "#fff"; c.beginPath(); c.arc(X(fc), y, 3, 0, 6.2832); c.fill();
 }
 { const cv = $("pha"); cv.dataset.hint = "Bright: the sound after the phaser. Outline: before it. Drag sideways to widen the sweep, up and down for sharper notches.";
-  dragOn(cv, (p) => { const d0 = P.phdepth, f0 = P.phfb; return { move: (q) => { P.phdepth = clamp(d0 + (q.x - p.x) / 60, 0, 1); P.phfb = clamp(f0 + (p.y - q.y) / 80, 0, 1); } }; });
+  dragOn(cv, (p) => { const d0 = P.phdepth, f0 = P.phfb; return { move: (q) => { P.phdepth = clamp(d0 + (q.x - p.x) / 80, 0, 1); P.phfb = clamp(f0 + (p.y - q.y) / 80, 0, 1); } }; });
   const show = () => { $("ph-st").innerHTML = `<b>${P.phst}</b> stages`; }; $("ph-st").addEventListener("click", () => { P.phst = P.phst >= 8 ? 2 : P.phst + 2; show(); }); show(); }
 
 function drawCho(t) {
   const f = fit($("cho")), c = f.c, w = f.w, h = f.h; c.clearRect(0, 0, w, h);
-  const rate = 0.3 + 2 * P.chrate, amp = 6 + (h * 0.3) * P.chdepth;
+  const rate = 0.3 + 2.4 * P.chrate, mid = h / 2 + 5, amp = 7 + (h / 2 - 26) * P.chdepth, mix = live("chmix", P.chmix), xn = w - 20, tt = reduced ? 0 : t * rate;
+  // how far the voices swing, and the dry sound in the middle
+  const band = c.createLinearGradient(0, 0, xn, 0); band.addColorStop(0, "rgba(201,211,230,0)"); band.addColorStop(1, "rgba(201,211,230,0.07)"); c.fillStyle = band; c.fillRect(0, mid - amp, xn, 2 * amp);
+  c.strokeStyle = "rgba(201,211,230,0.2)"; c.lineWidth = 1; c.setLineDash([2, 4]); c.beginPath(); c.moveTo(0, Math.round(mid - amp) + 0.5); c.lineTo(xn, Math.round(mid - amp) + 0.5); c.moveTo(0, Math.round(mid + amp) + 0.5); c.lineTo(xn, Math.round(mid + amp) + 0.5); c.stroke(); c.setLineDash([]);
+  c.strokeStyle = "rgba(201,211,230,0.3)"; c.beginPath(); c.moveTo(0, Math.round(mid) + 0.5); c.lineTo(w, Math.round(mid) + 0.5); c.stroke();
+  c.fillStyle = "rgba(255,255,255,0.25)"; c.fillRect(xn, mid - amp - 6, 1, 2 * amp + 12);
   for (let v = 0; v < 3; v++) {
-    c.beginPath(); for (let x = 0; x <= w; x += 2) { const y = h / 2 + amp * Math.sin(x / w * 5 + (reduced ? 0 : t * rate) + v * 2.094); if (x) c.lineTo(x, y); else c.moveTo(x, y); }
-    c.strokeStyle = `rgba(201,211,230,${0.25 + 0.6 * P.chmix})`; c.lineWidth = 1.4; c.stroke();
-    const xd = w * 0.72, yd = h / 2 + amp * Math.sin(xd / w * 5 + (reduced ? 0 : t * rate) + v * 2.094); c.fillStyle = "#fff"; c.beginPath(); c.arc(xd, yd, 2.4, 0, 6.2832); c.fill();
+    const y = (x) => mid + amp * Math.sin((x - xn) / 38 + tt + v * 2.094);
+    const g = c.createLinearGradient(0, 0, xn, 0); g.addColorStop(0, "rgba(223,230,243,0)"); g.addColorStop(1, `rgba(238,242,250,${(0.35 + 0.65 * mix).toFixed(3)})`);
+    c.beginPath(); for (let x = 0; x <= xn; x += 2) { if (x) c.lineTo(x, y(x)); else c.moveTo(x, y(x)); } c.strokeStyle = g; c.lineWidth = 1.7; c.stroke();
+    c.fillStyle = "#fff"; c.beginPath(); c.arc(xn + 0.5, y(xn), 3, 0, 6.2832); c.fill();
   }
+  c.fillStyle = "#8a96ad"; c.font = SANS(10); c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillText("three voices around the dry sound", 7, 14);
+  c.font = MONO(10); c.textAlign = "right"; c.fillStyle = "#c9d3e6"; c.fillText("± " + (P.chdepth * 10).toFixed(1) + " ms", w - 6, h - 6);
 }
-function drawDly(t, level) {
-  const f = fit($("dly")), c = f.c, w = f.w, h = f.h, mid = h / 2, T = 0.05 + 3.95 * P.dtime * P.dtime, fb = P.dfb * 0.95, mix = clamp(P.dmix * (0.5 + P.space), 0, 1); c.clearRect(0, 0, w, h);
-  c.strokeStyle = "rgba(201,211,230,0.12)"; c.beginPath(); c.moveTo(0, mid + 0.5); c.lineTo(w, mid + 0.5); c.stroke();
+$("cho").dataset.hint = "The three chorus voices swinging around the dry sound. Drag sideways for their speed.";
+dragOn($("cho"), (p) => { const r0 = P.chrate; return { move: (q) => { P.chrate = clamp(r0 + (q.x - p.x) / 90, 0, 1); } }; });
+
+function drawDly() {
+  const f = fit($("dly")), c = f.c, w = f.w, h = f.h, mid = h / 2, T = 0.05 + 3.95 * P.dtime * P.dtime, fb = live("dfb", P.dfb) * 0.95, mix = live("dmix", P.dmix); c.clearRect(0, 0, w, h);
+  c.strokeStyle = "rgba(201,211,230,0.12)"; c.lineWidth = 1; c.beginPath(); c.moveTo(0, mid + 0.5); c.lineTo(w, mid + 0.5); c.stroke();
   c.fillStyle = "#6e7991"; c.font = MONO(10); c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillText("L", 5, 14); c.fillText("R", 5, h - 6);
   const X = (s) => 8 + s / 4 * (w - 14);
   c.fillStyle = "#eef2fa"; c.fillRect(X(0) - 1, mid - h * 0.36, 2.5, h * 0.72);
@@ -704,19 +858,18 @@ function drawDly(t, level) {
 { const cv = $("dly"); cv.dataset.hint = "The echoes, left above and right below. Drag sideways for the time between them, up and down for how many.";
   dragOn(cv, (p) => { const f0 = P.dfb; return { move: (q) => { P.dtime = Math.sqrt(clamp(((q.x - 8) / (cv.clientWidth - 14) * 4 - 0.05) / 3.95, 0, 1)); P.dfb = clamp(f0 + (p.y - q.y) / 80, 0, 1); } }; });
   $("dl-pp").addEventListener("click", (e) => { P.pp = !P.pp; e.currentTarget.setAttribute("aria-pressed", String(P.pp)); }); }
-function drawRev(t, level) {
-  const f = fit($("rev")), c = f.c, w = f.w, h = f.h, T = 0.3 + 59.7 * Math.pow(P.rdecay, 3), mix = clamp(P.rmix * (0.5 + P.space), 0, 1), shim = clamp(P.rshim * (0.5 + P.glow), 0, 1); c.clearRect(0, 0, w, h);
+function drawRev() {
+  const f = fit($("rev")), c = f.c, w = f.w, h = f.h, T = 0.3 + 59.7 * Math.pow(live("rdecay", P.rdecay), 3), mix = live("rmix", P.rmix), shim = live("rshim", P.rshim); c.clearRect(0, 0, w, h);
   const X = (s) => 6 + Math.log(1 + s) / Math.log(61) * (w - 12), base = h - 16, tail = (s, k) => base - (base - 10) * k * Math.pow(10, -3 * s / T / 2.2);
-  [1, 5, 20, 60].forEach((s) => { const x = Math.round(X(s)) + 0.5; c.strokeStyle = "rgba(201,211,230,0.07)"; c.beginPath(); c.moveTo(x, 6); c.lineTo(x, base); c.stroke(); c.fillStyle = "#6e7991"; c.font = MONO(10); c.textAlign = "center"; c.textBaseline = "alphabetic"; c.fillText(s + (s === 60 ? " s" : ""), x - (s === 60 ? 8 : 0), h - 4); });
+  [1, 5, 20, 60].forEach((s) => { const x = Math.round(X(s)) + 0.5; c.strokeStyle = "rgba(201,211,230,0.07)"; c.lineWidth = 1; c.beginPath(); c.moveTo(x, 6); c.lineTo(x, base); c.stroke(); c.fillStyle = "#6e7991"; c.font = MONO(10); c.textAlign = "center"; c.textBaseline = "alphabetic"; c.fillText(s + (s === 60 ? " s" : ""), x - (s === 60 ? 8 : 0), h - 4); });
   const area = (k, fill) => { c.beginPath(); c.moveTo(X(0), base); for (let s = 0; s <= 60; s += 0.25) c.lineTo(X(s), tail(s, k)); c.lineTo(X(60), base); c.closePath(); c.fillStyle = fill; c.fill(); };
-  area(0.35 + 0.65 * mix, "rgba(201,211,230,0.16)"); if (shim > 0.01) area((0.35 + 0.65 * mix) * shim * 0.9, "rgba(238,242,250,0.3)");
+  area(0.35 + 0.65 * mix, "rgba(201,211,230,0.16)"); if (shim > 0.01) area((0.35 + 0.65 * mix) * Math.min(1, shim * 1.4) * 0.9, "rgba(238,242,250,0.32)");
   c.beginPath(); for (let s = 0; s <= 60; s += 0.25) { const y = tail(s, 0.35 + 0.65 * mix); if (s) c.lineTo(X(s), y); else c.moveTo(X(s), y); } c.strokeStyle = "#eef2fa"; c.lineWidth = 1.6; c.stroke();
   const hx = X(T * 0.37), hy = tail(T * 0.37, 0.35 + 0.65 * mix); c.fillStyle = "#05070d"; c.beginPath(); c.arc(hx, hy, 5.5, 0, 6.2832); c.fill(); c.strokeStyle = "#eef2fa"; c.lineWidth = 1.8; c.stroke();
   $("rv-say").textContent = T.toFixed(1) + " s";
 }
 { const cv = $("rev"); cv.dataset.hint = "The reverb's tail over time; the brighter layer is the shimmer. Drag sideways for a shorter or longer tail.";
-  dragOn(cv, (p) => { const d0 = P.rdecay, x0 = p.x; return { move: (q) => { P.rdecay = clamp(d0 + (q.x - x0) / 110, 0, 1); } }; }); }
-{ const cv = $("cho"); cv.style.cursor = "ew-resize"; cv.style.touchAction = "none"; cv.dataset.hint = "The three chorus voices swinging. Drag sideways for their speed."; dragOn(cv, (p) => { const r0 = P.chrate; return { move: (q) => { P.chrate = clamp(r0 + (q.x - p.x) / 70, 0, 1); } }; }); }
+  dragOn(cv, (p) => { const d0 = P.rdecay; return { move: (q) => { P.rdecay = clamp(d0 + (q.x - p.x) / 110, 0, 1); } }; }); }
 function drawOut(level) {
   const f = fit($("out")), c = f.c, w = f.w, h = f.h; c.clearRect(0, 0, w, h);
   const Y = (db) => 10 + (-db / 48) * (h - 26), ceil = -12 * (1 - P.ceil) - 0.04;
@@ -739,33 +892,130 @@ function drawTopMeter(level) {
   c.fillStyle = "#fff"; c.fillRect(w * 0.975, 3, 1.5, 16);
 }
 
-// ---------------------------------------------------------------- modulation grid (in the drawer)
-const GIDS = ["L0", "L1", "L2", "L3", "detune", "drift", "cut", "reso", "phmix", "chmix", "dfb", "dmix", "rdecay", "rshim", "rmix"];
-let GCOLS = [];
-function gridCols() {
-  const cx = (node, f) => { const p = stagePos(node); return p.x + p.w * (f === undefined ? 0.5 : f) - 10; };
-  const rc = $("res"), bx = (k) => { const w = rc.clientWidth, m = (EDGE[k] + EDGE[k + 1]) / 2; return cx(rc, (8 + (m - M0) / (M1 - M0) * (w - 16)) / w); };
-  const kx = (id) => cx(KN.find((k) => k.o.id === id).root);
-  GCOLS = [bx(0), bx(1), bx(2), bx(3), kx("detune"), kx("drift"), cx($("flt"), 0.3), cx($("flt"), 0.72), kx("phmix"), kx("chmix"), cx($("dly"), 0.35), kx("dmix"), cx($("rev"), 0.3), kx("rshim"), kx("rmix")].map((x, j) => [GIDS[j], x]);
+// ---------------------------------------------------------------- the sources you can see: LFO and envelope
+const SHAPES = ["sine", "triangle", "smooth random", "stepped random"];
+const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return (x - Math.floor(x)) * 2 - 1; };
+function lfoVal(shape, cyc) {
+  const i = Math.floor(cyc), p = cyc - i;
+  if (shape === 0) return Math.sin(6.2832 * p);
+  if (shape === 1) return 1 - 4 * Math.abs(p - 0.5);
+  if (shape === 2) { const a = hash(i), b = hash(i + 1); return a + (b - a) * p * p * (3 - 2 * p); }
+  return hash(i);
 }
-const GNAMES = ["Low", "Red", "Green", "Violet", "Detune", "Drift", "Cutoff", "Reso", "Mix", "Mix", "Feed", "Mix", "Decay", "Shimmer", "Mix"];
-const GROWS = ["Storm", "Breath", "Glow", "Space", "Drift"], GAMT = {};
-[[0, 0, 0.6], [0, 1, 0.6], [0, 2, 0.6], [0, 3, 0.6], [1, 1, 0.35], [1, 2, 0.35], [1, 3, 0.35], [2, 3, 0.5], [2, 13, 0.5], [3, 11, 0.5], [3, 14, 0.5], [4, 4, 0.5], [4, 5, 0.5]].forEach((a) => { GAMT[a[0] + "," + a[1]] = a[2]; });
+const lfoHz = (r) => 0.01 * Math.pow(200, r);
+const clip = (c, text, max) => { if (c.measureText(text).width <= max) return text; while (text.length > 4 && c.measureText(text + "…").width > max) text = text.slice(0, -1); return text + "…"; };
+function drawLfo() {
+  const f = fit($("lfo")), c = f.c, w = f.w, h = f.h, l = LFO[lfoSel], xn = Math.round(w * 0.62), mid = h / 2 + 5, amp = h / 2 - 17, span = 2.2;
+  c.clearRect(0, 0, w, h);
+  c.strokeStyle = "rgba(201,211,230,0.1)"; c.lineWidth = 1; c.beginPath(); c.moveTo(0, mid + 0.5); c.lineTo(w, mid + 0.5); c.stroke();
+  const Y = (x) => mid - amp * lfoVal(l.shape, l.cyc + (x - xn) / w * span);
+  c.beginPath(); c.moveTo(0, mid); for (let x = 0; x <= xn; x++) c.lineTo(x, Y(x)); c.lineTo(xn, mid); c.closePath();
+  const g = c.createLinearGradient(0, 0, xn, 0); g.addColorStop(0, "rgba(201,211,230,0)"); g.addColorStop(1, "rgba(201,211,230,0.22)"); c.fillStyle = g; c.fill();
+  c.beginPath(); for (let x = 0; x <= xn; x++) { if (x) c.lineTo(x, Y(x)); else c.moveTo(x, Y(x)); } c.strokeStyle = "#eef2fa"; c.lineWidth = 1.6; c.lineJoin = "round"; c.stroke();
+  c.beginPath(); for (let x = xn; x <= w; x++) { if (x > xn) c.lineTo(x, Y(x)); else c.moveTo(x, Y(x)); } c.strokeStyle = "rgba(201,211,230,0.35)"; c.lineWidth = 1.2; c.stroke();   // still to come
+  c.fillStyle = "rgba(255,255,255,0.25)"; c.fillRect(xn, 20, 1, h - 26);
+  c.fillStyle = "#fff"; c.beginPath(); c.arc(xn + 0.5, Y(xn), 3.2, 0, 6.2832); c.fill();
+  c.fillStyle = "#8a96ad"; c.font = SANS(10); c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillText(clip(c, "moves " + (movesText("lfo" + (lfoSel + 1)) || "nothing yet"), w - 12), 6, 13);
+}
+{ const cv = $("lfo");
+  dragOn(cv, (p) => { const l = LFO[lfoSel], r0 = l.rate; return { move: (q) => { l.rate = clamp(r0 + (q.x - p.x) / 110, 0, 1); } }; });
+  const ICON = ["M2 8 C4.5 0.5, 7.5 0.5, 10 8 S15.5 15.5, 18 8", "M2 12 L7 3 L13 13 L18 4", "M2 9 C5 3, 7 13, 10 8 S14 3, 18 10", "M2 11 H6 V4 H10 V13 H14 V7 H18"];
+  const bs = ICON.map((d, i) => { const b = el("button", "ico", $("lfo-shape")); b.innerHTML = `<svg width="20" height="16" viewBox="0 0 20 16" fill="none"><path d="${d}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`; b.setAttribute("aria-label", SHAPES[i]); b.addEventListener("click", () => { LFO[lfoSel].shape = i; show(); }); return b; });
+  const show = () => bs.forEach((b, i) => b.setAttribute("aria-pressed", String(i === LFO[lfoSel].shape)));
+  segc($("lfo-n"), (i) => { lfoSel = i; show(); }); show();
+  knob($("k-lfo"), { id: "lforate", label: "Rate", get: () => LFO[lfoSel].rate, set: (v) => { LFO[lfoSel].rate = v; }, def: 0.47, fmt: (v) => { const z = lfoHz(v); return (z < 0.1 ? z.toFixed(3) : z.toFixed(2)) + " Hz"; }, hint: "How fast this LFO runs: from one cycle in a hundred seconds to two a second." });
+  sourceHover($("lfop"), () => "lfo" + (lfoSel + 1), "A slow wave that moves other controls. Drag the picture sideways for its speed.");
+}
+
+const envT = (n) => 0.01 * Math.pow(1000, n);   // 10 ms … 10 s
+const ENV_HOLD = 1.2;
+const envShape = (seg, fr) => (seg === 0 ? fr : seg === 1 ? 1 - (1 - ENV.s) * (1 - (1 - fr) ** 2) : seg === 2 ? ENV.s : ENV.s * (1 - fr) ** 2);
+function envStep(dt) {
+  if (ENV.t < 0) { ENV.seg = -1; ENV.out = 0; return; }
+  ENV.t += dt; let t = ENV.t; const len = [envT(ENV.a), envT(ENV.d), ENV_HOLD, envT(ENV.r)];
+  for (let s = 0; s < 4; s++) { if (t < len[s]) { ENV.seg = s; ENV.fr = t / len[s]; ENV.out = envShape(s, ENV.fr); return; } t -= len[s]; }
+  ENV.t = -1; ENV.seg = -1; ENV.out = 0;
+}
+function envG() {
+  const cv = $("env"), w = cv.clientWidth, h = cv.clientHeight, top = 22, bot = h - 20, av = (w - 44) / 3, seg = (n) => 10 + (av - 10) * n;
+  const x0 = 10, xa = x0 + seg(ENV.a), xd = xa + seg(ENV.d), xs = xd + 24, xr = xs + seg(ENV.r);
+  return { w, h, top, bot, av, xs: [x0, xa, xd, xs, xr], ys: bot - (bot - top) * ENV.s, norm: (px) => clamp((px - 10) / (av - 10), 0, 1) };
+}
+let envHot = -1;
+function drawEnv() {
+  const f = fit($("env")), c = f.c, g = envG(), w = g.w, h = g.h, X = g.xs, Yv = (v) => g.bot - (g.bot - g.top) * v;
+  c.clearRect(0, 0, w, h);
+  c.strokeStyle = "rgba(201,211,230,0.12)"; c.lineWidth = 1; c.beginPath(); c.moveTo(0, g.bot + 0.5); c.lineTo(w, g.bot + 0.5); c.stroke();
+  const trace = () => { c.moveTo(X[0], g.bot); for (let s = 0; s < 4; s++) for (let k = 1; k <= 16; k++) c.lineTo(lerp(X[s], X[s + 1], k / 16), Yv(envShape(s, k / 16))); };
+  c.beginPath(); trace(); c.lineTo(X[4], g.bot); c.closePath(); const gr = c.createLinearGradient(0, g.top, 0, g.bot); gr.addColorStop(0, "rgba(201,211,230,0.24)"); gr.addColorStop(1, "rgba(201,211,230,0.03)"); c.fillStyle = gr; c.fill();
+  c.beginPath(); trace(); c.strokeStyle = "#eef2fa"; c.lineWidth = 1.6; c.lineJoin = "round"; c.stroke();
+  c.fillStyle = "rgba(201,211,230,0.1)"; c.fillRect(X[2], g.top - 4, X[3] - X[2], g.bot - g.top + 4);     // while it is held
+  [[X[1], g.top], [X[2], g.ys], [X[4], g.bot]].forEach((p, i) => { c.fillStyle = "#05070d"; c.beginPath(); c.arc(p[0], p[1], i === envHot ? 6.5 : 5.5, 0, 6.2832); c.fill(); c.strokeStyle = i === envHot ? "#fff" : "#eef2fa"; c.lineWidth = 1.8; c.stroke(); });
+  if (ENV.seg >= 0) { const x = lerp(X[ENV.seg], X[ENV.seg + 1], ENV.fr), y = Yv(ENV.out); c.fillStyle = "rgba(255,255,255,0.25)"; c.fillRect(Math.round(x), y, 1, g.bot - y); c.fillStyle = "#fff"; c.beginPath(); c.arc(x, y, 3.2, 0, 6.2832); c.fill(); }
+  const fs = (x) => (x < 1 ? Math.round(x * 1000) + "ms" : x.toFixed(1) + "s");
+  c.fillStyle = "#8a96ad"; c.font = SANS(10); c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillText(clip(c, "moves " + (movesText("env") || "nothing yet"), w - 12), 6, 13);
+  c.font = MONO(9.5); c.fillStyle = "#8a96ad"; c.fillText(`A ${fs(envT(ENV.a))}  D ${fs(envT(ENV.d))}  S ${Math.round(ENV.s * 100)}%  R ${fs(envT(ENV.r))}`, 6, h - 6);
+}
+{ const cv = $("env"), near = (p) => { const g = envG(), pts = [[g.xs[1], g.top], [g.xs[2], g.ys], [g.xs[4], g.bot]]; let best = -1, bd = 12; pts.forEach((q, i) => { const d = Math.hypot(p.x - q[0], p.y - q[1]); if (d < bd) { bd = d; best = i; } }); return best; };
+  cv.addEventListener("pointermove", (e) => { envHot = near(local(e, cv)); cv.style.cursor = envHot >= 0 ? "grab" : "default"; hint(["Attack: drag sideways for how fast it rises.", "Decay and sustain: sideways for how fast it falls, up and down for the level it holds.", "Release: drag sideways for how long it takes to fade."][envHot] || "A shape that runs once each time it is fired. Drag its three points."); });
+  cv.addEventListener("pointerleave", () => { envHot = -1; });
+  dragOn(cv, (p) => { const i = near(p); if (i < 0) return null; const g = envG();
+    return { move: (q) => { if (i === 0) ENV.a = g.norm(q.x - g.xs[0]); else if (i === 1) { ENV.d = g.norm(q.x - g.xs[1]); ENV.s = clamp((g.bot - q.y) / (g.bot - g.top), 0, 1); } else ENV.r = g.norm(q.x - g.xs[3]); } }; });
+  const TR = ["onset", "note", "Fire only"], show = () => { $("env-trig").innerHTML = `on <b>${TR[ENV.trig]}</b>`; };
+  $("env-trig").addEventListener("click", () => { ENV.trig = (ENV.trig + 1) % 3; show(); }); show();
+  $("env-fire").addEventListener("click", () => { ENV.t = 0; });
+  sourceHover($("envp"), "env", "A shape that runs once each time it fires, and moves other controls as it goes.");
+}
+
+// ---------------------------------------------------------------- the modulation grid: every source against every destination
+const GR = { gx: 112, top: 96, rh: 26, hot: null };
+function gridGeom() {
+  const cv = $("grid"), w = cv.clientWidth, cw = (w - GR.gx - 14) / DST.length;
+  let y = GR.top + 16, prev = "";
+  const rows = SRC.map((s) => { if (s.grp !== prev) { if (prev) y += 12; prev = s.grp; } const r = y; y += GR.rh; return r; });
+  return { w, cw, rows, X: (j) => GR.gx + (j + 0.5) * cw };
+}
 function drawGrid() {
-  gridCols();
-  const f = fit($("grid")), c = f.c, w = f.w, h = f.h; c.clearRect(0, 0, w, h);
-  c.font = SANS(11); c.textAlign = "center"; c.textBaseline = "alphabetic";
-  let prev = -99, row = 0; const ly = {};
-  GCOLS.map((g, j) => j).sort((a, b) => GCOLS[a][1] - GCOLS[b][1]).forEach((j) => { const x = GCOLS[j][1]; row = x - prev < 46 ? 1 - row : 0; ly[j] = row ? 25 : 12; prev = x; });
-  GCOLS.forEach((g, j) => { c.fillStyle = j < 4 && j > 0 ? rgba(RGB[BANDS[j].c], 1) : "#8a96ad"; c.fillText(GNAMES[j], g[1], ly[j]); c.fillStyle = "rgba(201,211,230,0.07)"; c.fillRect(g[1], 30, 1, h - 30); });
-  GROWS.forEach((r, i) => { const y = 46 + i * 24; c.textAlign = "left"; c.fillStyle = "#c9d3e6"; c.font = SANS(12.5, 500); c.fillText(r, 16, y + 4);
-    GCOLS.forEach((g, j) => { const a = GAMT[i + "," + j] || 0; c.beginPath(); if (Math.abs(a) < 0.03) { c.fillStyle = "#6e7991"; c.arc(g[1] + 0.5, y, 1.6, 0, 6.2832); c.fill(); } else { c.arc(g[1] + 0.5, y, 3.5 + 7 * Math.abs(a), 0, 6.2832); if (a > 0) { c.fillStyle = "#dfe6f3"; c.fill(); } else { c.strokeStyle = "#dfe6f3"; c.lineWidth = 1.6; c.stroke(); } } }); });
+  const f = fit($("grid")), c = f.c, h = f.h, g = gridGeom(), w = g.w;
+  c.clearRect(0, 0, w, h);
+  let g0 = 0;
+  DST.forEach((d, j) => {     // the modules along the top
+    if (j < DST.length - 1 && DST[j + 1][2] === d[2]) return;
+    const x0 = GR.gx + g0 * g.cw, x1 = GR.gx + (j + 1) * g.cw;
+    if (j + 1 - g0 < 2) { g0 = j + 1; return; }     // a module with one column needs no heading: the column says it
+    c.font = SANS(11, 500); c.textAlign = "center"; c.textBaseline = "alphabetic"; c.fillStyle = "#eef2fa"; c.fillText(clip(c, d[2], x1 - x0 + 10), (x0 + x1) / 2, 12);
+    c.fillStyle = "rgba(201,211,230,0.3)"; c.fillRect(x0 + 5, 18, x1 - x0 - 10, 1); g0 = j + 1;
+  });
+  DST.forEach((d, j) => {     // what can be moved
+    const x = g.X(j), hot = GR.hot && GR.hot[1] === j;
+    c.save(); c.translate(x + 4, GR.top + 2); c.rotate(-Math.PI / 2); c.font = SANS(11, hot ? 600 : 400); c.textAlign = "left"; c.textBaseline = "alphabetic";
+    c.fillStyle = j > 0 && j < 4 ? rgba(RGB[BANDS[j].c], 1) : hot ? "#eef2fa" : "#8a96ad"; c.fillText(d[1], 0, 0); c.restore();
+    c.fillStyle = hot ? "rgba(201,211,230,0.2)" : "rgba(201,211,230,0.06)"; c.fillRect(Math.round(x), GR.top + 8, 1, h - GR.top - 14);
+  });
+  SRC.forEach((s, i) => {     // what moves things
+    const y = g.rows[i], hot = GR.hot && GR.hot[0] === i;
+    if (i && SRC[i - 1].grp !== s.grp) { c.fillStyle = "rgba(201,211,230,0.1)"; c.fillRect(12, y - GR.rh / 2 - 6, w - 24, 1); }
+    if (hot) { c.fillStyle = "rgba(201,211,230,0.05)"; c.fillRect(8, y - GR.rh / 2, w - 16, GR.rh); }
+    c.fillStyle = hot ? "#fff" : "#c9d3e6"; c.font = SANS(12.5, 500); c.textAlign = "left"; c.textBaseline = "middle"; c.fillText(s.name, 14, y - 3);
+    const r = s.rng(), v = s.val(), mx = 14, mw = 72, zero = r[0] < 0 ? mx + mw / 2 : mx, px = clamp(r[0] < 0 ? v * mw / 2 : v * mw, -mw / 2, mw);
+    c.fillStyle = "#1a2233"; c.fillRect(mx, y + 8, mw, 2); c.fillStyle = "#dfe6f3"; c.fillRect(Math.min(zero, zero + px), y + 8, Math.max(1, Math.abs(px)), 2);
+    DST.forEach((d, j) => {
+      const a = ROUTE[s.id + ">" + d[0]] || 0, x = g.X(j); c.beginPath();
+      if (Math.abs(a) < 0.03) { c.fillStyle = "#56607a"; c.arc(x + 0.5, y, 1.6, 0, 6.2832); c.fill(); }
+      else { c.arc(x + 0.5, y, 3.5 + 7.5 * Math.abs(a), 0, 6.2832); if (a > 0) { c.fillStyle = "#dfe6f3"; c.fill(); } else { c.strokeStyle = "#dfe6f3"; c.lineWidth = 1.6; c.stroke(); } }
+    });
+  });
 }
-{ const cv = $("grid"), cell = (p) => { const i = Math.round((p.y - 46) / 24); let j = -1; GCOLS.forEach((g, k) => { if (Math.abs(g[1] - p.x) < 16) j = k; }); return i >= 0 && i < 5 && j >= 0 ? [i, j] : null; };
-  dragOn(cv, (p) => { const k = cell(p); if (!k) return null; const a0 = GAMT[k.join()] || 0, y0 = p.y; return { move: (q) => { GAMT[k.join()] = clamp(a0 + (y0 - q.y) / 60, -1, 1); drawGrid(); } }; });
-  cv.addEventListener("dblclick", (e) => { const k = cell(local(e, cv)); if (k) { delete GAMT[k.join()]; drawGrid(); } });
-  cv.addEventListener("pointermove", (e) => { const k = cell(local(e, cv)); hint(k ? `${GROWS[k[0]]} moves ${GNAMES[k[1]]}. Drag up for more, down past zero to push the other way, double-click to clear.` : "Rows are sources, columns are the knobs underneath."); });
-  $("bt-mod").addEventListener("click", (e) => { const d = $("drawer"); d.hidden = !d.hidden; e.currentTarget.setAttribute("aria-pressed", String(!d.hidden)); if (!d.hidden) drawGrid(); }); }
+{ const cv = $("grid");
+  const cell = (p) => { const g = gridGeom(), j = Math.floor((p.x - GR.gx) / g.cw); let i = -1; g.rows.forEach((y, k) => { if (Math.abs(p.y - y) <= GR.rh / 2) i = k; }); return i >= 0 && j >= 0 && j < DST.length ? [i, j] : null; };
+  const key = (k) => SRC[k[0]].id + ">" + DST[k[1]][0];
+  cv.addEventListener("pointermove", (e) => { const k = GR.hot = cell(local(e, cv)); cv.style.cursor = k ? "ns-resize" : "default";
+    hint(k ? `${SRC[k[0]].name} moves ${destName(DST[k[1]])}${ROUTE[key(k)] ? " by " + Math.round(ROUTE[key(k)] * 100) + " %" : ""}. Drag up for more, down past zero to push the other way, double-click to clear.` : "Rows are what moves things, columns are what can be moved. The small bar under a name is that source right now."); });
+  cv.addEventListener("pointerleave", () => { GR.hot = null; });
+  dragOn(cv, (p) => { const k = cell(p); if (!k) return null; const a0 = ROUTE[key(k)] || 0; return { move: (q) => { const a = clamp(a0 + (p.y - q.y) / 70, -1, 1); if (Math.abs(a) < 0.03) delete ROUTE[key(k)]; else ROUTE[key(k)] = a; } }; });
+  cv.addEventListener("dblclick", (e) => { const k = cell(local(e, cv)); if (k) delete ROUTE[key(k)]; });
+  $("bt-mod").addEventListener("click", (e) => { const d = $("drawer"); d.hidden = !d.hidden; e.currentTarget.setAttribute("aria-pressed", String(!d.hidden)); });
+}
 
 // ---------------------------------------------------------------- size, context menu, tour
 function rescale() { const box = $("box"), fitW = Math.min(1, box.parentElement.clientWidth / 1350); S.scale = Math.max(0.5, fitW) * S.size; box.style.width = 1350 * S.scale + "px"; box.style.height = 900 * S.scale + "px"; $("stage").style.transform = `scale(${S.scale})`; }
@@ -782,8 +1032,8 @@ $("stage").addEventListener("contextmenu", (e) => {
 const TOUR = [["strip", "The day", "This strip is the whole recorded day: the sky's light from north to south, and the magnetic field under it. Click anywhere to jump there."],
   ["dome", "The light", "Every ray of the curtain is one resonator. Brighter light bows it harder; the three colours are the three bands."],
   ["harmony", "The chord", "The sky's phase picks the chord. Switch to Play and your keyboard plays the same resonators."],
-  ["chain", "The sound", "Left to right, the way the sound travels: resonators, filter, effects, output. Drag inside the pictures."],
-  ["macros", "Motion", "Turn Space and watch the rings on the delay and reverb mix. A ring means something is moving that knob."]];
+  ["voice", "The sound", "The resonators make the sound and the EQ under them shapes its tone. The effects run along the bottom. Drag inside the pictures."],
+  ["motion", "Motion", "Macros, an LFO and an envelope move other controls. Press Fire and watch Shimmer: a ring on a knob means something is moving it."]];
 let tourAt = -1;
 function showTour() {
   const [id, hd, tx] = TOUR[tourAt], p = stagePos($(id)), card = $("tour"), spot = $("spot");
@@ -799,37 +1049,46 @@ $("tr-go").addEventListener("click", () => { if (++tourAt >= TOUR.length) endTou
 $("tr-skip").addEventListener("click", endTour);
 
 // ---------------------------------------------------------------- the loop
-let last = performance.now(), lastTxt = 0, level = 0.2, lastPhase = -1, lastDay = "";
+let last = performance.now(), lastTxt = 0, level = 0.2, lastPhase = -1, lastDay = "", prevU = 0, prevDay = "", demoFired = false;
+const t00 = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
   if (document.hidden || now - last < 30) return;
   const dt = Math.min(0.1, (now - last) / 1000), t = now / 1000; last = now;
   const d = D();
   if (S.playing) { S.idx += dt * S.speed / 300; if (S.idx >= d.n - 1) { if (S.loop) S.idx = 0; else { S.idx = d.n - 1; S.playing = false; showPlay(); } } }
-  const i = S.idx, act = at("act", i), ph = d.phase[Math.round(i)];
+  const i = S.idx, act = at("act", i), ph = d.phase[Math.round(i)], u = utcAt(i);
   if (ph !== lastPhase || S.day !== lastDay) { lastPhase = ph; lastDay = S.day; phaseNow = ph; revoice(); }
+  // the sources
+  SKYV.act = act; SKYV.breath = reduced ? 0.5 : 0.5 - 0.5 * Math.cos(6.2832 * t * 5 / 60);
+  if (S.day === prevDay && u > prevU && u - prevU < 1800) for (const o of d.onsets) if (o[0] > prevU && o[0] <= u) { SKYV.onset = 1; if (ENV.trig === 0) ENV.t = 0; }
+  prevU = u; prevDay = S.day;
+  SKYV.onset *= Math.exp(-dt / 6);
+  LFO.forEach((l) => { l.cyc += dt * lfoHz(l.rate) * (reduced ? 0 : 1); l.out = lfoVal(l.shape, l.cyc); });
+  if (!demoFired && now - t00 > 1800) { demoFired = true; ENV.t = 0; }     // once, so the envelope is seen moving
+  envStep(dt);
+  EQL = eqLive();
   // the spectrum of what would be sounding
   let peak = 0.05;
   spec.forEach((v, k) => { const m = k + 12, floor = 0.035 * (0.4 + act) * Math.exp(-(((m - 62) / 27) ** 2)) * (0.8 + 0.2 * Math.sin(k * 1.7 + t * 1.3)); spec[k] = v * 0.86 + floor; peak = Math.max(peak, spec[k]); });
   for (const v of VOICES) { const k = v.m - 12; for (let o = -3; o <= 3; o++) if (spec[k + o] !== undefined) spec[k + o] += 0.12 * v.a * Math.exp(-o * o / 2.2); if (spec[k + 12] !== undefined) spec[k + 12] += 0.05 * v.a; if (spec[k + 19] !== undefined) spec[k + 19] += 0.035 * v.a; if (spec[k + 24] !== undefined) spec[k + 24] += 0.02 * v.a; }
   specNorm += (0.92 / peak - specNorm) * 0.15;
-  const tgt = clamp(0.1 + 0.34 * (0.4 + 1.2 * P.storm) * (0.3 + 0.7 * act), 0, 1); level += (tgt - level) * 0.05;
-  drawKeo(); drawRes(t, act); drawFlt(t, act); drawPha(t, dt); drawCho(t); drawDly(t, level); drawRev(t, level); drawOut(level * (0.9 + 0.1 * Math.sin(t * 3.1))); drawKbd(); drawTopMeter(level * (0.9 + 0.1 * Math.sin(t * 3.1)));
+  const lm = modSum("L2"), tgt = clamp(0.1 + 0.34 * (1 + (lm ? lm[2] : 0)) * (0.3 + 0.7 * act), 0, 1); level += (tgt - level) * 0.05;
+  const wob = level * (0.9 + 0.1 * Math.sin(t * 3.1));
+  drawKeo(); drawRes(t, act); drawEq(); drawPha(t, dt); drawCho(t); drawDly(); drawRev(); drawOut(wob); drawKbd(); drawTopMeter(wob); drawLfo(); drawEnv();
+  if (!$("drawer").hidden) drawGrid();
   KN.forEach((k) => k.draw());
   if (now - lastTxt < 200) return; lastTxt = now;
-  const u = utcAt(i);
   $("tp-date").textContent = fmtD(u, true); $("tp-time").textContent = fmtT(u);
-  const bz = at("bz", i), e = at("e", i), w = at("energy", i), thr = at("thr", i);
-  $("sky-say").textContent = ["the arc rests, far to the north", "the solar wind is loading the field", "the stored energy lets go", "patchy, pulsating light"][ph];
+  const bz = at("bz", i), w = at("energy", i), thr = at("thr", i);
   let s0 = Math.round(i), s1 = s0; while (s0 > 0 && d.phase[s0 - 1] === ph) s0--; while (s1 < d.n - 1 && d.phase[s1 + 1] === ph) s1++;
   const prog = ph === 1 ? clamp(w / thr, 0, 1) : ph === 0 ? 0 : clamp((i - s0) / Math.max(1, s1 - s0), 0, 1);
-  [...$("phase").children].forEach((n, k) => { n.classList.toggle("on", k === ph); n.querySelector("i").style.width = (k === ph ? prog * 100 : 0) + "%"; });
-  $("c-wind").innerHTML = `${Math.round(at("v", i))} <span>km/s</span>&nbsp;&nbsp; Bz ${bz >= 0 ? "+" : "−"}${Math.abs(bz).toFixed(1)} <span>nT ${bz < -0.5 ? "south" : bz > 0.5 ? "north" : ""}</span>&nbsp;&nbsp; Kp ${at("kp", i).toFixed(1)}`;
-  $("b-e").style.width = clamp(e / 28, 0, 1) * 100 + "%"; $("c-e").innerHTML = `${e.toFixed(1)} <span>mV/m</span>`;
-  const full = Math.max(1.5, thr * 1.25, w); $("b-w").style.width = clamp(w / full, 0, 1) * 100 + "%"; $("b-thr").style.left = clamp(thr / full, 0, 1) * 100 + "%"; $("c-w").innerHTML = `${Math.round(w / thr * 100)} <span>% of release</span>`;
-  $("b-a").style.width = act * 100 + "%"; $("c-a").textContent = act.toFixed(2);
-  const ev = buildKeo(S.day).ev.filter((x) => x.u <= u).slice(-3).reverse();
-  $("tick").innerHTML = ev.map((x) => `<li><span class="t">${fmtT(x.u)}</span>${x.say}</li>`).join("") || "<li>the recording begins</li>";
+  $("sky-ph").textContent = ["Quiet", "Growth", "Onset", "Recovery"][ph]; $("b-ph").style.width = prog * 100 + "%";
+  $("sky-nums").innerHTML = `${Math.round(at("v", i))} <span>km/s</span> Bz ${bz >= 0 ? "+" : "−"}${Math.abs(bz).toFixed(1)} <span>${bz < -0.5 ? "S" : bz > 0.5 ? "N" : ""}</span> Kp ${at("kp", i).toFixed(1)}`;
+  const full = Math.max(1.5, thr * 1.25, w); $("b-w").style.width = clamp(w / full, 0, 1) * 100 + "%"; $("b-thr").style.left = clamp(thr / full, 0, 1) * 100 + "%";
+  $("b-a").style.width = act * 100 + "%";
+  const ev = buildKeo(S.day).ev.filter((x) => x.u <= u).slice(-1)[0];
+  $("sky-ev").innerHTML = ev ? `<b>${fmtT(ev.u)}</b>${ev.say}` : "the recording begins";
   $("bt-out").textContent = "auto " + (act > 0.5 ? "+2.1" : "+4.6") + " dB";
 }
 
