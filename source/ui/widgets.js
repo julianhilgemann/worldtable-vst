@@ -1,6 +1,8 @@
-/* Controls bound to parameters (spec/06 "instrument layer"): hairline arcs, segmented rows,
- * a 12-key row, toggles. Every control root carries data-param="<id>" (the UI check counts them).
- * Interaction is the POC's: vertical drag, shift = fine, wheel, double-click = default. */
+/* Controls bound to parameters (spec/09 §4–5, T6.7): solid knobs, segmented rows, a 12-key row,
+ * switches. Every control root carries data-param="<id>" (the UI check counts them), a role
+ * (slider, radiogroup, switch), aria-valuetext and a data-hint sentence for the hint line, and
+ * works from the keyboard alone. Pointer interaction is the POC's: vertical drag, shift = fine,
+ * wheel, double-click = default. */
 (function () {
   "use strict";
   const WT = window.WT;
@@ -21,6 +23,7 @@
     if (parent) parent.appendChild(e);
     return e;
   }
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   function polar(cx, cy, r, deg) {
     const a = (deg - 90) * Math.PI / 180;
     return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
@@ -36,12 +39,18 @@
     const m = WT.META[id];
     return m.type === "bool" ? (m.default ? 1 : 0) : m.default;
   }
+  const rangeOf = (id) => {
+    const m = WT.META[id];
+    if (m.type === "choice") return [0, m.choices.length - 1];
+    if (m.type === "bool") return [0, 1];
+    return [m.min, m.max];
+  };
 
   // ---------- value text ----------
   const signedPct = (v) => { const p = Math.round((v - 0.5) * 200); return p === 0 ? "neutral" : (p > 0 ? "+" : "−") + Math.abs(p) + " %"; };
   const FORMAT = {
     macro_storm: signedPct, macro_glow: signedPct, macro_space: signedPct, macro_drift: signedPct,
-    macro_breath: (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " % at 5/min"),
+    macro_breath: (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " %"),
     progression: (v) => (v < 0.005 ? "hold" : v > 0.995 ? "follow sky" : Math.round(v * 100) + " %"),
     ph_stages: (v) => v + " st.",
     lim_ceiling: (v) => v.toFixed(1) + " dB",
@@ -51,30 +60,130 @@
     play_velocity: (v) => (v < 0.005 ? "fixed" : Math.round(v * 30) + " dB"),
     play_drone: (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " %"),
   };
-  UI.format = (id, v) => (FORMAT[id] ? FORMAT[id](v) : WT.fmt(id, v).replace("-", "−"));
+  UI.format = (id, v) => (FORMAT[id] ? FORMAT[id](v) : WT.fmt(id, v).replace("-", "−").replace(/(\d)%$/, "$1 %"));
 
-  // ---------- tooltip ----------
-  const tip = () => document.getElementById("tooltip");
-  UI.showTip = function (target, text) {
-    const t = tip();
-    if (!t) return;
-    t.textContent = text;
-    t.style.display = "block";
-    const r = target.getBoundingClientRect();
-    t.style.left = Math.round(r.left + r.width / 2 - t.offsetWidth / 2) + "px";
-    t.style.top = Math.round(r.top - t.offsetHeight - 6) + "px";
+  /** A typed value (Enter on a knob) → the parameter's value, or null. Reads what the knob shows:
+   *  percent for 0…1 values, kHz and ms where the readout uses them, and the words the readouts use. */
+  const NEUTRAL = { neutral: 0.5 };
+  const WORDS = {
+    macro_storm: NEUTRAL, macro_glow: NEUTRAL, macro_space: NEUTRAL, macro_drift: NEUTRAL, macro_breath: { off: 0 },
+    progression: { hold: 0, "follow sky": 1, follow: 1 }, play_velocity: { fixed: 0 }, play_drone: { off: 0 },
+    flt_cutoff: { open: 20000 }, flt_sky: { still: 0 }, master: { "-∞": -60, "∞": -60, "-inf": -60, inf: -60 },
   };
-  UI.hideTip = function () { const t = tip(); if (t) t.style.display = "none"; };
+  const signedFrom = (n) => 0.5 + n / 200;
+  const PARSE = {
+    macro_storm: signedFrom, macro_glow: signedFrom, macro_space: signedFrom, macro_drift: signedFrom,
+    play_velocity: (n) => n / 30, flt_sky: (n) => n / 3,
+  };
+  UI.parse = function (id, text) {
+    const m = WT.META[id];
+    const t = String(text).trim().toLowerCase().replace(/−/g, "-").replace(",", ".");
+    if (WORDS[id] && t in WORDS[id]) return WORDS[id][t];
+    let n = parseFloat(t.replace(/^\+/, ""));
+    if (!isFinite(n)) return null;
+    if (PARSE[id]) return PARSE[id](n);
+    const u = m.unit || "";
+    if (u === "Hz" && /\dk|khz/.test(t.replace(/\s/g, ""))) n *= 1000;
+    else if (u === "s" && /ms$/.test(t)) n /= 1000;
+    else if (u === "ms" && /\ds$|\ss$/.test(t) && !/ms$/.test(t)) n *= 1000;
+    else if (!u && m.type === "float" && ((m.min === 0 && m.max === 1) || m.min < 0)) n /= 100;   // shown as percent
+    return n;
+  };
 
-  // ---------- drag (vertical, shift = fine) ----------
+  // ---------- hints (spec/09 §2 rule 5, §5): what each control does to the sound, ≤ 90 characters
+  UI.HINT = {
+    key: "The key the sky's chords are in.",
+    mood: "Which chords the sky draws from: bright, bittersweet or nocturnal.",
+    scale: "The scale the sparkles will use. It does not change the chords.",
+    chord_shape: "Which of the chord's shapes holds while Progression is at 0.",
+    progression: "From holding one chord to following every move of the sky.",
+    transpose: "Shifts every chord and played note by semitones.",
+    register_semis: "Moves all three bands up or down together, in semitones.",
+    spread: "How far apart the three bands sit, in octaves.",
+    detune: "A few cents between neighbouring resonators, for thickness.",
+    drift: "Slow wander of each resonator's pitch, like worn tape.",
+    play: "Play: your MIDI notes play the resonators. Off: the sky plays, MIDI holds a chord.",
+    play_attack: "How fast a played note swells in.",
+    play_release: "How long a played note rings on after you let go.",
+    play_velocity: "How much louder a harder note plays. At 0 every note is the same.",
+    play_drone: "How much of the sky's drone plays on under your notes.",
+    low_level: "Level of the low resonator, on the chord's root under the bands.",
+    red_level: "Level of the red band, the low notes of the chord.",
+    green_level: "Level of the green band, the body of the chord.",
+    violet_level: "Level of the violet band, the high notes.",
+    low_decay: "How long the low resonator rings on.",
+    red_decay: "How long the red band rings on after the sky strikes it.",
+    green_decay: "How long the green band rings on after the sky strikes it.",
+    violet_decay: "How long the violet band rings on after the sky strikes it.",
+    width: "How wide the curtain is spread between the speakers.",
+    low_octave: "Where the low resonator sits: the sub octave (C1–B1) or the bass (C2–B2).",
+    macro_storm: "Storm: how hard the sky plays every band.",
+    macro_breath: "Breath: a slow swell, five times a minute.",
+    macro_glow: "Glow: more violet and more shimmer.",
+    macro_space: "Space: more or less room around the sound.",
+    macro_drift: "Drift: towards worn tape, the pitch wanders further.",
+    flt_type: "The filter's shape: gentle or steep low-pass, band-pass, high-pass.",
+    flt_cutoff: "Where the filter cuts. The sky opens it further as it gets active.",
+    flt_reso: "Resonance: a ringing peak at the cutoff.",
+    flt_sky: "How far the sky's activity moves the cutoff, up to three octaves.",
+    drive: "Warm saturation before the effects: rounder, then grittier.",
+    ph_rate: "How fast the phaser's notches travel.",
+    ph_depth: "How far the phaser's notches sweep.",
+    ph_feedback: "Feedback: sharper, more resonant notches.",
+    ph_stages: "Stages: two per notch. More stages, more notches.",
+    ph_mix: "How much of the phased sound you hear.",
+    ch_rate: "How fast the three chorus voices swing.",
+    ch_depth: "How far the three chorus voices swing.",
+    ch_mix: "How much of the chorus you hear against the dry sound.",
+    dly_time: "Time between the echoes.",
+    dly_fb: "Feedback: from a single echo to a long trail.",
+    dly_tone: "Darker or brighter echoes.",
+    dly_pingpong: "Echoes alternate left and right.",
+    dly_mix: "How loud the echoes are against the dry sound.",
+    rev_size: "Size of the room.",
+    rev_decay: "How long the reverb's tail rings on.",
+    rev_damp: "Damping: the tail darkens as it fades.",
+    rev_predelay: "A short gap before the tail starts, to keep the attack clear.",
+    rev_shimmer: "Octave and fifth above, fed back into the tail.",
+    rev_mod: "Slow movement inside the tail, against metallic ringing.",
+    rev_mix: "How much reverb you hear against the dry sound.",
+    lim_ceiling: "The limiter's ceiling: the output never goes above it.",
+    lim_release: "How fast the limiter lets go after a peak.",
+    master: "Output level, after the limiter.",
+  };
+  UI.hintOf = (id) => UI.HINT[id] || WT.META[id].name;
+
+  /** One host gesture at a time per parameter (JUCE asserts on a nested begin): a run of discrete
+   *  changes (keys, wheel) is one gesture, ended 400 ms after the last; anything else that starts a
+   *  gesture (a drag, a click, a typed value) ends a pending run first. */
+  const gestures = {};
+  function gesture(id) {
+    if (gestures[id]) return gestures[id];
+    let timer = null;
+    const flush = () => { if (timer) { clearTimeout(timer); timer = null; WT.end(id); } };
+    return (gestures[id] = {
+      step(fn) {
+        if (timer) clearTimeout(timer); else WT.begin(id);
+        fn();
+        timer = setTimeout(() => { timer = null; WT.end(id); }, 400);
+      },
+      flush,
+      commit(v) { flush(); WT.commit(id, v); },
+    });
+  }
+  UI.commit = (id, v) => gesture(id).commit(v);
+
+  // ---------- drag (vertical, shift = fine) and wheel ----------
   function verticalDrag(target, id, opts = {}) {
     const sens = opts.sensitivity || 220;
     target.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || e.target.closest("input")) return;
       e.preventDefault();
+      target.focus({ preventScroll: true });
       target.setPointerCapture(e.pointerId);
       const startY = e.clientY;
       const startN = WT.toNorm(id, WT.get(id));
+      gesture(id).flush();
       WT.begin(id);
       target.classList.add("active");
       const move = (ev) => {
@@ -93,101 +202,214 @@
       target.addEventListener("pointerup", up);
       target.addEventListener("pointercancel", up);
     });
-    target.addEventListener("dblclick", () => WT.commit(id, defaultValue(id)));
+    target.addEventListener("dblclick", (e) => { if (!e.target.closest("input")) gesture(id).commit(defaultValue(id)); });
 
-    let wheelTimer = null;
     target.addEventListener("wheel", (e) => {
       e.preventDefault();
-      if (!wheelTimer) WT.begin(id);
-      if (WT.META[id].type !== "float") WT.set(id, WT.get(id) + (e.deltaY < 0 ? 1 : -1));
-      else WT.set(id, WT.fromNorm(id, WT.toNorm(id, WT.get(id)) - e.deltaY * (e.shiftKey ? 0.0002 : 0.0015)));
-      clearTimeout(wheelTimer);
-      wheelTimer = setTimeout(() => { WT.end(id); wheelTimer = null; }, 250);
+      gesture(id).step(() => {
+        if (WT.META[id].type !== "float") WT.set(id, WT.get(id) + (e.deltaY < 0 ? 1 : -1));
+        else WT.set(id, WT.fromNorm(id, WT.toNorm(id, WT.get(id)) - e.deltaY * (e.shiftKey ? 0.0002 : 0.0015)));
+      });
     }, { passive: false });
   }
 
-  // ---------- Knob: a hairline arc ----------
-  const SIZES = { sm: { d: 30, track: 1, arc: 1.5, dot: 2.1 }, macro: { d: 62, track: 1, arc: 2, dot: 3.2 } };
+  /** Arrow keys on a continuous parameter: 2 % of the range (Shift 0.4 %), at least one step for
+   *  ints; PageUp/PageDown 10 %; Home/End; Backspace or Delete = default. Returns true if handled. */
+  function sliderKey(id, e) {
+    const g = gesture(id);
+    const m = WT.META[id];
+    const k = e.key;
+    let dir = 0, big = false;
+    if (k === "ArrowUp" || k === "ArrowRight") dir = 1;
+    else if (k === "ArrowDown" || k === "ArrowLeft") dir = -1;
+    else if (k === "PageUp") { dir = 1; big = true; } else if (k === "PageDown") { dir = -1; big = true; }
+    const [lo, hi] = rangeOf(id);
+    if (dir) {
+      g.step(() => {
+        if (m.type !== "float") WT.set(id, WT.get(id) + dir * (big ? Math.max(1, Math.round((hi - lo) / 10)) : 1));
+        else WT.set(id, WT.fromNorm(id, WT.toNorm(id, WT.get(id)) + dir * (big ? 0.1 : e.shiftKey ? 0.004 : 0.02)));
+      });
+      return true;
+    }
+    if (k === "Home") { g.commit(lo); return true; }
+    if (k === "End") { g.commit(hi); return true; }
+    if (k === "Backspace" || k === "Delete") { g.commit(defaultValue(id)); return true; }
+    return false;
+  }
+
+  /** Arrow keys in a radiogroup (the ARIA pattern): Right/Down next, Left/Up previous, wrapping;
+   *  Home/End; Backspace or Delete = default. Returns true if handled. */
+  function choiceKey(id, e, count) {
+    const k = e.key, v = Math.round(WT.get(id));
+    const to = k === "ArrowRight" || k === "ArrowDown" ? (v + 1) % count
+      : k === "ArrowLeft" || k === "ArrowUp" ? (v + count - 1) % count
+      : k === "Home" ? 0 : k === "End" ? count - 1
+      : k === "Backspace" || k === "Delete" ? defaultValue(id) : null;
+    if (to === null) return false;
+    if (to !== v) gesture(id).commit(to);
+    return true;
+  }
+
+  // ---------- Knob v2: a solid disc, a value arc outside it, a modulation ring outside that ----------
+  const SIZES = { sm: 28, macro: 40 };
+  /** The disc's fill, shared by every knob. */
+  function ensureDefs() {
+    if (document.getElementById("kg")) return;
+    const s = svg("svg", { width: 0, height: 0, style: "position:absolute", "aria-hidden": "true" }, document.body);
+    const g = svg("radialGradient", { id: "kg", cx: "50%", cy: "32%", r: "75%" }, svg("defs", {}, s));
+    svg("stop", { offset: "0", "stop-color": "#232c40" }, g);
+    svg("stop", { offset: "1", "stop-color": "#111724" }, g);
+  }
 
   function Knob(host, id, label, opts = {}) {
     const m = WT.META[id];
     if (!m) { console.warn("unknown param", id); return null; }
-    const S = SIZES[opts.size] || SIZES.sm;
-    const pad = opts.size === "macro" ? 7 : 4;
-    const W = S.d + pad * 2, cx = W / 2, cy = W / 2, r = S.d / 2;
-    const root = el("div", `knob ${opts.size === "macro" ? "macro" : "sm"} k-${opts.color || "ink"}`, host);
+    ensureDefs();
+    const size = opts.size === "macro" ? "macro" : "sm";
+    const d = SIZES[size], R = d / 2, W = d + 20, c = W / 2;
+    const BAND = ["red", "green", "violet"].includes(opts.color) ? opts.color : "ink";
+    const root = el("div", `knob ${size} k-${BAND}`, host);
     root.dataset.param = id;
-    const s = svg("svg", { width: W, height: W, viewBox: `0 0 ${W} ${W}` }, root);
+    root.dataset.hint = opts.hint || UI.hintOf(id);
+    root.tabIndex = 0;
+    root.setAttribute("role", "slider");
+    root.setAttribute("aria-label", m.name);
+    const [lo, hi] = rangeOf(id);
+    root.setAttribute("aria-valuemin", String(lo));
+    root.setAttribute("aria-valuemax", String(hi));
 
-    const neutral = opts.size === "macro" ? 0.5
-      : (m.type !== "choice" && m.type !== "bool" && m.min < 0 && m.max > 0) ? WT.toNorm(id, 0) : null;
+    const s = svg("svg", { width: W, height: W, viewBox: `0 0 ${W} ${W}`, "aria-hidden": "true" }, root);
+    const A = (n) => -135 + 270 * clamp(n, 0, 1);
+    const pol = (r, deg) => polar(c, c, r, deg);
+    const arc = (r, a0, a1) => arcPath(c, c, r, a0, a1);
+    // bipolar values draw the arc from the centre (spec/09 §4): the signed macros and ± ranges
+    const bipolar = id.startsWith("macro_") ? id !== "macro_breath" : (m.type === "float" || m.type === "int") && m.min < 0 && m.max > 0;
+    const from = bipolar ? A(id.startsWith("macro_") ? 0.5 : WT.toNorm(id, 0)) : -135;
 
-    svg("path", { d: arcPath(cx, cy, r, -135, 135), class: "track", "stroke-width": S.track, fill: "none" }, s);
-    if (neutral !== null) {
-      const a = -135 + 270 * neutral;
-      const [x0, y0] = polar(cx, cy, r + 2, a), [x1, y1] = polar(cx, cy, r + (opts.size === "macro" ? 6 : 4.5), a);
-      svg("line", { x1: x0, y1: y0, x2: x1, y2: y1, class: "zero", "stroke-width": 1 }, s);
-    }
-    // the live ring (macros): what the sky or the sound is doing with this control right now
-    let live = null, liveDot = null;
-    if (opts.live) {
-      live = svg("circle", { cx, cy, r: r * 0.6, class: "live", "stroke-width": 1, "stroke-opacity": 0 }, s);
-      if (opts.live === "drift") liveDot = svg("circle", { cx, cy: cy - r * 0.6, r: 1.6, class: "dot", opacity: 0 }, s);
-    }
-    const arc = svg("path", { class: "arc", "stroke-width": S.arc, fill: "none", "stroke-linecap": "round" }, s);
-    const dot = svg("circle", { r: S.dot, class: "dot" }, s);
+    svg("path", { d: arc(R + 3.5, -135, 135), class: "track", "stroke-width": 2.5, fill: "none", "stroke-linecap": "round" }, s);
+    const valArc = svg("path", { class: "arc", "stroke-width": 2.5, fill: "none", "stroke-linecap": "round" }, s);
+    const ring = svg("g", { class: "ring", display: "none" }, s);
+    const ringArc = svg("path", { class: "ring-arc", "stroke-width": 1.5, fill: "none", "stroke-linecap": "round" }, ring);
+    const ringDot = svg("circle", { class: "ring-dot", r: size === "macro" ? 3 : 2.7 }, ring);
+    svg("circle", { cx: c, cy: c, r: R - 1.5, class: "disc" }, s);
+    const ptr = svg("line", { class: "ptr", "stroke-width": 2, "stroke-linecap": "round" }, s);
 
     const lab = el("div", "label", root);
     lab.textContent = label;
     const val = el("div", "value", root);
+    const valText = el("span", "", val);
 
     WT.onParam(id, (v) => {
-      const n = WT.toNorm(id, v);
-      const a = -135 + 270 * n;
-      const from = neutral !== null && opts.size !== "macro" ? -135 + 270 * neutral : -135;
-      arc.setAttribute("d", arcPath(cx, cy, r, from, a));
-      const [x, y] = polar(cx, cy, r, a);
-      dot.setAttribute("cx", x.toFixed(2));
-      dot.setAttribute("cy", y.toFixed(2));
-      val.textContent = UI.format(id, v);
+      const a = A(WT.toNorm(id, v));
+      valArc.setAttribute("d", arc(R + 3.5, from, a));
+      const [x0, y0] = pol(R * 0.32, a), [x1, y1] = pol(R * 0.8, a);
+      ptr.setAttribute("x1", x0.toFixed(2)); ptr.setAttribute("y1", y0.toFixed(2));
+      ptr.setAttribute("x2", x1.toFixed(2)); ptr.setAttribute("y2", y1.toFixed(2));
+      const text = UI.format(id, v);   // the value you set; the ring's dot is the value now
+      valText.textContent = text;
+      root.setAttribute("aria-valuenow", String(v));
+      root.setAttribute("aria-valuetext", text);
     });
 
-    root.title = m.name + " — drag, shift for fine, double-click resets";
     verticalDrag(root, id);
 
-    return {
+    // ---- typing a value: Enter opens a small field over the readout; Enter sets, Escape cancels
+    let field = null;
+    function closeField(commit) {
+      if (!field) return;
+      const f = field;
+      field = null;
+      if (commit) {
+        const v = UI.parse(id, f.value);
+        if (v !== null && isFinite(v)) gesture(id).commit(v);
+      }
+      f.remove();
+      root.classList.remove("editing");
+      root.focus({ preventScroll: true });
+    }
+    function openField() {
+      if (field) return;
+      field = el("input", "knob-field", val);
+      field.type = "text";
+      field.value = valText.textContent;
+      field.setAttribute("aria-label", m.name + ", type a value");
+      field.spellcheck = false;
+      root.classList.add("editing");
+      field.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") { e.preventDefault(); closeField(true); }
+        else if (e.key === "Escape") { e.preventDefault(); closeField(false); }
+      });
+      field.addEventListener("blur", () => closeField(false));
+      field.addEventListener("pointerdown", (e) => e.stopPropagation());
+      field.focus({ preventScroll: true });
+      field.select();
+    }
+
+    root.addEventListener("keydown", (e) => {
+      if (e.target !== root) return;
+      if (e.key === "Enter") { e.preventDefault(); openField(); return; }
+      if (sliderKey(id, e)) e.preventDefault();
+    });
+
+    // ---- the modulation ring (spec/09 §2 rule 3): fed by the macros now, by T4.2's grid later
+    let mod = null, modSig = "";
+    const knob = {
       root,
-      /** Live ring: level 0…1 (opacity and size), angle (deg) for the drift dot. */
-      setLive(level, angle) {
-        if (!live) return;
-        const k = Math.max(0, Math.min(1, level));
-        live.setAttribute("stroke-opacity", (0.08 + 0.55 * k).toFixed(3));
-        live.setAttribute("r", (r * (0.48 + 0.2 * k)).toFixed(2));
-        if (liveDot && angle !== undefined) {
-          const [x, y] = polar(cx, cy, r * 0.6, angle);
-          liveDot.setAttribute("cx", x.toFixed(2));
-          liveDot.setAttribute("cy", y.toFixed(2));
-          liveDot.setAttribute("opacity", (0.25 + 0.75 * k).toFixed(3));
-        }
+      /** The ring: lo and hi are the range the sources can push this parameter, now is where they
+       *  have it; all three in the parameter's own units (as WT.get returns). */
+      setMod(loV, hiV, nowV) {
+        const n = [loV, hiV, nowV].map((x) => WT.toNorm(id, clamp(x, lo, hi)));
+        const sig = n.map((x) => x.toFixed(4)).join();
+        mod = { lo: loV, hi: hiV, now: nowV };
+        if (sig === modSig) return;
+        modSig = sig;
+        ring.removeAttribute("display");
+        ringArc.setAttribute("d", arc(R + 8, A(n[0]), A(n[1])));
+        const [x, y] = pol(R + 8, A(n[2]));
+        ringDot.setAttribute("cx", x.toFixed(2));
+        ringDot.setAttribute("cy", y.toFixed(2));
       },
+      clearMod() { mod = null; modSig = ""; ring.setAttribute("display", "none"); },
+      get mod() { return mod; },
+      /** Lit while a source that moves this knob is pointed at or focused. */
+      setLit(on) { root.classList.toggle("lit", !!on); },
     };
+    return knob;
   }
 
-  // ---------- Seg: a row of choices ----------
+  // ---------- Seg: a row of choices, a radiogroup ----------
   function Seg(host, id, labels, opts = {}) {
     const m = WT.META[id];
     const root = el("div", "seg" + (opts.cls ? " " + opts.cls : ""), host);
     root.dataset.param = id;
-    root.title = m.name;
+    root.dataset.hint = UI.hintOf(id);
+    root.setAttribute("role", "radiogroup");
+    root.setAttribute("aria-label", m.name);
     const names = labels || m.choices;
     const buttons = names.map((name, i) => {
       const b = el("button", opts.classOf ? opts.classOf(i) : "", root);
       b.type = "button";
+      b.setAttribute("role", "radio");
       b.textContent = name;
-      b.addEventListener("click", () => WT.commit(id, i));
+      b.setAttribute("aria-label", m.choices[i]);
+      b.addEventListener("click", () => gesture(id).commit(i));
       return b;
     });
-    WT.onParam(id, (v) => buttons.forEach((b, i) => b.classList.toggle("on", i === Math.round(v))));
+    root.addEventListener("keydown", (e) => {
+      if (!choiceKey(id, e, buttons.length)) return;
+      e.preventDefault();
+      buttons[Math.round(WT.get(id))].focus({ preventScroll: true });
+    });
+    WT.onParam(id, (v) => {
+      const k = Math.round(v);
+      buttons.forEach((b, i) => {
+        b.classList.toggle("on", i === k);
+        b.setAttribute("aria-checked", String(i === k));
+        b.tabIndex = i === k ? 0 : -1;
+      });
+      root.setAttribute("aria-valuetext", m.choices[k] || "");
+    });
     return root;
   }
 
@@ -198,28 +420,37 @@
     return Seg(host, id, KEY_NAMES, { cls: "keys", classOf: (i) => (ACCIDENTAL.includes(i) ? "acc" : "") });
   }
 
-  // ---------- Toggle ----------
-  function Toggle(host, id, label) {
-    const root = el("div", "toggle", host);
-    root.dataset.param = id;
-    el("i", "", root);
-    el("span", "", root).textContent = label;
-    WT.onParam(id, (v) => root.classList.toggle("on", !!v));
-    root.addEventListener("click", () => WT.commit(id, WT.get(id) ? 0 : 1));
-    root.title = WT.META[id].name;
-    return root;
-  }
-
-  // ---------- Play: the header's mode button (T3.7) ----------
-  function PlayButton(btn, id) {
+  // ---------- switches: a chip (Toggle) and the header's Play (T3.7) ----------
+  function bindSwitch(btn, id, label) {
     btn.dataset.param = id;
+    btn.dataset.hint = UI.hintOf(id);
+    btn.setAttribute("role", "switch");
+    btn.setAttribute("aria-label", label || WT.META[id].name);
+    btn.removeAttribute("aria-pressed");
     WT.onParam(id, (v) => {
       btn.classList.toggle("on", !!v);
-      btn.setAttribute("aria-pressed", String(!!v));
+      btn.setAttribute("aria-checked", String(!!v));
+      btn.setAttribute("aria-valuetext", v ? "on" : "off");
     });
-    btn.addEventListener("click", (e) => { e.stopPropagation(); WT.commit(id, WT.get(id) ? 0 : 1); });
+    btn.addEventListener("click", (e) => { e.stopPropagation(); gesture(id).commit(WT.get(id) ? 0 : 1); });
+    btn.addEventListener("keydown", (e) => {
+      // Space and Enter click the button natively; arrows set it, Home/End too
+      const k = e.key;
+      const to = k === "ArrowRight" || k === "ArrowUp" || k === "End" ? 1 : k === "ArrowLeft" || k === "ArrowDown" || k === "Home" ? 0
+        : k === "Backspace" || k === "Delete" ? defaultValue(id) : null;
+      if (to === null) return;
+      e.preventDefault();
+      if (to !== WT.get(id)) gesture(id).commit(to);
+    });
     return btn;
   }
+  function Toggle(host, id, label) {
+    const b = el("button", "chip", host);
+    b.type = "button";
+    b.textContent = label;
+    return bindSwitch(b, id, label);
+  }
+  function PlayButton(btn, id) { return bindSwitch(btn, id, "Play"); }
 
   // ---------- canvas ----------
   /** Sizes a canvas backing store for the stage zoom and the display; returns {ctx, w, h} in CSS px.
@@ -235,14 +466,16 @@
     return { ctx, w, h, k };
   }
 
+  /** The palette (spec/09 §4): ink for everything a person sets, the three lines only for the bands. */
   const C = {
-    night: "#05070d", ink: "#c9d3e6", muted: "#8a96ad", faint: "#6e7991",
+    night: "#05070d", well: "#070a12", ink: "#c9d3e6", inkHi: "#eef2fa", arc: "#dfe6f3", muted: "#8a96ad", faint: "#6e7991",
     green: "#5cf2a0", red: "#ff6b6b", violet: "#8f7bff",
-    hair: "rgba(201,211,230,0.12)", hairSoft: "rgba(201,211,230,0.06)", hairStrong: "rgba(201,211,230,0.22)",
-    rgb: { green: [92, 242, 160], red: [255, 107, 107], violet: [143, 123, 255], ink: [201, 211, 230] },
+    hair: "rgba(201,211,230,0.12)", hairSoft: "rgba(201,211,230,0.07)", hairStrong: "rgba(201,211,230,0.22)", track: "#141a28",
+    rgb: { green: [92, 242, 160], red: [255, 107, 107], violet: [143, 123, 255], ink: [201, 211, 230], hi: [238, 242, 250] },
   };
   const rgba = (name, a) => { const c = C.rgb[name]; return `rgba(${c[0]},${c[1]},${c[2]},${a})`; };
   const MONO = (px) => `${px}px "JetBrains Mono", ui-monospace, monospace`;
+  const SANS = (px, w) => `${w || 400} ${px}px "Instrument Sans", -apple-system, sans-serif`;
 
-  Object.assign(UI, { Knob, Seg, Keys, Toggle, PlayButton, fit, el, svg, C, rgba, MONO, KEY_NAMES, defaultValue });
+  Object.assign(UI, { Knob, Seg, Keys, Toggle, PlayButton, fit, el, svg, C, rgba, MONO, SANS, KEY_NAMES, defaultValue, clamp });
 })();

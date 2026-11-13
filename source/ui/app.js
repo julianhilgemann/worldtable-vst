@@ -12,21 +12,86 @@
   const S = { tel: {}, day: null, frames: 0, domeMode: "" };
   window.__wtState = S;   // for debugging and the UI integration check
 
+  /** Rewrites an element's markup only when it changed (a rewrite relayouts and repaints; T6.7). */
+  const htmlShown = {};
+  const setHtml = (id, html) => { if (htmlShown[id] !== html) { htmlShown[id] = html; $(id).innerHTML = html; } };
+
   const store = {
     get(k, d) { try { const v = window.localStorage.getItem("wt." + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { window.localStorage.setItem("wt." + k, JSON.stringify(v)); } catch (e) { /* private window: fine */ } },
   };
 
   // ---------------------------------------------------------------- controls
-  const knobs = {};
+  const knobs = (UI.knobs = {});
   for (const n of document.querySelectorAll("[data-knob]")) {
-    const k = UI.Knob(n, n.dataset.knob, n.dataset.label || "", { size: n.dataset.size, color: n.dataset.color, live: n.dataset.live });
+    const k = UI.Knob(n, n.dataset.knob, n.dataset.label || "", { size: n.dataset.size, color: n.dataset.color });
     if (k) knobs[n.dataset.knob] = k;
   }
   for (const n of document.querySelectorAll("[data-seg]")) UI.Seg(n, n.dataset.seg, n.dataset.labels ? n.dataset.labels.split(",") : null);
   for (const n of document.querySelectorAll("[data-keys]")) UI.Keys(n, n.dataset.keys);
   for (const n of document.querySelectorAll("[data-toggle]")) UI.Toggle(n, n.dataset.toggle, n.dataset.label || "");
   for (const n of document.querySelectorAll("[data-play]")) UI.PlayButton(n, n.dataset.play);
+
+  // ---------------------------------------------------------------- the hint line (spec/09 §2 rule 5)
+  // One sentence about what the thing under the pointer (or, from the keyboard, in focus) does.
+  const HINT0 = "Point at anything to read what it does.";
+  const showHint = (node) => {
+    const n = node && node.closest ? node.closest("[data-hint]") : null;
+    const text = n ? n.dataset.hint : HINT0;
+    if ($("hint").textContent !== text) $("hint").textContent = text;
+  };
+  $("stage").addEventListener("pointerover", (e) => showHint(e.target));
+  $("stage").addEventListener("pointerleave", () => showHint(document.activeElement));
+  document.addEventListener("focusin", (e) => showHint(e.target));
+  showHint(null);
+
+  // ---------------------------------------------------------------- macro rings (T6.7)
+  // The macros are hard-wired until T4.2: each scales what it moves around its neutral 0.5
+  // (dsp/Instrument.cpp macroGain, stormGain; Breath in dsp/SkySound.cpp). The rings on the knobs
+  // they move are drawn from the same formulas: the arc is the target with the macro at 0 and at 1
+  // (Breath also at the top of its swell), the dot is the target now.
+  const macroGain = (m) => 0.5 + m;
+  const breathGain = (d, c) => 1 - 0.35 * d * c;
+  const breathViolet = (d, c) => breathGain(d, c) * (1 - 0.15 * d * c);
+  const MACROS = (UI.MACROS = {
+    macro_storm: { moves: { progression: (m) => 0.4 + 1.2 * m }, say: "the strike, Progression" },
+    macro_breath: { moves: { red_level: breathGain, green_level: breathGain, violet_level: breathViolet }, cycle: true, say: "red, green and violet levels" },
+    macro_glow: { moves: { violet_level: macroGain, rev_shimmer: macroGain }, say: "Violet level, Shimmer" },
+    macro_space: { moves: { dly_mix: macroGain, rev_mix: macroGain }, say: "Delay mix, Reverb mix" },
+    macro_drift: { moves: { detune: macroGain, drift: macroGain }, say: "Detune, Drift" },
+  });
+  const TARGETS = {};   // target id → [[macro id, gain(m, cycle), uses the breath cycle]]
+  for (const [mid, mac] of Object.entries(MACROS))
+    for (const [tid, f] of Object.entries(mac.moves)) (TARGETS[tid] = TARGETS[tid] || []).push([mid, f, !!mac.cycle]);
+  /** Puts each target's ring where the macros have it; `cycle` is Breath's swell now (0…1). */
+  function updateRings(cycle) {
+    for (const [tid, srcs] of Object.entries(TARGETS)) {
+      const k = knobs[tid];
+      if (!k) continue;
+      let lo = 1, hi = 1, now = 1;
+      for (const [mid, f, usesCycle] of srcs) {
+        const ends = usesCycle ? [f(0, 0), f(0, 1), f(1, 0), f(1, 1)] : [f(0), f(1)];
+        lo *= Math.min(...ends);
+        hi *= Math.max(...ends);
+        now *= f(WT.get(mid), usesCycle ? cycle : 0);
+      }
+      const base = WT.get(tid);
+      k.setMod(base * lo, base * hi, base * now);
+    }
+  }
+  UI.updateRings = () => updateRings(S.tel.breath || 0);
+  // a macro says what it moves, and lights those knobs while it is pointed at or focused
+  for (const [mid, mac] of Object.entries(MACROS)) {
+    const k = knobs[mid];
+    if (!k) continue;
+    k.root.dataset.hint = `${UI.hintOf(mid)} Moves: ${mac.say}.`;
+    const light = (on) => () => { for (const tid of Object.keys(mac.moves)) if (knobs[tid]) knobs[tid].setLit(on); };
+    k.root.addEventListener("pointerenter", light(true));
+    k.root.addEventListener("pointerleave", () => { if (document.activeElement !== k.root) light(false)(); });
+    k.root.addEventListener("focus", light(true));
+    k.root.addEventListener("blur", light(false));
+  }
+  UI.updateRings();
 
   // ---------------------------------------------------------------- details popover
   // One page (T6.5); observer, journey and data sources open over it from the header.
@@ -109,7 +174,10 @@
     dome.options.stars = dome.options.moon = VIEW.stars;
     dome.options.dayNight = VIEW.dayNight;
     dome.options.gradientsOnly = VIEW.gradientsOnly;
-    document.querySelectorAll("[data-view]").forEach((n) => n.classList.toggle("on", !!VIEW[n.dataset.view]));
+    document.querySelectorAll("[data-view]").forEach((n) => {
+      n.classList.toggle("on", !!VIEW[n.dataset.view]);
+      n.setAttribute("aria-checked", String(!!VIEW[n.dataset.view]));
+    });
   }
   document.querySelectorAll("[data-view]").forEach((n) => n.addEventListener("click", () => {
     const k = n.dataset.view;
@@ -193,9 +261,10 @@
     const t = performance.now();
     if (t - glowShown < 250) return;
     glowShown = t;
-    const st = $("stage").style;
-    st.setProperty("--glow", `${glow.r | 0}, ${glow.g | 0}, ${glow.b | 0}`);
-    st.setProperty("--glow-a", glow.a.toFixed(3));
+    // written as the stage's own background, not as an inherited custom property: a custom property
+    // on #stage restyled every element under it four times a second (T6.7: 63 → 42 % of a core)
+    const c = `${glow.r | 0}, ${glow.g | 0}, ${glow.b | 0}`;
+    $("stage").style.backgroundImage = `radial-gradient(circle at 664px 520px, rgba(${c}, ${glow.a.toFixed(3)}) 0, rgba(${c}, 0) 330px)`;
   }
 
   // ---------------------------------------------------------------- the day
@@ -240,13 +309,13 @@
     $("harmony-title").textContent = on ? "Play" : "Harmony";
     $("harmony-note").textContent = on ? "MIDI plays the resonators, the sky colours them" : "the sky writes the progression, MIDI holds a chord";
     if (playShown !== null && playShown !== on && S.tel.sky)
-      ticker.push(`<span class="t">${new Date(S.tel.sky.utc * 1000).toISOString().slice(11, 16)} UT</span>${on ? "<b class=\"c-violet\">Play</b>, your notes take over" : "Play off, the sky writes again"}`);
+      ticker.push(`<span class="t">${new Date(S.tel.sky.utc * 1000).toISOString().slice(11, 16)} UT</span>${on ? "<b>Play</b>, your notes take over" : "Play off, the sky writes again"}`);
     playShown = on;
   });
 
   // ---------------------------------------------------------------- chord readout
   const FN = ["home", "tension", "awe", "borrowed"];
-  const FN_RGB = { home: "92, 242, 160", tension: "143, 123, 255", awe: "201, 211, 230", borrowed: "255, 107, 107" };
+  const FN_WHY = { home: "the sky is quiet", tension: "the sky is in growth", awe: "a substorm has broken out", borrowed: "the sky is recovering" };
   const FN_TITLE = { home: "home", tension: "tension", awe: "the awe move", borrowed: "borrowed chord" };
   const FN_REASON = { home: "quiet → home", tension: "growth → tension", awe: "onset → chromatic mediant", borrowed: "recovery → borrowed" };
   let chordSig = "", chordChanges = -1, chordTimer = 0;
@@ -269,10 +338,9 @@
       };
       clearTimeout(chordTimer);
       if (first) apply(); else { text.classList.add("out"); chordTimer = setTimeout(apply, 900); }
-      $("chord-card").style.setProperty("--fn", FN_RGB[fn]);
-      $("chord-why").innerHTML = c.latched ? `<b>held on MIDI</b><span class="gap">the sky keeps listening</span>` : `<b>${FN_TITLE[fn]}</b><span class="gap">${FN_REASON[fn]}</span>`;
+      $("chord-why").innerHTML = c.latched ? `<b>held on MIDI</b>, the sky keeps listening` : `<b>${FN_TITLE[fn]}</b>, because ${FN_WHY[fn]}`;
       if (!first && chordChanges >= 0 && sky)
-        ticker.push(`<span class="t">${ut(sky.utc)} UT</span>${c.latched ? "MIDI" : FN_REASON[fn]} → <b>${c.label}</b> <span class="faint">${c.roman}</span>`);
+        ticker.push(`<span class="t">${ut(sky.utc)} UT</span>${c.latched ? "MIDI" : FN_REASON[fn]} → <b>${c.label}</b> <span class="dim">${c.roman}</span>`);
     }
     chordChanges = c.changes;
     const pill = $("chord-state");
@@ -292,10 +360,9 @@
       text.classList.remove("out");
       text.textContent = c.held ? c.label || "—" : "—";
       $("chord-roman").textContent = "";
-      $("chord-card").style.setProperty("--fn", "143, 123, 255");
       const drone = WT.get("play_drone");
-      $("chord-why").innerHTML = (c.held ? `<b>played</b><span class="gap">${c.held} note${c.held === 1 ? "" : "s"} held</span>` : `<b>played</b><span class="gap">waiting for notes</span>`)
-        + `<span class="gap">${drone < 0.005 ? "the drone rests" : "the drone under at " + Math.round(drone * 100) + " %"}</span>`;
+      $("chord-why").innerHTML = (c.held ? `<b>played</b>, ${c.held} note${c.held === 1 ? "" : "s"} held` : `<b>played</b>, waiting for notes`)
+        + `, ${drone < 0.005 ? "the drone rests" : "the drone under at " + Math.round(drone * 100) + " %"}`;
     }
     const pill = $("chord-state");
     pill.className = "pill play";
@@ -314,11 +381,11 @@
       // open with what the day has already done: the last two onsets before now, then the start
       started = true;
       for (const e of S.day.onsets.filter((o) => o.utc < sky.utc - 30).slice(-2))
-        ticker.push(`<span class="t">${ut(e.utc)} UT</span><span class="faint">substorm onset, ${KIND[e.kind] || e.kind}</span>`);
+        ticker.push(`<span class="t">${ut(e.utc)} UT</span>substorm onset, ${KIND[e.kind] || e.kind}`);
       ticker.push(`<span class="t">${ut(sky.utc)} UT</span>journey ${DAY_LABELS[sky.day] || sky.day}, at ${Math.round(sky.speed)}×`);
     }
     for (const e of sky.newOnsets || [])
-      ticker.push(`<span class="t">${ut(e.utc)} UT</span><b class="${e.kind === "pseudo" ? "" : "c-green"}">substorm onset</b>, ${KIND[e.kind] || e.kind}, strength ${e.strength.toFixed(2)}`);
+      ticker.push(`<span class="t">${ut(e.utc)} UT</span>${e.kind === "pseudo" ? "substorm onset" : "<b>substorm onset</b>"}, ${KIND[e.kind] || e.kind}, strength ${e.strength.toFixed(2)}`);
     if (lastPhase && sky.phase !== lastPhase && sky.phase !== "onset")
       ticker.push(`<span class="t">${ut(sky.utc)} UT</span>${sky.phase} begins`);
     lastPhase = sky.phase;
@@ -331,17 +398,15 @@
     const date = new Date(sky.utc * 1000);
     $("ro-date").innerHTML = `<b class="num l" style="--w:11">${date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</b>`;
     $("ro-ut").innerHTML = `<b>${ut(sky.utc)}</b> UT`;
-    $("ro-kp").innerHTML = `Kp ${num(sky.kp.toFixed(1), 3, "b", "l")}`;
-    $("ro-kp").classList.toggle("storm", sky.kp >= 5);
-    $("ro-bz").innerHTML = `Bz ${num(signed(sky.bz, 1), 5)} nT`;
-    $("ro-bz").classList.toggle("south", sky.bz < 0);
+    $("ro-kp").innerHTML = `Kp ${num(sky.kp.toFixed(1), 3, "b", "l")}${num(sky.kp >= 5 ? "storm" : "", 5, "b", "l state")}`;
+    $("ro-bz").innerHTML = `Bz ${num(signed(sky.bz, 1), 5)} nT${num(sky.bz < 0 ? "south" : "", 5, "b", "l state")}`;
     $("ro-v").innerHTML = `v ${num(Math.round(sky.wind), 4)} km/s`;
     const frozen = (sky.speed || 0) < 0.01;
     $("mode").innerHTML = `<i></i>${frozen ? "Frozen" : "Journey"} <b id="mode-speed" class="num l" style="--w:4">${frozen ? "" : Math.round(sky.speed) + "×"}</b>`;
 
     const e = clamp(sky.energy / 1.5, 0, 1);
     $("sky-row").innerHTML =
-      `<span>ΔH ${num(Math.round(sky.dh), 5)} nT <span class="faint">model ${num(Math.round(sky.dhModel), 5, "span", "l")}</span></span>` +
+      `<span>ΔH ${num(Math.round(sky.dh), 5)} nT <span class="dim">model ${num(Math.round(sky.dhModel), 5, "span", "l")}</span></span>` +
       `<span>E ${num((sky.coupling || 0).toFixed(1), 4)} mV/m</span>` +
       `<span>energy<span class="bar"><i style="width:${(e * 100).toFixed(1)}%"></i><u style="left:${(100 / 1.5).toFixed(1)}%"></u></span>${num(sky.energy.toFixed(2), 4, "b", "l")}</span>` +
       `<span>activity ${num(sky.activity.toFixed(2), 4, "b", "l")}</span>` +
@@ -373,7 +438,7 @@
     $("info-journey-2").innerHTML =
       `<span class="k">left</span><span>${num(sky.speed > 0 ? Math.round(leftS / 60) + " min" : "—", 7, "b", "l")} of listening to the end of the recording</span>` +
       `<span class="k">onsets</span><span>${num(past, 2, "b", "l")} of ${day.onsets.length} in this day</span>` +
-      `<span class="k">choice</span><span class="faint">day and speed arrive with the autopilot (M4)</span>`;
+      `<span class="k">choice</span><span>day and speed arrive with the transport (T6.9)</span>`;
   }
 
   // ---------------------------------------------------------------- telemetry
@@ -389,7 +454,7 @@
     env += (Math.max(tel.peakL || 0, tel.peakR || 0) - env) * 0.05;
     if (tel.autoGain) {
       const db = 20 * Math.log10(tel.autoGain);
-      $("out-note").innerHTML = `auto ${num(signed(db, 1), 4, "span")} dB`;
+      setHtml("out-note", `auto ${num(signed(db, 1), 4, "span")} dB`);
     }
   });
 
@@ -429,13 +494,8 @@
     if (tel.sky) mag.draw(tel.sky.utc);
     hmeter.draw(tel.peakL || 0, tel.peakR || 0, P("lim_ceiling"));
 
-    // macro rings: what each macro is shaping right now
-    const m = (id) => P(id);
-    if (knobs.macro_storm) knobs.macro_storm.setLive(((tel.sky && tel.sky.activity) || 0) * (0.4 + 1.2 * m("macro_storm")) / 1.6);
-    if (knobs.macro_breath) knobs.macro_breath.setLive((tel.breath || 0) * clamp(m("macro_breath") * 1.6, 0, 1));
-    if (knobs.macro_glow) knobs.macro_glow.setLive(emission[2] * (0.5 + m("macro_glow")) / 1.5);
-    if (knobs.macro_space) knobs.macro_space.setLive(clamp((tel.verb || 0) * 2.2, 0, 1));
-    if (knobs.macro_drift) knobs.macro_drift.setLive(m("macro_drift"), (t * 360 / (48 / (0.4 + m("macro_drift")))) % 360);
+    // the macros' rings on the knobs they move: Breath's dot swells with the sound
+    updateRings(tel.breath || 0);
 
     layers.draw([P("low_level"), P("red_level"), P("green_level"), P("violet_level")], [P("low_decay"), P("red_decay"), P("green_decay"), P("violet_decay")]);
     const low = tel.low && tel.low.note >= 0 ? tel.low.note : -1;
@@ -453,7 +513,7 @@
       fx.delay.draw({ time: P("dly_time"), fb: P("dly_fb"), tone: P("dly_tone"), mix: P("dly_mix"), ping: P("dly_pingpong") });
       fx.reverb.draw({ size: P("rev_size"), decay: P("rev_decay"), damp: P("rev_damp"), pre: P("rev_predelay"), shimmer: P("rev_shimmer"), mix: P("rev_mix") }, tel.verb || 0);
       fx.output.draw(tel.peakL || 0, tel.peakR || 0, tel.gr || 1, P("lim_ceiling"));
-      $("verb-note").innerHTML = `${num(P("rev_decay").toFixed(1), 4, "span")} s<span class="gap">size ${num(Math.round(P("rev_size") * 100), 3, "span")} %</span>`;
+      setHtml("verb-note", `${num(P("rev_decay").toFixed(1), 4, "span")} s<span class="gap">size ${num(Math.round(P("rev_size") * 100), 3, "span")} %</span>`);
     }
   }
   requestAnimationFrame(frame);
