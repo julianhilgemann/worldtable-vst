@@ -1,13 +1,13 @@
 // Headless offline render: Worldtable processor → stereo WAV, plus signal statistics.
 //
 //   WorldtableRender --out renders/instrument.wav --seconds 45 [--rate 48000]
-//                    [--set progression=0 --set mood=Bittersweet --set drive=0.3 ...]
+//                    [--set progression=0 --set mood=Bittersweet --set eq1_drive=0.5 ...]
 //                    [--midi notes.mid] [--block 512] [--bands]
 //                    [--sweep band_x2=33:96[:t0:t1] ...]
 //
 // --midi plays a Standard MIDI File into the processor at its sample positions (all tracks, the
 // file's tempo map); with --set play=1 that is Play mode (T3.7). --bands prints the mono mix's
-// octave-band levels (31.5 Hz … 16 kHz), for the low end and the filter.
+// octave-band levels (31.5 Hz … 16 kHz), for the low end and the EQ.
 // --sweep moves a parameter in a straight line from one value to another, between t0 and t1
 // seconds (default: the whole render), on a 0.1 s grid; the blocks are cut at the grid, so the
 // same sweep lands on the same samples whatever --block is (T3.8: the band edges).
@@ -29,9 +29,9 @@
 #include "data/SkyDays.h"
 #include "dsp/Harmony.h"
 #include "dsp/SkySound.h"
-#include "dsp/Drive.h"
 #include "dsp/fx/AutoGain.h"
 #include "dsp/fx/Chorus.h"
+#include "dsp/fx/Eq.h"
 #include "dsp/fx/Limiter.h"
 #include "dsp/fx/Phaser.h"
 #include "dsp/fx/StereoDelay.h"
@@ -255,9 +255,8 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
     const dsp::ChordName startName = dsp::nameOf (startChord);
     sound.prepare (o.rate, params.nodes, o.seed, settings, startChord);
 
-    dsp::Drive drive;
-    drive.prepare (o.rate);
-    drive.setDrive (0.15f);
+    dsp::Eq eq;   // T3.9: the plug-in's EQ at its defaults (flat, the cut open, the default drives)
+    eq.prepare (o.rate);
 
     dsp::Phaser phaser;
     phaser.prepare (o.rate);
@@ -327,11 +326,7 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
             return;
         timed (fxSeconds, [&]
         {
-            for (int k = 0; k < n; ++k)
-            {
-                l[k] = drive.process (l[k]);
-                r[k] = drive.process (r[k]);
-            }
+            eq.process (l, r, n);
             phaser.process (l, r, n);
             chorus.process (l, r, n);
             delay.process (l, r, n);
@@ -418,7 +413,7 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
               << dsp::nameOf (sound.chord()).label.data() << ", "
               << (runtime.model().current().onsetCount - onsetsBefore) << " onsets in the file\n"
               << "length:  " << o.seconds << " s @ " << o.rate << " Hz" << (o.dry ? " (dry)"
-                                                                               : " (drive -> phaser -> chorus -> delay -> shimmer -> autogain -> dc -> limiter)") << "\n"
+                                                                               : " (eq -> phaser -> chorus -> delay -> shimmer -> autogain -> dc -> limiter)") << "\n"
               << "peak:    " << juce::Decibels::gainToDecibels (peak, -200.0f) << " dBFS\n"
               << "rms:     " << juce::Decibels::gainToDecibels (static_cast<float> (rms), -200.0f) << " dBFS\n"
               << "maxStep: " << maxDelta << "\n"

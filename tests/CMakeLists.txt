@@ -15,7 +15,7 @@ target_sources(WorldtableTests PRIVATE
     unit/FxTests.cpp
     unit/SkySoundTests.cpp
     unit/TrackBuilderTests.cpp
-    unit/FilterLowTests.cpp
+    unit/LowTests.cpp
     unit/PlayModeTests.cpp
     unit/BandTests.cpp
     unit/EqTests.cpp

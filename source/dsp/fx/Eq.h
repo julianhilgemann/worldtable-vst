@@ -2,6 +2,7 @@
 
 #include "dsp/DspCommon.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -127,33 +128,111 @@ public:
         float g = 0.0f, k = 2.0f, m0 = 1.0f, m1 = 0.0f, m2 = 0.0f;
     };
 
-    void prepare (double sampleRate) noexcept { rate = sampleRate; reset(); }
+    void prepare (double sampleRate) noexcept
+    {
+        rate = sampleRate > 0.0 ? sampleRate : 48000.0;
+        glide = std::exp (-1.0 / (static_cast<double> (kGlideSeconds) * rate));
+        for (auto& c : chans)
+            for (auto& s : c.sat)
+                s.dc.prepare (rate);
+        retarget();
+        reset();
+    }
 
     /** Snaps every glide to the current settings and clears the state. */
-    void reset() noexcept {}
+    void reset() noexcept
+    {
+        for (int b = 0; b < kBands; ++b)
+        {
+            const auto i = static_cast<size_t> (b);
+            const auto& t = targets[i];
+            now[i] = { t.logHz, t.gainDb, t.q, t.drive };
+            filterPending[i] = drivePending[i] = false;
+            updateCoefs (b, false);
+            updateShaper (b);
+        }
+        for (auto& c : chans)
+        {
+            for (auto& s : c.bands)
+                s.reset();
+            for (auto& o : c.owners)
+                for (auto& s : o)
+                    s.reset();
+            for (auto& s : c.sat)
+            {
+                s.prevB = s.prevF = 0.0;
+                s.fresh = false;
+                s.dc.reset();
+            }
+        }
+    }
 
-    void setSettings (const Settings& s) noexcept { settings = s; }
+    void setSettings (const Settings& s) noexcept
+    {
+        for (int b = 0; b < kBands; ++b)
+        {
+            const auto i = static_cast<size_t> (b);
+            const auto& in = s.bands[i];
+            auto& out = settings.bands[i];
+            out.hz = std::clamp (in.hz, kMinHz[i], kMaxHz[i]);
+            out.gainDb = b == highCut ? 0.0f : std::clamp (in.gainDb, -kMaxGainDb, kMaxGainDb);
+            out.q = b == lowShelf ? kShelfQ : b == highCut ? kCutQ : std::clamp (in.q, kMinQ, kMaxQ);
+            out.drive = std::clamp (in.drive, 0.0f, 1.0f);
+        }
+        retarget();
+    }
+
     const Settings& getSettings() const noexcept { return settings; }
 
-    /** The sky's opening of the high cut, in octaves. */
-    void setSkyOctaves (float octaves) noexcept { skyOctaves = octaves; }
+    /** The sky's opening of the high cut, in octaves (the caller slews it). */
+    void setSkyOctaves (float octaves) noexcept
+    {
+        skyOctaves = octaves;
+        retarget();
+    }
 
     /** The high cut now (after the sky and the glide), Hz; kOpenHz when open. */
-    float cutHz() const noexcept { return settings.bands[highCut].hz; }
+    float cutHz() const noexcept
+    {
+        const auto i = static_cast<size_t> (highCut);
+        return std::min (kOpenHz, filterPending[i] ? static_cast<float> (std::exp2 (now[i].logHz)) : targets[i].hz);
+    }
+
+    /** True when any band drives (its drive, gliding, is above zero). */
+    bool driving() const noexcept
+    {
+        return std::any_of (shapers.begin(), shapers.end(), [] (const Shaper& s) { return s.amount > 0.0f; });
+    }
 
     void process (float* left, float* right, int numSamples) noexcept
     {
-        (void) left;
-        (void) right;
-        (void) numSamples;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            for (int b = 0; b < kBands; ++b)
+                advance (b);
+            left[i] = processSample (chans[0], left[i]);
+            right[i] = processSample (chans[1], right[i]);
+        }
     }
 
     //== The response (for tests and the display, T6.14) ===============================================
+    /** Where band `band` sits at rest for a setting `hz` (the SVF's frequency): the shelf and bells
+        below kMaxBandFraction × fs; the cut at `hz`, or at kOpenFraction × fs when open. */
+    static float restHz (int band, float hz, double sampleRate) noexcept
+    {
+        const auto fs = static_cast<float> (sampleRate);
+        if (band != highCut)
+            return std::min (hz, kMaxBandFraction * fs);
+        return isOpen (hz) ? kOpenFraction * fs : std::min (hz, kOpenFraction * fs);
+    }
+
+    /** The cut is open from 19.98 kHz up (so a host's rounding of 20 kHz still opens it). */
+    static bool isOpen (float hz) noexcept { return hz >= 0.999f * kOpenHz; }
+
     /** The coefficients of band `band` at rest. For the cut, `hz` ≥ kOpenHz is open. */
     static Coefs bandCoefs (int band, float hz, float gainDb, float q, double sampleRate) noexcept
     {
-        (void) band, (void) hz, (void) gainDb, (void) q, (void) sampleRate;
-        return {};
+        return svfCoefs (band, restHz (band, hz, sampleRate), gainDb, q, sampleRate);
     }
 
     /** One band through one SVF stage. */
@@ -163,11 +242,34 @@ public:
         return c.m0 * x + c.m1 * o.band + c.m2 * o.low;
     }
 
-    /** Band `band`'s response at `hz`, dB (the formulas above). */
+    /** Band `band`'s response at `hz`, dB (the formulas above; an open cut is its real, near-flat
+        response at kOpenFraction × fs). */
     static double bandDb (int band, double f0, double gainDb, double q, double hz, double sampleRate) noexcept
     {
-        (void) band, (void) f0, (void) gainDb, (void) q, (void) hz, (void) sampleRate;
-        return 0.0;
+        const double fs = sampleRate;
+        const double centre = restHz (band, static_cast<float> (f0), fs);
+        const double w = std::tan (std::numbers::pi * std::min (hz, 0.4999 * fs) / fs) / std::tan (std::numbers::pi * centre / fs);
+        const double w2 = w * w;
+        const double A = std::pow (10.0, gainDb / 40.0);
+        double num = 1.0, den = 1.0;
+        if (band == lowShelf)
+        {
+            const double qq = static_cast<double> (kShelfQ) * kShelfQ;
+            num = A * A * ((A - w2) * (A - w2) + A * w2 / qq);
+            den = (1.0 - A * w2) * (1.0 - A * w2) + A * w2 / qq;
+        }
+        else if (band == highCut)
+        {
+            den = 1.0 + w2 * w2;
+        }
+        else
+        {
+            const double width = std::clamp (q, static_cast<double> (kMinQ), static_cast<double> (kMaxQ));
+            const double a = w * A / width, b = w / (A * width);
+            num = (1.0 - w2) * (1.0 - w2) + a * a;
+            den = (1.0 - w2) * (1.0 - w2) + b * b;
+        }
+        return 10.0 * std::log10 (num / den);
     }
 
     /** The whole EQ's small-signal response at `hz`, dB, with the cut at `cutHz` (after the sky). */
@@ -183,9 +285,221 @@ public:
     }
 
 private:
+    /** The glides run in double: a float one-pole stalls hundreds of ULPs short of its target
+        (its step falls under half an ULP), so it would never land on the settings. */
+    struct Target
+    {
+        float hz = 1000.0f;
+        double logHz = 9.97, gainDb = 0.0, q = 1.0, drive = 0.0;
+    };
+    struct Now
+    {
+        double logHz = 9.97, gainDb = 0.0, q = 1.0, drive = 0.0;
+    };
+    /** The analysis filter that picks the part of the signal a band owns. */
+    struct Owner
+    {
+        float g = 0.0f, k = 1.41421356f;
+        bool lowPass = false;
+    };
+    struct Shaper
+    {
+        double gain = 1.0, bias = 0.0, tanhBias = 0.0, slope = 1.0;
+        float amount = 0.0f;
+    };
+    struct SatState
+    {
+        double prevB = 0.0, prevF = 0.0;
+        bool fresh = false;
+        DcBlocker dc;
+    };
+    struct Channel
+    {
+        std::array<SvfStage, kBands> bands {};
+        std::array<std::array<SvfStage, 2>, kBands> owners {};
+        std::array<SatState, kBands> sat {};
+    };
+
+    /** SVF coefficients for band `band` with the SVF at `svfHz` (no open mapping: the glide passes
+        through). */
+    static Coefs svfCoefs (int band, float svfHz, float gainDb, float q, double sampleRate) noexcept
+    {
+        const double fs = sampleRate;
+        const double t = std::tan (std::numbers::pi * std::clamp (static_cast<double> (svfHz), 1.0, 0.4999 * fs) / fs);
+        const double A = std::pow (10.0, static_cast<double> (gainDb) / 40.0);
+        Coefs c;
+        if (band == lowShelf)
+        {
+            const double k = 1.0 / static_cast<double> (kShelfQ);
+            c = { static_cast<float> (t / std::sqrt (A)), static_cast<float> (k), 1.0f,
+                  static_cast<float> (k * (A - 1.0)), static_cast<float> (A * A - 1.0) };
+        }
+        else if (band == highCut)
+        {
+            c = { static_cast<float> (t), static_cast<float> (1.0 / static_cast<double> (kCutQ)), 0.0f, 0.0f, 1.0f };
+        }
+        else
+        {
+            const double k = 1.0 / (static_cast<double> (q) * A);
+            c = { static_cast<float> (t), static_cast<float> (k), 1.0f, static_cast<float> (k * (A * A - 1.0)), 0.0f };
+        }
+        return c;
+    }
+
+    static double logCosh (double x) noexcept
+    {
+        const double a = std::abs (x);
+        return a - std::numbers::ln2 + std::log1p (std::exp (-2.0 * a));   // stable for large |x|
+    }
+
+    /** Moves `v` one sample toward `target`; snaps onto it when within `eps`. True while moving. */
+    static bool settle (double& v, double target, double coef, double eps) noexcept
+    {
+        v = target + (v - target) * coef;
+        if (std::abs (v - target) < eps)
+        {
+            v = target;
+            return false;
+        }
+        return true;
+    }
+
+    void retarget() noexcept
+    {
+        for (int b = 0; b < kBands; ++b)
+        {
+            const auto i = static_cast<size_t> (b);
+            const auto& s = settings.bands[i];
+            auto& t = targets[i];
+            const float hz = b == highCut ? s.hz * std::exp2 (skyOctaves) : s.hz;
+            t.hz = restHz (b, hz, rate);
+            t.logHz = std::log2 (static_cast<double> (t.hz));
+            t.gainDb = s.gainDb;
+            t.q = s.q;
+            t.drive = s.drive;
+            filterPending[i] = drivePending[i] = true;   // a glide already there settles in one sample
+        }
+    }
+
+    void advance (int b) noexcept
+    {
+        const auto i = static_cast<size_t> (b);
+        auto& n = now[i];
+        const auto& t = targets[i];
+        if (filterPending[i])
+        {
+            bool moving = settle (n.logHz, t.logHz, glide, 1.0e-7);   // octaves
+            moving |= settle (n.gainDb, t.gainDb, glide, 1.0e-6);      // dB
+            moving |= settle (n.q, t.q, glide, 1.0e-7);
+            updateCoefs (b, moving);
+            filterPending[i] = moving;
+        }
+        driveMoved[i] = drivePending[i];
+        if (drivePending[i])
+        {
+            drivePending[i] = settle (n.drive, t.drive, glide, 1.0e-7);
+            updateShaper (b);
+        }
+    }
+
+    void updateCoefs (int b, bool moving) noexcept
+    {
+        const auto i = static_cast<size_t> (b);
+        const auto& n = now[i];
+        const float hz = moving ? static_cast<float> (std::exp2 (n.logHz)) : targets[i].hz;   // at rest: exactly the settings
+        coefs[i] = svfCoefs (b, hz, static_cast<float> (n.gainDb), static_cast<float> (n.q), rate);
+
+        auto& o = owners[i];
+        const auto fs = static_cast<float> (rate);
+        if (b == lowShelf)
+        {
+            o = { static_cast<float> (std::tan (std::numbers::pi * static_cast<double> (hz) / rate)), 1.41421356f, true };
+        }
+        else
+        {
+            const float centre = b == highCut ? std::min (std::min (hz, kOpenHz) * 0.70710678f, kMaxBandFraction * fs) : hz;
+            const float width = b == highCut ? 1.41421356f : static_cast<float> (n.q);   // an octave: Q √2
+            o = { static_cast<float> (std::tan (std::numbers::pi * static_cast<double> (centre) / rate)), 1.0f / width, false };
+        }
+    }
+
+    void updateShaper (int b) noexcept
+    {
+        auto& s = shapers[static_cast<size_t> (b)];
+        const double d = now[static_cast<size_t> (b)].drive;
+        s.amount = static_cast<float> (d);
+        s.gain = 1.0 + static_cast<double> (kDrivePreGain) * d;
+        s.bias = static_cast<double> (kAsymmetry) * d;
+        s.tanhBias = std::tanh (s.bias);
+        s.slope = 1.0 - s.tanhBias * s.tanhBias;
+    }
+
+    /** The part of `y` band `b` owns: two stages, low-pass for the shelf, unity-peak band-pass else. */
+    float owned (int b, Channel& c, float y) noexcept
+    {
+        const auto i = static_cast<size_t> (b);
+        const auto& o = owners[i];
+        auto& st = c.owners[i];
+        if (o.lowPass)
+            return st[1].process (st[0].process (y, o.g, o.k).low, o.g, o.k).low;
+        const float a = o.k * st[0].process (y, o.g, o.k).band;
+        return o.k * st[1].process (a, o.g, o.k).band;
+    }
+
+    /** driveₖ · eₖ: what band `b`'s drive adds (0 when its drive is 0). */
+    float saturate (int b, Channel& c, float part) noexcept
+    {
+        const auto i = static_cast<size_t> (b);
+        const auto& sh = shapers[i];
+        auto& st = c.sat[i];
+        const double now0 = part;
+        if (sh.amount <= 0.0f)
+        {
+            st.prevB = now0;   // ready to start from here
+            st.fresh = false;
+            st.dc.reset();
+            return 0.0f;
+        }
+        const double x = sh.gain * now0 + sh.bias, xp = sh.gain * st.prevB + sh.bias;
+        const double fx = logCosh (x);
+        const double fxp = st.fresh && ! driveMoved[i] ? st.prevF : logCosh (xp);
+        const double dx = x - xp;
+        const double shaped = std::abs (dx) > 1.0e-7 ? (fx - fxp) / dx : std::tanh (0.5 * (x + xp));
+        const double e = ((shaped - sh.tanhBias) / sh.slope - (0.5 * (x + xp) - sh.bias)) / sh.gain;
+        st.prevB = now0;
+        st.prevF = fx;
+        st.fresh = true;
+        return sh.amount * st.dc.process (static_cast<float> (e));
+    }
+
+    float processSample (Channel& c, float x) noexcept
+    {
+        float y = x;
+        for (int b = 0; b < kBands; ++b)
+            y = stepBand (c.bands[static_cast<size_t> (b)], y, coefs[static_cast<size_t> (b)]);
+
+        bool any = false;
+        float add = 0.0f;
+        for (int b = 0; b < kBands; ++b)
+        {
+            const float part = owned (b, c, y);
+            any = any || shapers[static_cast<size_t> (b)].amount > 0.0f;
+            add += saturate (b, c, part);
+        }
+        return any ? y + add : y;
+    }
+
     Settings settings;
     double rate = 48000.0;
+    double glide = 0.0;
     float skyOctaves = 0.0f;
+    std::array<Target, kBands> targets {};
+    std::array<Now, kBands> now {};
+    std::array<bool, kBands> filterPending {}, drivePending {}, driveMoved {};
+    std::array<Coefs, kBands> coefs {};
+    std::array<Owner, kBands> owners {};
+    std::array<Shaper, kBands> shapers {};
+    std::array<Channel, 2> chans {};
 };
 
 } // namespace worldtable::dsp

@@ -1,8 +1,11 @@
 // T3.9: the EQ — four bands with drive, in place of the Filter and the Drive
 // (spec/tasks/T3.9-eq-with-drive.md).
 
+#include "AllocationCounter.h"
+#include "PluginProcessor.h"
 #include "dsp/fx/Eq.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -10,7 +13,10 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <functional>
+#include <iterator>
 #include <numbers>
+#include <string>
 #include <vector>
 
 using namespace worldtable;
@@ -384,4 +390,372 @@ TEST_CASE ("EQ: extreme settings and jumps stay finite and bounded", "[eq]")
     }
     CHECK (finite);
     CHECK (peak < 16.0f);   // +12 dB on three stacked bands of loud noise, plus the drive
+}
+
+TEST_CASE ("EQ: a parameter that jumps glides, it never clicks", "[eq]")
+{
+    // A steady low and high sine; one parameter jumps from one end of its range to the other and
+    // back. A click would make the samples step further than the same move made slowly (a bell
+    // sweeping over a tone lifts it on the way, slow or fast: that is the sound, not a click).
+    const int n = static_cast<int> (1.6 * kRate), at = static_cast<int> (0.3 * kRate), back = static_cast<int> (0.9 * kRate);
+    const int ramp = static_cast<int> (0.5 * kRate), chunk = 48;
+    const auto x = twoTones (300.0, 2500.0, 0.2, n);
+    const auto maxStep = [] (const std::vector<float>& y, int from, int to)
+    {
+        float m = 0.0f;
+        for (int i = std::max (from, 1); i < to; ++i)
+            m = std::max (m, std::abs (y[static_cast<size_t> (i)] - y[static_cast<size_t> (i - 1)]));
+        return m;
+    };
+    struct Jump
+    {
+        const char* what;
+        int band;
+        float Eq::Band::*field;
+        float from, to;
+        bool logScale;
+    };
+    std::vector<Jump> jumps;
+    for (int b = 0; b < Eq::kBands; ++b)
+    {
+        const auto i = static_cast<size_t> (b);
+        jumps.push_back ({ "freq", b, &Eq::Band::hz, Eq::kMinHz[i], Eq::kMaxHz[i], true });
+        if (b != Eq::highCut)
+            jumps.push_back ({ "gain", b, &Eq::Band::gainDb, -Eq::kMaxGainDb, Eq::kMaxGainDb, false });
+        if (b == Eq::bellLow || b == Eq::bellHigh)
+            jumps.push_back ({ "q", b, &Eq::Band::q, Eq::kMinQ, Eq::kMaxQ, true });
+        jumps.push_back ({ "drive", b, &Eq::Band::drive, 0.0f, 1.0f, false });
+    }
+    for (const auto& j : jumps)
+    {
+        // rampSamples 0: a jump at `at` and back at `back`; else the same moves spread over a ramp
+        const auto runMove = [&] (int rampSamples)
+        {
+            auto s = flat();
+            for (auto& band : s.bands)   // every band coloured a little, so a frequency move is heard
+                band.gainDb = 6.0f;
+            s.bands[Eq::highCut].hz = 4000.0f;
+            auto& band = s.bands[static_cast<size_t> (j.band)];
+            const auto valueAt = [&] (int i)
+            {
+                const auto w = [&] (int start) { return rampSamples == 0 ? (i >= start ? 1.0 : 0.0) : std::clamp (static_cast<double> (i - start) / rampSamples, 0.0, 1.0); };
+                const double u = w (at) - w (back);   // up, then down again
+                return j.logScale ? static_cast<float> (j.from * std::pow (j.to / j.from, u)) : static_cast<float> (j.from + (j.to - j.from) * u);
+            };
+            Eq eq;
+            eq.prepare (kRate);
+            band.*j.field = valueAt (0);
+            eq.setSettings (s);
+            eq.reset();
+            std::vector<float> l = x, r = x;
+            for (int i = 0; i < n; i += chunk)
+            {
+                band.*j.field = valueAt (i);
+                eq.setSettings (s);
+                eq.process (l.data() + i, r.data() + i, std::min (chunk, n - i));
+            }
+            return l;
+        };
+        const auto fast = runMove (0), slow = runMove (ramp);
+        const int settle = static_cast<int> (0.15 * kRate);   // 7.5 glide time constants
+        const float before = maxStep (fast, at - settle, at), during = maxStep (fast, back - settle, back);
+        const float slowUp = maxStep (slow, at, at + ramp + settle), slowDown = maxStep (slow, back, back + ramp + settle);
+        const float acrossUp = maxStep (fast, at, at + settle), acrossDown = maxStep (fast, back, back + settle);
+        INFO ("band " << j.band + 1 << " " << j.what << ": steady " << before << " / " << during << ", the jump "
+                      << acrossUp << " / " << acrossDown << ", the slow move " << slowUp << " / " << slowDown);
+        CHECK (acrossUp <= 1.1f * std::max ({ before, during, slowUp }));
+        CHECK (acrossDown <= 1.1f * std::max ({ before, during, slowDown }));
+    }
+}
+
+//==================================================================================================
+// The EQ in the instrument: parameters, state, the sky, telemetry, a sweep of every parameter.
+namespace
+{
+using worldtable::PluginProcessor;
+
+void setParam (PluginProcessor& p, const char* id, float realValue)
+{
+    auto* param = dynamic_cast<juce::RangedAudioParameter*> (p.getValueTreeState().getParameter (id));
+    REQUIRE (param != nullptr);
+    param->setValueNotifyingHost (param->convertTo0to1 (realValue));
+}
+
+float defaultOf (PluginProcessor& p, const char* id)
+{
+    auto* param = dynamic_cast<juce::RangedAudioParameter*> (p.getValueTreeState().getParameter (id));
+    REQUIRE (param != nullptr);
+    return param->convertFrom0to1 (param->getDefaultValue());
+}
+
+constexpr float kCeiling = 0.8913f * 1.0005f;   // −1 dBFS (+ rounding)
+
+/** Renders `seconds` in blocks of `block`, cut at a 0.1 s grid where `atGrid(sample)` may set
+    parameters; counts what processBlock allocates. Returns left then right. */
+std::vector<float> render (PluginProcessor& p, int block, double seconds, const std::function<void (int)>& atGrid, int64_t& allocations)
+{
+    const int total = static_cast<int> (seconds * kRate), grid = 4800;
+    std::vector<float> out (static_cast<size_t> (2 * total));
+    juce::AudioBuffer<float> buffer (2, block);
+    juce::MidiBuffer midi;
+    for (int done = 0; done < total;)
+    {
+        if (atGrid && done % grid == 0)
+            atGrid (done);
+        const int n = std::min ({ block, total - done, grid - done % grid });
+        buffer.setSize (2, n, false, false, true);
+        buffer.clear();
+        const auto before = testing::allocationsOnThisThread();
+        p.processBlock (buffer, midi);
+        allocations += testing::allocationsOnThisThread() - before;
+        for (int ch = 0; ch < 2; ++ch)
+            std::copy (buffer.getReadPointer (ch), buffer.getReadPointer (ch) + n, out.begin() + ch * total + done);
+        done += n;
+    }
+    return out;
+}
+
+struct EqParam
+{
+    const char* id;
+    float min, max, base;
+};
+
+/** The sweep's base: a coloured EQ with every band driven, the cut at 6 kHz opened by the sky. */
+const EqParam kEqParams[] = {
+    { "eq1_freq", 30.0f, 400.0f, 110.0f },   { "eq1_gain", -12.0f, 12.0f, 6.0f },  { "eq1_drive", 0.0f, 1.0f, 0.5f },
+    { "eq2_freq", 80.0f, 3000.0f, 420.0f },  { "eq2_gain", -12.0f, 12.0f, -6.0f }, { "eq2_q", 0.3f, 6.0f, 1.0f },
+    { "eq2_drive", 0.0f, 1.0f, 0.5f },       { "eq3_freq", 500.0f, 12000.0f, 2400.0f }, { "eq3_gain", -12.0f, 12.0f, 6.0f },
+    { "eq3_q", 0.3f, 6.0f, 1.0f },           { "eq3_drive", 0.0f, 1.0f, 0.5f },    { "eq4_freq", 200.0f, 20000.0f, 6000.0f },
+    { "eq4_drive", 0.0f, 1.0f, 0.5f },       { "eq_sky", 0.0f, 1.0f, 0.5f },
+};
+constexpr double kLead = 1.0, kPerParam = 1.5;
+
+/** Each parameter in turn, on the 0.1 s grid: 0.3 s from its base down to its minimum, 0.9 s up to
+    its maximum, 0.3 s back to its base (frequencies in octaves). */
+void sweepEq (PluginProcessor& p, int at)
+{
+    const double t = at / kRate - kLead;
+    const int which = t < 0.0 ? -1 : static_cast<int> (t / kPerParam);
+    const double u = t - which * kPerParam;
+    int i = 0;
+    for (const auto& e : kEqParams)
+    {
+        float v = e.base;
+        if (i++ == which)
+        {
+            const bool logScale = std::string (e.id).find ("freq") != std::string::npos;
+            const auto mix = [logScale] (float a, float b, double w)
+            {
+                return logScale ? static_cast<float> (a * std::pow (b / a, w)) : static_cast<float> (a + (b - a) * w);
+            };
+            v = u < 0.3 ? mix (e.base, e.min, u / 0.3) : u < 1.2 ? mix (e.min, e.max, (u - 0.3) / 0.9) : mix (e.max, e.base, std::min (1.0, (u - 1.2) / 0.3));
+        }
+        setParam (p, e.id, v);
+    }
+}
+} // namespace
+
+TEST_CASE ("EQ in the instrument: the parameters' defaults are the EQ's", "[processor][eq][params]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+    PluginProcessor p (false);
+    const Eq::Settings d;
+    const char* freq[] = { "eq1_freq", "eq2_freq", "eq3_freq", "eq4_freq" };
+    const char* drive[] = { "eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive" };
+    for (size_t b = 0; b < Eq::kBands; ++b)
+    {
+        INFO ("band " << b + 1);
+        CHECK_THAT (defaultOf (p, freq[b]), Catch::Matchers::WithinRel (d.bands[b].hz, 1.0e-4f));
+        CHECK_THAT (defaultOf (p, drive[b]), Catch::Matchers::WithinAbs (d.bands[b].drive, 1.0e-4));
+        CHECK_THAT (defaultOf (p, drive[b]), Catch::Matchers::WithinAbs (Eq::kDefaultDrive[b], 1.0e-4));
+    }
+    for (const char* id : { "eq1_gain", "eq2_gain", "eq3_gain" })
+        CHECK_THAT (defaultOf (p, id), Catch::Matchers::WithinAbs (0.0, 1.0e-6));
+    CHECK_THAT (defaultOf (p, "eq2_q"), Catch::Matchers::WithinAbs (d.bands[1].q, 1.0e-4));
+    CHECK_THAT (defaultOf (p, "eq3_q"), Catch::Matchers::WithinAbs (d.bands[2].q, 1.0e-4));
+    CHECK_THAT (defaultOf (p, "eq_sky"), Catch::Matchers::WithinAbs (dsp::Sources::Settings {}.eqSky, 1.0e-4));
+    for (const char* gone : { "flt_type", "flt_cutoff", "flt_reso", "flt_sky", "drive" })
+        CHECK (p.getValueTreeState().getParameter (gone) == nullptr);
+}
+
+TEST_CASE ("EQ in the instrument: a v3 state (Filter, Drive) loads with the EQ's defaults", "[state][migration][eq]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+    CHECK (PluginProcessor::kStateVersion >= 4);
+
+    PluginProcessor p (false);
+    setParam (p, "eq1_gain", 9.0f);    // not at their defaults: the old state must reset them
+    setParam (p, "eq4_freq", 800.0f);
+    juce::ValueTree old (PluginProcessor::kStateType);
+    old.setProperty (PluginProcessor::kStateVersionId, 3, nullptr);
+    for (const auto& [id, value] : { std::pair<const char*, float> { "flt_type", 1.0f }, { "flt_cutoff", 900.0f }, { "flt_reso", 0.8f },
+                                     { "flt_sky", 1.0f }, { "drive", 0.7f }, { "rev_mix", 0.6f } })
+    {
+        juce::ValueTree param ("PARAM");
+        param.setProperty ("id", id, nullptr);
+        param.setProperty ("value", value, nullptr);
+        old.appendChild (param, nullptr);
+    }
+    juce::MemoryBlock blob;
+    if (auto xml = old.createXml())
+        juce::AudioProcessor::copyXmlToBinary (*xml, blob);
+    p.setStateInformation (blob.getData(), static_cast<int> (blob.getSize()));
+
+    auto& apvts = p.getValueTreeState();
+    CHECK (std::abs (apvts.getRawParameterValue ("rev_mix")->load() - 0.6f) < 1.0e-3f);   // the rest loads
+    for (const char* id : { "eq1_freq", "eq1_gain", "eq1_drive", "eq2_freq", "eq2_gain", "eq2_q", "eq2_drive", "eq3_freq",
+                            "eq3_gain", "eq3_q", "eq3_drive", "eq4_freq", "eq4_drive", "eq_sky" })
+    {
+        INFO (id);
+        CHECK (std::abs (apvts.getRawParameterValue (id)->load() - defaultOf (p, id)) < 1.0e-3f);
+    }
+    juce::MemoryBlock saved;
+    p.getStateInformation (saved);
+    auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), static_cast<int> (saved.getSize()));
+    REQUIRE (xml != nullptr);
+    CHECK (static_cast<int> (juce::ValueTree::fromXml (*xml).getProperty (PluginProcessor::kStateVersionId)) == PluginProcessor::kStateVersion);
+}
+
+TEST_CASE ("EQ in the instrument: the sky opens the cut as the filter did (same reach, same slew)", "[processor][eq][sky]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+    CHECK (dsp::Sources::kEqSkyOctaves == Catch::Approx (3.0));     // the filter's reach
+    CHECK (dsp::Sources::kSkySlewSeconds == Catch::Approx (2.0));   // and its slew
+
+    for (const float sky : { 1.0f, 0.5f, 0.0f })
+    {
+        PluginProcessor p (false);
+        setParam (p, "eq4_freq", 1000.0f);
+        setParam (p, "eq_sky", sky);
+        p.setPlayConfigDetails (0, 2, kRate, 480);
+        p.prepareToPlay (kRate, 480);
+        CHECK_THAT (p.getInstrument().getTelemetry().eqCutHz.load(), Catch::Matchers::WithinRel (1000.0f, 1.0e-4f));
+
+        // two seconds where the Journey starts, then a jump to its strongest substorm onset: the
+        // activity, slewed, climbs there over seconds and the cut must follow it the whole way
+        const auto& chart = p.getSkyFeed().dayChart();
+        REQUIRE (! chart.onsets.empty());
+        const auto strongest = std::max_element (chart.onsets.begin(), chart.onsets.end(),
+                                                 [] (const auto& x, const auto& y) { return x.strength < y.strength; });
+        juce::AudioBuffer<float> buffer (2, 480);
+        juce::MidiBuffer midi;
+        double worst = 0.0, lowest = 10.0, highest = 0.0;
+        for (int b = 0; b < 1200; ++b)   // 12 s, a block per tick
+        {
+            if (b == 200)
+                p.getSky().seek (strongest->utc + 60.0);
+            buffer.clear();
+            p.processBlock (buffer, midi);
+            const double act = std::min (p.getInstrument().sources().skyActivity(), 1.0);
+            const double expected = std::min (20000.0, 1000.0 * std::pow (2.0, 3.0 * sky * act));
+            const double cut = p.getInstrument().getTelemetry().eqCutHz.load();
+            lowest = std::min (lowest, act);
+            highest = std::max (highest, act);
+            if (b >= 10)   // past the first tick's glide
+                worst = std::max (worst, std::abs (std::log2 (cut / expected)));
+        }
+        std::printf ("EQ sky %.1f: slewed activity %.3f … %.3f, the cut within %.4f octaves of 1 kHz × 2^(3 · sky · activity)\n",
+                     static_cast<double> (sky), lowest, highest, worst);
+        CHECK (worst < 0.01);
+        CHECK (highest - lowest > 0.1);   // the sky moved during the test
+    }
+}
+
+TEST_CASE ("EQ in the instrument: the telemetry carries the cut now", "[processor][eq]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+    PluginProcessor p (false);
+    p.setPlayConfigDetails (0, 2, kRate, 512);
+    p.prepareToPlay (kRate, 512);
+    CHECK_THAT (p.getInstrument().getTelemetry().eqCutHz.load(), Catch::Matchers::WithinULP (Eq::kOpenHz, 0));   // open at the defaults
+
+    setParam (p, "eq4_freq", 3000.0f);
+    setParam (p, "eq_sky", 0.0f);
+    juce::AudioBuffer<float> buffer (2, 512);
+    juce::MidiBuffer midi;
+    for (int b = 0; b < 50; ++b)
+        p.processBlock (buffer, midi);
+    const float set = p.getValueTreeState().getRawParameterValue ("eq4_freq")->load();   // 3000 after the host's rounding
+    CHECK_THAT (set, Catch::Matchers::WithinRel (3000.0f, 1.0e-3f));
+    CHECK_THAT (p.getInstrument().getTelemetry().eqCutHz.load(), Catch::Matchers::WithinRel (set, 1.0e-5f));
+}
+
+TEST_CASE ("EQ in the instrument: sweeping every EQ parameter while the drone plays: no clicks, finite, under the ceiling, "
+           "the same at two block sizes, no allocation", "[processor][eq][render]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+    const double seconds = kLead + kPerParam * static_cast<double> (std::size (kEqParams)) + 1.0;
+
+    const auto run = [seconds] (int block, bool sweep, int64_t& allocations)
+    {
+        PluginProcessor p (false);
+        sweepEq (p, 0);   // the base
+        p.setPlayConfigDetails (0, 2, kRate, block);
+        p.prepareToPlay (kRate, block);
+        return render (p, block, seconds, [&p, sweep] (int at) { if (sweep) sweepEq (p, at); }, allocations);
+    };
+    int64_t allocations = 0;
+    const auto a = run (512, true, allocations);
+    const auto b = run (333, true, allocations);
+    const auto still = run (512, false, allocations);
+    CHECK (allocations == 0);
+
+    int nonFinite = 0;
+    float peak = 0.0f;
+    for (const float x : a)
+    {
+        nonFinite += std::isfinite (x) ? 0 : 1;
+        peak = std::max (peak, std::abs (x));
+    }
+    CHECK (nonFinite == 0);
+    CHECK (peak <= kCeiling);
+
+    double maxDiff = 0.0;
+    for (size_t i = 0; i < a.size(); ++i)
+        maxDiff = std::max (maxDiff, static_cast<double> (std::abs (a[i] - b[i])));
+    INFO ("block 512 vs 333: max sample difference " << maxDiff);
+    CHECK (maxDiff == Catch::Approx (0.0).margin (0.0));
+
+    // No clicks: no 10 ms window jumps out of its ±0.5 s neighbourhood more than the still base does
+    const size_t total = a.size() / 2;
+    const auto maxStep = [] (const std::vector<float>& z, size_t from, size_t to)
+    {
+        float m = 0.0f;
+        for (size_t i = std::max<size_t> (from, 1); i < to; ++i)
+            m = std::max (m, std::abs (z[i] - z[i - 1]));
+        return m;
+    };
+    for (size_t ch = 0; ch < 2; ++ch)
+    {
+        const std::vector<float> x (a.begin() + static_cast<long> (ch * total), a.begin() + static_cast<long> ((ch + 1) * total));
+        const std::vector<float> y (still.begin() + static_cast<long> (ch * total), still.begin() + static_cast<long> ((ch + 1) * total));
+        const auto outlier = [total, &maxStep] (const std::vector<float>& z, double& at)
+        {
+            std::vector<float> windows;
+            for (size_t w = 0; w + 480 <= total; w += 480)
+                windows.push_back (maxStep (z, w, w + 481));
+            float worst = 0.0f;
+            for (size_t w = 50; w + 50 < windows.size(); ++w)
+            {
+                std::vector<float> around (windows.begin() + static_cast<long> (w - 50), windows.begin() + static_cast<long> (w + 50));
+                std::nth_element (around.begin(), around.begin() + 50, around.end());
+                const float r = windows[w] / std::max (around[50], 1.0e-6f);
+                if (r > worst)
+                {
+                    worst = r;
+                    at = static_cast<double> (w) * 0.01;
+                }
+            }
+            return worst;
+        };
+        double atSwept = 0.0, atStill = 0.0;
+        const float worstRatio = outlier (x, atSwept), referenceRatio = outlier (y, atStill);
+        std::printf ("EQ sweep, channel %d: max step %.4f (still %.4f), worst 10 ms window %.2fx its neighbourhood's median at "
+                     "%.2f s (still %.2fx at %.2f s), peak %.2f dBFS, block 512 vs 333 max difference %g\n",
+                     static_cast<int> (ch), static_cast<double> (maxStep (x, 0, total)), static_cast<double> (maxStep (y, 0, total)),
+                     static_cast<double> (worstRatio), atSwept, static_cast<double> (referenceRatio), atStill,
+                     20.0 * std::log10 (static_cast<double> (peak)), maxDiff);
+        CHECK (worstRatio < std::max (3.0f, 1.25f * referenceRatio));   // a click would stand far out
+    }
 }
