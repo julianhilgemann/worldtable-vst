@@ -263,7 +263,10 @@ TEST_CASE ("Extreme settings stay finite and under the ceiling", "[processor][re
     juce::ScopedJuceInitialiser_GUI juceEnv;
 
     PluginProcessor p (false);
-    setParam (p, "drive", 1.0f);
+    for (const char* id : { "eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive" })   // T3.9
+        setParam (p, id, 1.0f);
+    setParam (p, "eq1_gain", 12.0f);
+    setParam (p, "eq3_gain", 12.0f);
     setParam (p, "ph_mix", 1.0f);
     setParam (p, "ph_feedback", 0.8f);
     setParam (p, "ph_depth", 1.0f);

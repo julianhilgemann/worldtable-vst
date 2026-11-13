@@ -105,7 +105,10 @@ juce::ValueTree PluginProcessor::migrateState (juce::ValueTree state)
     // v2 → v3 (T3.8): register_semis, spread and low_octave gave way to the band edges, tones and
     // shifts. The old three no longer bind; the new parameters are absent from a v2 state, so they
     // load at their defaults (the default bands).
-    // v3 → v4 (T6.9): the `journey` child (day, speed, frozen, loop, model time). An older state
+    // v3 → v4 (T3.9): flt_type, flt_cutoff, flt_reso, flt_sky and drive gave way to the EQ (eq1_freq
+    // … eq_sky). The old five no longer bind; the EQ's parameters are absent from a v3 state, so it
+    // loads flat with the cut open and the default drives.
+    // v4 → v5 (T6.9): the `journey` child (day, speed, frozen, loop, model time). An older state
     // has none, so the Journey restores to its defaults (JourneyState::fromTree of nothing): the
     // storm day from 17:20 UT at 24×, running, no loop. Future upgrades go here.
     state.setProperty (kStateVersionId, kStateVersion, nullptr);

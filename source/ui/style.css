@@ -4,7 +4,8 @@
  * lines and the three resonator bands; everything a person sets is in starlight ink, and state is
  * said in words, weight and fill (spec/09 §2). Light lives in the dome and the magnetogram.
  * Type: Instrument Sans for words (12 labels, 13 titles), JetBrains Mono for numbers (11 values,
- * 17 clock); nothing under 12 px for words outside pictures, 10 px for axis numbers. */
+ * 17 clock); nothing under 12 px for words outside pictures and the Sky block (10.5 there), 10 px
+ * for axis numbers. Layout (T6.8): spec/09 §3, the page follows the signal. */
 
 @font-face {
   font-family: "Instrument Sans";
@@ -74,17 +75,17 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   width: 1350px;
   height: 900px;
   transform-origin: 0 0;
-  padding: 0 12px;
+  padding: 0 10px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  /* header, magnetogram, harmony and sky, the three columns, the hint line (T6.7) */
-  grid-template-rows: 44px 64px 164px minmax(0, 1fr) 28px;
-  row-gap: 8px;
+  /* spec/09 §3 (T6.8): top bar, the day, resonators │ dome │ harmony, effects │ macros │ effects, the hint line */
+  grid-template-rows: 44px 92px 448px 260px 28px;
+  row-gap: 7px;
   overflow: hidden;
   /* the dome's light bleeds into the page (spec/06); nothing else tints the ground. app.js eases
-     the sky's colour and writes this gradient a few times a second */
+     the sky's colour and writes this gradient a few times a second (centred on the dome) */
   background-color: var(--ground);
-  background-image: radial-gradient(circle at 664px 520px, rgba(92, 242, 160, 0.06) 0, rgba(92, 242, 160, 0) 330px);
+  background-image: radial-gradient(circle at 676px 374px, rgba(92, 242, 160, 0.06) 0, rgba(92, 242, 160, 0) 330px);
 }
 
 /* ---------------------------------------------------------------- type helpers */
@@ -107,7 +108,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 /* every picture sits in a well */
-.well, canvas.view, #cv-layers, #cv-voicing, #cv-keys {
+.well, canvas.view, #cv-keys {
   background: var(--well);
   border: 1px solid var(--well-line);
   border-radius: 7px;
@@ -118,46 +119,58 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 24px;
+  height: 20px;
   flex: none;
   min-width: 0;
 }
-.head .cap, .head .cap b, .side .cap { font: 500 13px/1 var(--sans); color: var(--ink-hi); white-space: nowrap; }
-.head .spacer { flex: 1; }
+.head .cap { font: 500 13px/1 var(--sans); color: var(--ink-hi); white-space: nowrap; }
+.head .spacer, header .spacer { flex: 1; }
 .note { font: 400 12px/1.2 var(--sans); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .note b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
 
-/* ---------------------------------------------------------------- header */
+/* a module's title opens its More popover (spec/09 §5): the parameters without a visible knob */
+.more-btn {
+  display: inline-flex; align-items: center; gap: 4px; flex: none;
+  height: 24px; margin-left: -5px; padding: 0 5px; border-radius: 6px;
+  transition: background-color 0.2s;
+}
+.more-btn .chev { display: block; color: var(--muted); transition: transform 0.2s, color 0.2s; }
+.more-btn:hover { background: rgba(201, 211, 230, 0.07); }
+.more-btn:hover .chev { color: var(--ink-hi); }
+.more-btn[aria-expanded="true"] { background: var(--selected); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.more-btn[aria-expanded="true"] .chev { color: var(--ink-hi); transform: rotate(180deg); }
+/* the popover opens under the title, over the module's picture; Escape or a click outside closes it.
+   Its own compositing layer: WebKit paints z-indexed overlays reliably that way (spec/06 §Rendering) */
+.more {
+  position: absolute; top: 36px; left: 6px; z-index: 6; transform: translateZ(0);
+  padding: 8px 12px 6px; border-color: var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+.more.r { left: auto; right: 6px; }
+.more.wide { right: 6px; padding-top: 4px; }
+.module .more .knobs { display: flex; justify-content: flex-start; gap: 12px; margin: 0; }
+.more .choice-line { margin: 0; }
+
+/* ---------------------------------------------------------------- top bar */
 header {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: 0 -12px;
+  margin: 0 -10px;
   padding: 0 14px;
   border-bottom: 1px solid var(--line);
   background: linear-gradient(180deg, #0d121d, #080b13);
 }
-.brand { display: flex; align-items: center; gap: 9px; margin-right: 6px; }
+.brand { display: flex; align-items: center; gap: 9px; margin-right: 10px; }
 .brand svg { display: block; }
 .brand .word { font: 500 15px/1 var(--sans); color: var(--ink-hi); }
+/* the clock: the moment of the recorded day */
+.clock { display: flex; align-items: baseline; gap: 8px; min-width: 196px; font: 400 12px/1 var(--mono); color: var(--muted); white-space: nowrap; }
+.clock b { font: 500 17px/1 var(--mono); color: var(--ink-hi); }
+#cv-hmeter { width: 120px; height: 22px; display: block; }
 
-.readouts {
-  flex: 1;
-  display: flex;
-  justify-content: flex-end;
-  align-items: baseline;
-  gap: 16px;
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.readouts b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
-.readouts .ut b { font-size: 17px; }
-.readouts .sep { width: 1px; height: 16px; background: var(--line-hi); align-self: center; }
-
-/* chips: Play, Journey, Details, Ping-pong (spec/09 §4: 22–28 high, radius 5–7) */
-.chip, .play-btn, .details-btn, .mode {
+/* chips: Journey, Ping-pong, Details (spec/09 §4: 22–28 high, radius 5–7) */
+.chip, .mode {
   display: inline-flex; align-items: center; gap: 7px;
   height: 28px; padding: 0 11px;
   border: 1px solid var(--line-hi); border-radius: 7px;
@@ -165,42 +178,43 @@ header {
   white-space: nowrap;
   transition: color 0.2s, border-color 0.2s, background-color 0.2s;
 }
-.chip { height: 24px; padding: 0 9px; border-radius: 6px; border-color: var(--line); color: var(--muted); }
-.chip:hover, .play-btn:hover, .details-btn:hover { background: rgba(201, 211, 230, 0.07); color: var(--ink-hi); }
-.chip.on, .chip[aria-expanded="true"], .play-btn.on, .details-btn[aria-expanded="true"], .mode {
+.chip { height: 24px; padding: 0 7px; border-radius: 6px; border-color: var(--line); color: var(--muted); }
+.chip:hover { background: rgba(201, 211, 230, 0.07); color: var(--ink-hi); }
+.chip.on, .chip[aria-expanded="true"], .mode {
   background: var(--selected); color: var(--ink-hi); border-color: var(--line-hi);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-.play-btn svg { display: block; }
-.play-btn { color: var(--muted); }
-.play-btn.on { font-weight: 500; }
 /* Journey is running, so its dot breathes; slowly, and in ink */
 .mode { cursor: default; }
 .mode i { width: 6px; height: 6px; border-radius: 3px; background: var(--ink-hi); animation: breathe-dot 4s ease-in-out infinite; }
 .mode b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
 @keyframes breathe-dot { 50% { opacity: 0.4; } }
-#cv-hmeter { width: 64px; height: 24px; display: block; }
 
-/* ---------------------------------------------------------------- the hint line */
+/* ---------------------------------------------------------------- bottom bar: details, the hint line, auto-gain */
 #hintbar {
-  margin: 0 -12px;
-  display: flex; align-items: center; justify-content: center;
-  padding: 0 14px;
+  margin: 0 -10px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 12px;
   border-top: 1px solid var(--line);
   background: #080b13;
   min-width: 0;
 }
-#hint { font: 400 12px/1 var(--sans); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#hint { flex: 1; min-width: 0; text-align: center; font: 400 12px/1 var(--sans); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.info-btn { width: 24px; height: 24px; padding: 0; justify-content: center; font: 600 12.5px/1 var(--mono); }
+#out-note { min-width: 96px; text-align: right; font: 400 12px/1 var(--mono); color: var(--muted); }
 
-/* ---------------------------------------------------------------- rows and columns */
-#row-a { display: grid; grid-template-columns: 770px minmax(0, 1fr); column-gap: 8px; min-height: 0; }
-#main { display: grid; grid-template-columns: 420px 448px minmax(0, 1fr); column-gap: 8px; min-height: 0; }
-.col { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
-#col-left > .module, #col-right > * { flex: 1 1 0; min-height: 0; }
-#col-left > #layers { flex-grow: 1.18; }
-.fx-row { display: flex; gap: 8px; }
-.fx-row > .module { min-width: 0; }
+/* ---------------------------------------------------------------- rows and columns (spec/09 §3) */
+#dayrow { display: grid; grid-template-columns: 1110px 213px; column-gap: 7px; min-height: 0; }
+#main, #lower { display: grid; grid-template-columns: 435px 448px 433px; column-gap: 7px; min-height: 0; }
+.col { display: flex; flex-direction: column; gap: 7px; min-height: 0; min-width: 0; }
+#resonators { flex: 0 0 264px; }
+#eq { flex: 1 1 0; }
+.grp { display: flex; gap: 7px; min-width: 0; min-height: 0; }
+#phaser, #chorus, #reverb { flex: 1 1 0; }
+#delay { flex: 0 0 146px; }
+#output { flex: 0 0 98px; }
 
+/* ---------------------------------------------------------------- the dome (unchanged, spec/09 §6) */
 #dome-wrap {
   position: relative;
   flex: none;
@@ -244,9 +258,61 @@ header {
 .legend i { width: 12px; height: 1.5px; }
 .legend .r { text-align: right; }
 
-/* ---------------------------------------------------------------- chord */
-#chord-card { padding: 8px 14px 10px; display: flex; flex-direction: column; }
-.chord-main { display: flex; align-items: baseline; gap: 12px; margin-top: 2px; height: 50px; min-width: 0; }
+/* ---------------------------------------------------------------- the day strip (T6.10 makes it a keogram) */
+#mag { position: relative; overflow: hidden; background: var(--well); }   /* a picture: its axis text needs the well */
+#cv-mag { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* ---------------------------------------------------------------- the Sky block (213 × 92): words at 10.5 px here */
+#sky { padding: 8px 12px 7px; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.sky-ttl { display: flex; align-items: center; gap: 8px; height: 16px; flex: none; }
+.sky-ttl .cap { font: 500 13px/1 var(--sans); color: var(--ink-hi); }
+.sky-ttl .ph { font: 500 12px/1 var(--sans); color: var(--ink-hi); white-space: nowrap; }
+.sky-ttl .bar { flex: 1; height: 4px; }
+.sky-nums { margin-top: 7px; font: 400 10.5px/12px var(--mono); color: var(--ink-hi); white-space: nowrap; }
+.sky-nums b { font-weight: 400; }
+.sky-nums .u { color: var(--muted); }
+.sky-two { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); column-gap: 6px; align-items: center; margin-top: 7px; font: 400 10.5px/12px var(--sans); color: var(--muted); }
+.sky-ev { margin-top: 7px; font: 400 10.5px/13px var(--sans); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sky-ev b { font: 400 10.5px/13px var(--mono); color: var(--muted); margin-right: 6px; }
+.bar { position: relative; height: 6px; border-radius: 3px; background: #161c2a; }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 3px; background: var(--ink); transition: width 1s linear; }
+.bar u { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; background: var(--ink-hi); transition: left 1s linear; }
+
+/* ---------------------------------------------------------------- modules */
+.module { padding: 10px 12px; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* the live picture takes whatever height the module has left */
+.module canvas.view { display: block; width: 100%; flex: 1 1 0; height: 0; min-height: 40px; margin: 6px 0 4px; }
+.module .knobs { display: flex; justify-content: space-around; align-items: flex-start; gap: 0; margin-top: auto; flex: none; }
+/* Delay is 146 wide: its title and Ping-pong share the row, the chip a touch narrower */
+#delay { padding: 10px 10px; }
+#delay .head { gap: 4px; }
+#delay .head .chip { margin-left: auto; padding: 0 6px; font-stretch: 90%; }
+
+/* resonators: the picture over two rows of knobs (level over decay per band │ detune, drift, width) */
+.res-knobs { display: flex; justify-content: space-between; align-items: center; flex: none; padding: 0 2px; }
+.res-knobs .kcol { display: flex; flex-direction: column; }
+.res-knobs .kcol > .knob + .knob { margin-top: -4px; }
+.res-knobs .vr { align-self: stretch; width: 1px; margin: 8px 0; background: var(--line); }
+.head .low-note { overflow: visible; font-size: 12px; }
+.head .low-note b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
+/* the Bands popover (T3.8's parameters, until T6.11 draws them in the picture) */
+.more.wide .head { margin-bottom: 2px; }
+.more.wide .head .cap { font-size: 12px; }
+.module .more.wide .knobs { justify-content: space-between; gap: 0; }
+.band-rows { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 0; margin-top: 2px; }
+.band-rows > .cap { font: 400 12px/1 var(--sans); color: var(--muted); }
+
+/* the tone module: T3.9's EQ as plain knobs until its display (T6.14): a column per band, the drive
+   under the gain; the frequencies, widths and the sky in its More popover */
+.eq-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); justify-items: center; margin-top: auto; flex: none; }
+.eq-grid > div:nth-child(n + 5) { margin-top: -4px; }
+#eq-more .head { margin-bottom: 2px; }
+#eq-more .head .cap { font-size: 12px; }
+
+/* ---------------------------------------------------------------- harmony: the chord, why, the rule, the notes, the choices */
+#chord-state.held { color: var(--ink-hi); font-weight: 500; }
+#chord-state.hold { color: var(--muted); }
+.chord-main { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; height: 50px; flex: none; min-width: 0; }
 #chord-text {
   font: 500 42px/50px var(--sans);
   letter-spacing: -0.02em;
@@ -256,115 +322,48 @@ header {
 }
 #chord-text.out { opacity: 0.15; }
 #chord-roman { font: 400 17px/1 var(--mono); color: var(--muted); }
-.chord-why { font-size: 12.5px; color: var(--muted); line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chord-why { flex: none; height: 18px; font-size: 12.5px; color: var(--muted); line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chord-why b { font-weight: 500; color: var(--ink-hi); }
-#cv-voicing { width: 100%; height: 66px; display: block; margin-top: auto; }
-
-/* who writes the chords: said in words and weight */
-.pill { display: inline-flex; align-items: center; gap: 7px; font: 400 12px/1 var(--sans); color: var(--ink); white-space: nowrap; }
-.pill i { width: 6px; height: 6px; border-radius: 3px; background: var(--ink-hi); }
-.pill.midi, .pill.play { color: var(--ink-hi); font-weight: 500; }
-.pill.hold { color: var(--muted); }
-.pill.hold i { background: var(--muted); }
-.pill .next { color: var(--muted); margin-left: 8px; font-weight: 400; }
-
-/* ---------------------------------------------------------------- sky */
-#sky-card { padding: 8px 14px 8px; display: flex; flex-direction: column; gap: 6px; }
-#sky-card .head { height: 20px; }
-.phase-track { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; height: 24px; flex: none; }
-.phase-track div {
-  position: relative;
-  border-radius: 6px;
-  background: var(--well);
-  border: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--faint);
-  display: flex; align-items: center; padding-left: 9px;
+/* the rule: each phase asks for one kind of chord; the one that applies now is filled */
+.rule { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-top: 10px; flex: none; }
+.rule div {
+  border-radius: 6px; background: var(--well); border: 1px solid var(--line);
+  padding: 5px 8px; font: 400 12px/14px var(--sans); color: var(--muted); white-space: nowrap; overflow: hidden;
   transition: color 1.5s, border-color 1.5s, background-color 1.5s;
-  overflow: hidden;
 }
-.phase-track div i {
-  position: absolute; left: 0; bottom: 0; height: 2px; width: 0;
-  background: var(--ink-hi); transition: width 1s linear;
-}
-.phase-track div.on { color: var(--ink-hi); font-weight: 500; border-color: var(--line-hi); background: #161d2c; }
-.phase-track div:not(.on) i { opacity: 0; }
-
-.sky-row { display: flex; flex-wrap: wrap; column-gap: 16px; font-size: 12px; line-height: 18px; color: var(--muted); white-space: nowrap; }
-.sky-row b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
-.sky-row .bar { display: inline-block; position: relative; width: 56px; height: 6px; margin: 0 8px 1px 6px; border-radius: 3px; background: #161c2a; vertical-align: middle; }
-.sky-row .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--ink); transition: width 1s linear; }
-.sky-row .bar u { position: absolute; top: -3px; width: 2px; height: 12px; border-radius: 1px; background: var(--ink-hi); }
-
-#ticker { list-style: none; margin: auto 0 0; padding: 5px 0 0; border-top: 1px solid var(--line); font-size: 12px; line-height: 17px; min-height: 56px; }
-#ticker li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); transition: opacity 1s; }
-#ticker li:nth-child(1) { color: var(--ink-hi); }
-#ticker li .t { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-right: 10px; }
-#ticker li b { font-weight: 500; color: var(--ink-hi); }
-#ticker li.fresh { animation: tick-in 2.5s ease-out; }
-@keyframes tick-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
-
-/* ---------------------------------------------------------------- macros: one row, the title beside it */
-#macros { padding: 8px 12px 8px 14px; display: flex; align-items: center; gap: 4px; flex: 1 1 0; min-height: 0; }
-#macros .side { width: 74px; flex: none; display: flex; flex-direction: column; gap: 6px; align-self: flex-start; padding-top: 6px; }
-#macros .side .note { white-space: normal; line-height: 15px; }
-.macro-row { flex: 1; display: flex; justify-content: space-between; align-items: flex-start; }
-
-/* ---------------------------------------------------------------- magnetogram */
-#mag { position: relative; overflow: hidden; background: var(--well); }   /* a picture: its axis text needs the well */
-#cv-mag { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-
-/* ---------------------------------------------------------------- modules */
-.module { padding: 6px 12px 6px; display: flex; flex-direction: column; min-width: 0; }
-/* the live picture takes whatever height the module has left */
-.module canvas.view { display: block; width: 100%; flex: 1 1 0; height: 0; min-height: 40px; margin: 4px 0 4px; }
-.module .knobs { display: flex; justify-content: space-around; align-items: flex-start; gap: 0; margin-top: auto; }
-.filter-views { display: flex; gap: 6px; flex: 1 1 0; min-height: 40px; margin: 4px 0 4px; }
-.filter-views canvas.view { height: auto; min-height: 0; margin: 0; }
-.filter-views #cv-filter { flex: 1 1 0; width: 0; min-width: 0; }   /* never sized by its own pixels (T6.6 fix) */
-.filter-views #cv-drive { flex: 0 0 52px; width: 52px; }
-
-/* harmony and layers */
-#harmony { padding: 6px 12px 8px; }
-.harmony-grid { display: grid; grid-template-columns: 388px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: 10px; margin-top: 4px; flex: 1; min-height: 0; }
-.harmony-grid > .knobs { grid-column: 2; grid-row: 1; align-self: end; justify-content: space-between; }
-/* Play mode (T3.7): key, mood, scale and shape steer only the sky's chords, so the keyboard and
-   the Play controls take their place; the six knobs stay */
-.harmony-grid > .choice-stack, .harmony-grid > .play-stack { grid-column: 1; grid-row: 1; transition: opacity 0.6s, visibility 0.6s; }
-.harmony-grid > .play-stack { opacity: 0; visibility: hidden; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+.rule div b { display: block; font-weight: 500; color: var(--muted); transition: color 1.5s; }
+.rule div.on { border-color: var(--line-hi); background: #161d2c; color: var(--ink); }
+.rule div.on b { color: var(--ink-hi); }
+/* the notes sounding, C1 to C7, coloured by their band; in Play mode the keys you hold */
+#cv-keys { display: block; width: 100%; height: 70px; flex: none; margin-top: 12px; }
+.choice-line { display: flex; align-items: center; gap: 8px; }
+.choice-line .cap { width: 38px; flex: none; font: 400 12px/1 var(--sans); color: var(--muted); }
+.choice-line .note { margin-left: 4px; }
+.key-line { margin-top: 12px; flex: none; }
+/* Play mode (T3.7): mood and scale steer only the sky's chords, so the Play controls take their
+   place; nothing else moves */
+.harmony-swap { display: grid; grid-template-columns: minmax(0, 1fr); margin-top: 10px; flex: none; }
+.harmony-swap > .choice-stack, .harmony-swap > .play-stack { grid-column: 1; grid-row: 1; transition: opacity 0.6s, visibility 0.6s; }
+.choice-stack { display: flex; flex-direction: column; gap: 10px; }
+.play-stack { opacity: 0; visibility: hidden; }
+.play-stack .knobs { justify-content: flex-start; gap: 22px; margin-top: -4px; }
 #harmony.is-play .play-stack { opacity: 1; visibility: visible; }
 #harmony.is-play .choice-stack { opacity: 0; visibility: hidden; }
-#cv-keys { display: block; width: 100%; height: 34px; flex: none; }
-.play-stack .knobs { justify-content: flex-start; gap: 18px; margin-top: auto; }
-.choice-stack { display: flex; flex-direction: column; gap: 4px; }
-.choice-line { display: flex; align-items: center; gap: 6px; }
-.choice-line .cap { width: 40px; flex: none; font: 400 12px/1 var(--sans); color: var(--muted); }
-.choice-line .note { margin-left: 4px; }
-.layers-grid { display: grid; grid-template-columns: minmax(0, 1fr) 196px 48px; grid-template-rows: minmax(0, 1fr); column-gap: 6px; margin-top: 4px; flex: 1; min-height: 0; }
-.layers-grid canvas { width: 100%; height: 100%; display: block; }
-.layer-knobs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 2px; align-content: end; justify-items: center; }
-.layers-grid .width-knob { align-self: end; }
-.head .low-note { overflow: visible; font-size: 12px; }
-.head .low-note b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
-/* T3.8: the band parameters, plain, in a popover over the Layers card until T6.11 draws them */
-#layers { position: relative; }
-.bands-panel {
-  position: absolute; left: 8px; right: 8px; top: 34px; z-index: 4; transform: translateZ(0);
-  padding: 6px 12px 8px; border-color: var(--line-hi);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-.bands-panel .knobs { display: flex; justify-content: space-between; margin-top: 4px; }
-.band-rows { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 0; margin-top: 4px; }
-.band-rows > .cap { font: 400 12px/1 var(--sans); color: var(--muted); }
+.harmony-knobs { justify-content: flex-start !important; gap: 26px !important; }
 
-/* details popover: observer, journey, data */
+/* ---------------------------------------------------------------- the centre block: macros, at 50 px until T4.2 */
+#macros { padding: 10px 14px 12px; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.macro-row { flex: 1; display: flex; justify-content: space-around; align-items: center; padding-bottom: 8px; }
+
+/* details popover: observer, journey, the sky's numbers, data; it opens from the bottom bar */
 .details {
-  position: absolute; top: 48px; right: 12px; z-index: 5;
+  position: absolute; left: 10px; bottom: 34px; z-index: 7; transform: translateZ(0);
   display: flex; gap: 8px; padding: 6px;
   border-color: var(--line-hi);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
-.details .module { padding: 6px 10px; }
+/* widths, not flex bases: WebKit sizes the absolutely placed popover from its items' widths */
+.details .module { flex: none; padding: 6px 10px 8px; }
 .info-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; row-gap: 5px; margin-top: 6px; font-size: 12px; color: var(--muted); }
 .info-grid b { font-family: var(--mono); color: var(--ink-hi); font-weight: 500; }
 .info-grid .k { color: var(--muted); }
@@ -389,8 +388,8 @@ header {
 .knob .value { width: 0; display: flex; justify-content: center; position: relative; font: 400 11px/14px var(--mono); color: var(--muted); white-space: nowrap; transition: color 0.2s; }
 .knob:hover .value, .knob.active .value, .knob:focus-visible .value { color: var(--ink-hi); }
 .knob:hover .track { stroke: rgba(201, 211, 230, 0.2); }
-.knob.macro { min-width: 64px; }
-.knob.macro .label { font: 500 13.5px/16px var(--sans); color: var(--ink-hi); margin-top: -8px; }
+.knob.macro { min-width: 72px; }
+.knob.macro .label { font: 500 13.5px/16px var(--sans); color: var(--ink-hi); margin-top: -9px; }
 /* a source pointed at lights what it moves */
 .knob.lit::before { content: ""; position: absolute; inset: -2px -4px; border: 1px solid var(--line-hi); border-radius: 8px; pointer-events: none; }
 .knob.lit .ring { opacity: 1; }
@@ -421,9 +420,11 @@ header {
 .seg button:focus-visible { outline-offset: 1px; }
 .seg.small button { padding: 0 7px; }
 [data-seg="scale"] button { padding: 0 7px; }
-[data-seg="flt_type"] button, [data-seg="chord_shape"] button { font-family: var(--mono); min-width: 26px; }
+[data-seg="chord_shape"] button { font-family: var(--mono); min-width: 26px; }
 .seg.keys { gap: 2px; background: none; border: 0; }
-.seg.keys button { padding: 0; width: 26px; text-align: center; border-radius: 5px; }
+.seg.keys button { padding: 0; width: 28px; text-align: center; border-radius: 5px; }
+/* Drone | Play in the Harmony title row */
+.mode-seg button { padding: 0 10px; }
 
 /* the dome's View switches */
 .toggle { display: flex; align-items: center; gap: 9px; height: 26px; padding: 0 4px; border-radius: 5px; font: 400 12px/1 var(--sans); color: var(--muted); text-align: left; }
@@ -438,5 +439,4 @@ header {
 
 @media (prefers-reduced-motion: reduce) {
   .mode i { animation: none; }
-  #ticker li.fresh { animation: none; }
 }

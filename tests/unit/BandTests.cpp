@@ -673,7 +673,7 @@ TEST_CASE ("Bands: the low resonator sits from the floor up, and follows a floor
 TEST_CASE ("Bands: a v2 state (Register, Spread, Low Octave) loads with the default bands", "[state][migration][bands]")
 {
     juce::ScopedJuceInitialiser_GUI juceEnv;
-    CHECK (PluginProcessor::kStateVersion == 3);
+    CHECK (PluginProcessor::kStateVersion >= 3);
 
     PluginProcessor p (false);
     setParam (p, "band_x2", 60.0f);   // something not at its default, which the old state must reset
@@ -709,5 +709,5 @@ TEST_CASE ("Bands: a v2 state (Register, Spread, Low Octave) loads with the defa
     p.getStateInformation (saved);
     auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), static_cast<int> (saved.getSize()));
     REQUIRE (xml != nullptr);
-    CHECK (static_cast<int> (juce::ValueTree::fromXml (*xml).getProperty (PluginProcessor::kStateVersionId)) == 3);
+    CHECK (static_cast<int> (juce::ValueTree::fromXml (*xml).getProperty (PluginProcessor::kStateVersionId)) == PluginProcessor::kStateVersion);
 }

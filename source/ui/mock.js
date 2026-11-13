@@ -142,12 +142,12 @@
       const act = s.activity, breath = 0.5 - 0.5 * Math.cos(2 * Math.PI * (5 / 60) * r);
       const level = 0.14 + 0.22 * act + 0.05 * Math.sin(r * 0.7);
       const playing = WT.get("play") ? playDemo(r) : null;
-      const type = Math.round(WT.get("flt_type"));
-      const filterHz = Math.min(20000, WT.get("flt_cutoff") * Math.pow(2, (type === 3 ? -1 : 1) * WT.get("flt_sky") * 3 * Math.min(1, act)));
+      const cut = WT.get("eq4_freq") * Math.pow(2, WT.get("eq_sky") * 3 * Math.min(1, act));   // T3.9: the sky opens the EQ's cut
+      const eqCutHz = cut >= 19980 ? 20000 : cut;
       return {
         play: { mix: playing ? 1 : 0, voices: playing ? playing.voices : [] },
         low: { note: playing ? playing.low : lowNoteOf(chord.key + chord.deg), level: WT.get("low_level") },
-        filterHz,
+        eqCutHz, sampleRate: 48000,
         peakL: level * (1 + 0.04 * Math.sin(r * 3.1)), peakR: level * (1 + 0.04 * Math.cos(r * 2.7)),
         gr: level > 0.3 ? 0.96 : 1, autoGain: 1.4, verb: 0.18 + 0.14 * act, breath,
         spectrum: spectrumFor(notes, act),

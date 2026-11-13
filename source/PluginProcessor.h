@@ -54,7 +54,7 @@ class PluginProcessor final : public juce::AudioProcessor,
 {
 public:
     /** Bump when the saved-state layout changes; add a step to migrateState(). */
-    static constexpr int kStateVersion = 4;
+    static constexpr int kStateVersion = 5;
 
     static inline const juce::Identifier kStateType      { "Worldtable" };
     static inline const juce::Identifier kStateVersionId { "stateVersion" };
