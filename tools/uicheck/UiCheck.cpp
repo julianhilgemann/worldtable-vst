@@ -19,6 +19,9 @@
 // every parameter's control has a hint, a role and a value text and can be set with the keyboard
 // alone (and a typed value lands), every picture has a hint, red/green/violet stay on the bands in
 // the DOM, and the macro rings follow the engine (Space 0 / 0.5 / 1 → reverb mix ×0.5 / ×1 / ×1.5).
+// T6.10: the day strip is a slider with a hint and a value sentence, its keogram is built, its canvas
+// is no larger than its box × dpr, an arrow key seeks 10 minutes on, and a pointer drag across it
+// seeks (at its start and on release) and the sky lands there.
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
@@ -112,10 +115,10 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
   rm.blur();
   [].forEach.call(document.querySelectorAll('#stage canvas'), function (c) { if (!c.closest('[data-hint]')) bad.pictures.push(c.id || 'canvas'); });
   // spec/09 rule 2 in the DOM (canvas pixels are reviewed in the code): the bands' knobs, the
-  // Layers picture, the voicing view, the keyboard strip, the dome, the magnetogram, the brand mark
+  // Layers picture, the voicing view, the keyboard strip, the dome, the day strip, the brand mark
   var HUE = { red: '255, 107, 107', green: '92, 242, 160', violet: '143, 123, 255' };
   [].forEach.call(document.querySelectorAll('#stage *'), function (e) {
-    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #mag, #cv-layers, #cv-voicing, #cv-keys, .brand')) return;
+    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #strip, #cv-layers, #cv-voicing, #cv-keys, .brand')) return;
     var cs = getComputedStyle(e);
     var v = [cs.color, cs.backgroundColor, cs.borderTopColor, cs.borderBottomColor, cs.borderLeftColor, cs.borderRightColor,
              cs.fill, cs.stroke, cs.backgroundImage, cs.boxShadow, cs.outlineColor].join('|');
@@ -129,6 +132,48 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
   bad.typed = typed;
   bad.spaceRing = ring;
   return bad;
+})()))JS";
+// T6.10: the day strip, from the keyboard and the pointer (synthetic events, dispatched in place).
+// Returns where the drag let go (`target`, UTC s) and where the sky was (`from`), to check and undo.
+const char* const stripProbe = R"JS(JSON.stringify((function () {
+  var box = document.getElementById('strip'), cv = document.getElementById('cv-strip'), r = { problems: [] };
+  if (!box || !cv || !UI.dayStrip) return { problems: ['no strip'] };
+  if (box.getAttribute('role') !== 'slider') r.problems.push('role');
+  if (!box.getAttribute('aria-valuetext')) r.problems.push('valuetext');
+  var h = box.getAttribute('data-hint') || '';
+  if (!h || h.length > 90) r.problems.push('hint');
+  var k = UI.dayStrip.view.keo;
+  r.keogram = k ? [k.cols, k.rows, Math.round(k.ms * 10) / 10] : null;
+  if (!k || k.cols < 100) r.problems.push('keogram');
+  var dpr = Math.min(3, UI.dpr * UI.scale);
+  r.canvas = [cv.width, cv.height, cv.clientWidth, cv.clientHeight, dpr];
+  if (cv.width > Math.ceil(cv.clientWidth * dpr) + 1 || cv.height > Math.ceil(cv.clientHeight * dpr) + 1) r.problems.push('canvas');
+  var seeks = [], native = WT.native;
+  WT.native = function (n, a) { if (n === 'seek') seeks.push(a); return native.apply(WT, arguments); };
+  var u0 = UI.dayStrip.shownUtc();
+  r.from = u0;
+  box.focus();
+  box.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+  r.keySeek = seeks.length ? Math.round(seeks[0] - u0) : null;
+  if (r.keySeek === null || Math.abs(r.keySeek - 600) > 30) r.problems.push('keys');
+  // a drag from a fifth to three fifths of the strip's width
+  var rect = cv.getBoundingClientRect(), y = rect.top + rect.height * 0.4, n0 = seeks.length;
+  var at = function (f) { return rect.left + rect.width * f; };
+  var ev = function (type, f) { cv.dispatchEvent(new PointerEvent(type, { clientX: at(f), clientY: y, button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 7, bubbles: true, cancelable: true })); };
+  UI.dayStrip.scrub.lastSeekAt = -1e9;   // the key's seek does not throttle the drag's first
+  ev('pointerdown', 0.2);
+  for (var i = 1; i <= 8; i++) ev('pointermove', 0.2 + 0.4 * i / 8);
+  ev('pointerup', 0.6);
+  WT.native = native;
+  var d = seeks.slice(n0);
+  r.dragSeeks = d.length;
+  r.target = d.length ? d[d.length - 1] : 0;
+  r.expect = UI.dayStrip.view.utcAt((at(0.6) - rect.left) / UI.scale, true);
+  // WebKit rounds a synthetic event's clientX to whole pixels: allow one pixel of the day
+  var px = UI.dayStrip.view.utcAt(1, true) - UI.dayStrip.view.utcAt(0, true) + 1;
+  if (d.length < 2 || Math.abs(r.target - r.expect) > px || Math.abs(d[0] - UI.dayStrip.view.utcAt((at(0.2) - rect.left) / UI.scale, true)) > px) r.problems.push('drag');
+  box.blur();
+  return r;
 })()))JS";
 } // namespace
 
@@ -256,9 +301,25 @@ int main (int argc, char* argv[])
             && std::abs (static_cast<double> ((*ring)[1]) - 1.0) < 1.0e-3
             && std::abs (static_cast<double> ((*ring)[2]) - 1.5) < 1.0e-3;
 
+    // T6.10: the day strip; after the drag the sky must have landed where it let go, then it goes back
+    const auto strip = evalSync (*browser, juce::String::fromUTF8 (stripProbe), 10000);
+    auto parsedStrip = juce::JSON::parse (strip);
+    for (int k = 0; k < 30; ++k)
+    {
+        processor.processBlock (buffer, midi);
+        pump (20);
+    }
+    const double landed = evalSync (*browser, "__wtState.tel.sky.utc").getDoubleValue();
+    const double target = parsedStrip["target"];
+    evalSync (*browser, "UI.dayStrip.scrubTo(" + juce::String (static_cast<double> (parsedStrip["from"]), 3) + ", true); true");
+    pump (300);
+    const bool stripOk = parsedStrip.isObject() && parsedStrip["problems"].isArray() && parsedStrip["problems"].size() == 0
+                      && landed >= target - 1.0 && landed < target + 120.0;   // ≈ 0.6 s at 24× after the seek
+
     auto parsed = juce::JSON::parse (state);
     const bool ok = ready == "true"
                  && accessOk
+                 && stripOk
                  && parsedSky["date"].toString().startsWith ("10 May")
                  && parsedSky["ut"].toString().endsWith ("UT")
                  && parsedSky["day"].toString() == "2024-05-10"
@@ -288,6 +349,7 @@ int main (int argc, char* argv[])
               << "dome:       " << dome << "\n"
               << "sky/chord:  " << skyState << "\n"
               << "keyboard, hints, colour, rings: " << access << "\n"
+              << "day strip:  " << strip << ", the sky landed " << juce::String (landed - target, 1) << " s after the drag's end\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
 
     if (probe.isNotEmpty())

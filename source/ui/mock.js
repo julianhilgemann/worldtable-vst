@@ -36,6 +36,10 @@
       dh: Array.from(trace.dh), dhModel: Array.from(trace.dhModel), coupling: Array.from(trace.coupling),
       energy: Array.from(trace.energy), threshold: Array.from(trace.threshold), phase: Array.from(trace.phase),
       onsets: trace.events.filter((e) => e.type === "onset").map((e) => ({ utc: e.t / 1000, kind: e.kind, strength: e.strength })),
+      // T6.10: the keogram's inputs, two decimals as the editor sends them
+      ...Object.fromEntries(["eqLat", "poleLat", "activity", "gain", "unloading", "stormRed", "mlt", "kp"]
+        .map((k) => [k, Array.from(trace[k], (v) => Math.round(v * 100) / 100)])),
+      stationMlat: Math.round(observer.mlat * 100) / 100, dayShift: M.DEFAULTS.dayShiftDeg, arcPosition: M.DEFAULTS.arcPosition,
     });
 
     // ---- harmony: the sketch's progression, voiced like SkySound (5 slots per layer) in the bands

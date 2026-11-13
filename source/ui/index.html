@@ -45,9 +45,10 @@
       <canvas id="cv-hmeter" data-hint="Output level, left and right. The line is the limiter's ceiling."></canvas>
     </header>
 
-    <!-- ============================================================ magnetogram -->
-    <section id="mag" class="frame" aria-label="Magnetogram">
-      <canvas id="cv-mag" data-hint="The recorded day: the magnetometer, stored energy, the phases. Click to jump there."></canvas>
+    <!-- ============================================================ the day strip (T6.10): a keogram over the magnetometer -->
+    <section id="strip" class="frame" tabindex="0" role="slider" aria-label="The day"
+             data-hint="The whole day: the sky's light north to south, the field under it. Click to jump.">
+      <canvas id="cv-strip"></canvas>
     </section>
 
     <!-- ============================================================ harmony, sky -->
