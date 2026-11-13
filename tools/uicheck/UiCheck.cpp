@@ -15,10 +15,13 @@
 // Checks: backend attached (not the browser mock), telemetry is streaming, parameters
 // sync C++ → JS and JS → C++, every parameter has exactly one control, the header shows the
 // replayed storm (T2.4), the chord readout shows the sounding chord (T3.6), the dome draws
-// the plug-in's sky with WebGL and the magnetogram got the day's chart (T6.1). T6.7 (spec/09 §5):
+// the plug-in's sky with WebGL and the day strip got the day's chart (T6.1). T6.7 (spec/09 §5):
 // every parameter's control has a hint, a role and a value text and can be set with the keyboard
 // alone (and a typed value lands), every picture has a hint, red/green/violet stay on the bands in
 // the DOM, and the macro rings follow the engine (Space 0 / 0.5 / 1 → reverb mix ×0.5 / ×1 / ×1.5).
+// T6.10: the day strip is a slider with a hint and a value sentence, its keogram is built, its canvas
+// is no larger than its box × dpr, an arrow key seeks 10 minutes on, and a pointer drag across it
+// seeks (at its start and on release) and the sky lands there.
 // T6.8 (spec/09 §3, §5): every module has its size in the layout, no canvas's backing store is wider
 // than its box × the pixel ratio, and every More popover opens from its title by pointer, is next in
 // the Tab order, and closes on Escape with the focus back on the title.
@@ -122,7 +125,7 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
   // Layers picture, the keyboard strip, the dome, the day strip, the brand mark
   var HUE = { red: '255, 107, 107', green: '92, 242, 160', violet: '143, 123, 255' };
   [].forEach.call(document.querySelectorAll('#stage *'), function (e) {
-    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #mag, #cv-layers, #cv-keys, .brand')) return;
+    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #strip, #cv-layers, #cv-keys, .brand')) return;
     var cs = getComputedStyle(e);
     var v = [cs.color, cs.backgroundColor, cs.borderTopColor, cs.borderBottomColor, cs.borderLeftColor, cs.borderRightColor,
              cs.fill, cs.stroke, cs.backgroundImage, cs.boxShadow, cs.outlineColor].join('|');
@@ -137,12 +140,54 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
   bad.spaceRing = ring;
   return bad;
 })()))JS";
+// T6.10: the day strip, from the keyboard and the pointer (synthetic events, dispatched in place).
+// Returns where the drag let go (`target`, UTC s) and where the sky was (`from`), to check and undo.
+const char* const stripProbe = R"JS(JSON.stringify((function () {
+  var box = document.getElementById('strip'), cv = document.getElementById('cv-strip'), r = { problems: [] };
+  if (!box || !cv || !UI.dayStrip) return { problems: ['no strip'] };
+  if (box.getAttribute('role') !== 'slider') r.problems.push('role');
+  if (!box.getAttribute('aria-valuetext')) r.problems.push('valuetext');
+  var h = box.getAttribute('data-hint') || '';
+  if (!h || h.length > 90) r.problems.push('hint');
+  var k = UI.dayStrip.view.keo;
+  r.keogram = k ? [k.cols, k.rows, Math.round(k.ms * 10) / 10] : null;
+  if (!k || k.cols < 100) r.problems.push('keogram');
+  var dpr = Math.min(3, UI.dpr * UI.scale);
+  r.canvas = [cv.width, cv.height, cv.clientWidth, cv.clientHeight, dpr];
+  if (cv.width > Math.ceil(cv.clientWidth * dpr) + 1 || cv.height > Math.ceil(cv.clientHeight * dpr) + 1) r.problems.push('canvas');
+  var seeks = [], native = WT.native;
+  WT.native = function (n, a) { if (n === 'seek') seeks.push(a); return native.apply(WT, arguments); };
+  var u0 = UI.dayStrip.shownUtc();
+  r.from = u0;
+  box.focus();
+  box.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+  r.keySeek = seeks.length ? Math.round(seeks[0] - u0) : null;
+  if (r.keySeek === null || Math.abs(r.keySeek - 600) > 30) r.problems.push('keys');
+  // a drag from a fifth to three fifths of the strip's width
+  var rect = cv.getBoundingClientRect(), y = rect.top + rect.height * 0.4, n0 = seeks.length;
+  var at = function (f) { return rect.left + rect.width * f; };
+  var ev = function (type, f) { cv.dispatchEvent(new PointerEvent(type, { clientX: at(f), clientY: y, button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 7, bubbles: true, cancelable: true })); };
+  UI.dayStrip.scrub.lastSeekAt = -1e9;   // the key's seek does not throttle the drag's first
+  ev('pointerdown', 0.2);
+  for (var i = 1; i <= 8; i++) ev('pointermove', 0.2 + 0.4 * i / 8);
+  ev('pointerup', 0.6);
+  WT.native = native;
+  var d = seeks.slice(n0);
+  r.dragSeeks = d.length;
+  r.target = d.length ? d[d.length - 1] : 0;
+  r.expect = UI.dayStrip.view.utcAt((at(0.6) - rect.left) / UI.scale, true);
+  // WebKit rounds a synthetic event's clientX to whole pixels: allow one pixel of the day
+  var px = UI.dayStrip.view.utcAt(201, true) - UI.dayStrip.view.utcAt(200, true) + 1;
+  if (d.length < 2 || Math.abs(r.target - r.expect) > px || Math.abs(d[0] - UI.dayStrip.view.utcAt((at(0.2) - rect.left) / UI.scale, true)) > px) r.problems.push('drag');
+  box.blur();
+  return r;
+})()))JS";
 
 // T6.8: the regrouped page (spec/09 §3) and its More popovers (§5), in the real editor.
 const char* const layoutProbe = R"JS(JSON.stringify((function () {
   var out = { sizes: [], canvas: [], more: [], moreCount: 0, moreParams: 0 };
   // module → [width, height] at the design size (CSS px, before the stage's zoom)
-  var SIZE = { mag: [1110, 92], sky: [213, 92], resonators: [435, 264], eq: [435, 177], 'dome-wrap': [448, 448],
+  var SIZE = { strip: [1110, 92], sky: [213, 92], resonators: [435, 264], eq: [435, 177], 'dome-wrap': [448, 448],
                harmony: [433, 448], phaser: [214, 260], chorus: [214, 260], macros: [448, 260], delay: [146, 260],
                reverb: [175, 260], output: [98, 260], topbar: [1350, 44], hintbar: [1350, 28] };
   Object.keys(SIZE).forEach(function (id) {
@@ -403,9 +448,25 @@ int main (int argc, char* argv[])
             && std::abs (static_cast<double> ((*ring)[1]) - 1.0) < 1.0e-3
             && std::abs (static_cast<double> ((*ring)[2]) - 1.5) < 1.0e-3;
 
+    // T6.10: the day strip; after the drag the sky must have landed where it let go, then it goes back
+    const auto strip = evalSync (*browser, juce::String::fromUTF8 (stripProbe), 10000);
+    auto parsedStrip = juce::JSON::parse (strip);
+    for (int k = 0; k < 30; ++k)
+    {
+        processor.processBlock (buffer, midi);
+        pump (20);
+    }
+    const double landed = evalSync (*browser, "__wtState.tel.sky.utc").getDoubleValue();
+    const double target = parsedStrip["target"];
+    evalSync (*browser, "UI.dayStrip.scrubTo(" + juce::String (static_cast<double> (parsedStrip["from"]), 3) + ", true); true");
+    pump (300);
+    const bool stripOk = parsedStrip.isObject() && parsedStrip["problems"].isArray() && parsedStrip["problems"].size() == 0
+                      && landed >= target - 1.0 && landed < target + 120.0;   // ≈ 0.6 s at 24× after the seek
+
     auto parsed = juce::JSON::parse (state);
     const bool ok = ready == "true"
                  && accessOk
+                 && stripOk
                  && layoutOk
                  && picturesOk
                  && parsedSky["date"].toString().startsWith ("10 May")
@@ -437,6 +498,7 @@ int main (int argc, char* argv[])
               << "dome:       " << dome << "\n"
               << "sky/chord:  " << skyState << "\n"
               << "keyboard, hints, colour, rings: " << access << "\n"
+              << "day strip:  " << strip << ", the sky landed " << juce::String (landed - target, 1) << " s after the drag's end\n"
               << "layout, canvases, More: " << layout << "\n"
               << "pictures (T6.12): drags " << (dragBad.isEmpty() ? juce::String ("all read back in C++") : dragBad.joinIntoString ("; "))
               << ", page phaser response vs dsp::Phaser " << responseError << " dB"

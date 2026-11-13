@@ -353,6 +353,9 @@ export function runSlow(track, { seed = 1, params = {}, observer } = {}) {
     activity: new Float32Array(minutes), gain: new Float32Array(minutes), unloading: new Float32Array(minutes),
     coupling: new Float32Array(minutes), dh: new Float32Array(minutes), dhModel: new Float32Array(minutes),
     ovalLatitude: new Float32Array(minutes), threshold: new Float32Array(minutes), events: [],
+    // T6.10: the keogram's inputs (the oval as the dome draws it)
+    eqLat: new Float32Array(minutes), poleLat: new Float32Array(minutes), stormRed: new Float32Array(minutes),
+    mlt: new Float32Array(minutes), kp: new Float32Array(minutes),
   };
   for (let m = 0; m < minutes; m++) {
     for (let k = 0; k < 60; k++) slowStep(s, track, p, obs, out.events);
@@ -360,6 +363,8 @@ export function runSlow(track, { seed = 1, params = {}, observer } = {}) {
     out.phase[m] = s.phase; out.energy[m] = s.w / p.threshold; out.threshold[m] = s.thr / p.threshold;
     out.activity[m] = s.act; out.gain[m] = s.gain; out.unloading[m] = s.u; out.coupling[m] = s.eSm;
     out.dh[m] = s.dh; out.dhModel[m] = s.dhModel; out.ovalLatitude[m] = lerp(s.eqLat, s.poleLat, p.arcPosition);
+    out.eqLat[m] = s.eqLat; out.poleLat[m] = s.poleLat; out.stormRed[m] = clamp((s.kpSm - 5) / 4, 0, 1);
+    out.mlt[m] = s.mlt0; out.kp[m] = s.kp;
   }
   return out;
 }
