@@ -19,6 +19,7 @@
 // every parameter's control has a hint, a role and a value text and can be set with the keyboard
 // alone (and a typed value lands), every picture has a hint, red/green/violet stay on the bands in
 // the DOM, and the macro rings follow the engine (Space 0 / 0.5 / 1 → reverb mix ×0.5 / ×1 / ×1.5).
+// T6.9: the Journey transport's controls, journeySet and the day menu reach the processor.
 // T6.8 (spec/09 §3, §5): every module has its size in the layout, no canvas's backing store is wider
 // than its box × the pixel ratio, and every More popover opens from its title by pointer, is next in
 // the Tab order, and closes on Escape with the focus back on the title.
@@ -182,6 +183,24 @@ const char* const layoutProbe = R"JS(JSON.stringify((function () {
   });
   return out;
 })()))JS";
+// T6.9: the Journey transport's controls: each has a hint and a role, the day list and the speeds
+// came with the day, telemetry carries the journey
+const char* const transportProbe = R"JS(JSON.stringify((function () {
+  var bad = [];
+  ['tp-run', 'tp-speed', 'tp-day', 'tp-loop', 'clock'].forEach(function (id) {
+    var e = document.getElementById(id);
+    if (!e) { bad.push(id + ' missing'); return; }
+    var h = e.getAttribute('data-hint') || '';
+    if (!h || h.length > 90) bad.push(id + ' hint');
+  });
+  if (document.getElementById('tp-speed').getAttribute('role') !== 'radiogroup') bad.push('tp-speed role');
+  if (document.getElementById('tp-loop').getAttribute('role') !== 'switch') bad.push('tp-loop role');
+  if (document.getElementById('tp-day').getAttribute('aria-haspopup') !== 'menu') bad.push('tp-day popup');
+  if (!document.querySelector('#tp-speed [role="radio"][tabindex="0"]')) bad.push('tp-speed focus');
+  return { bad: bad, speeds: document.querySelectorAll('#tp-speed button').length,
+           days: __wtState.day && __wtState.day.days ? __wtState.day.days.length : 0,
+           journey: __wtState.tel.journey || null, dayButton: document.getElementById('tp-day').textContent };
+})()))JS";
 } // namespace
 
 int main (int argc, char* argv[])
@@ -316,8 +335,34 @@ int main (int argc, char* argv[])
             && std::abs (static_cast<double> ((*ring)[1]) - 1.0) < 1.0e-3
             && std::abs (static_cast<double> ((*ring)[2]) - 1.5) < 1.0e-3;
 
+    // T6.9: the transport, in the real editor: its controls, journeySet reaching the processor, a day
+    // picked from the menu loading, then the defaults back
+    const auto transport = evalSync (*browser, juce::String::fromUTF8 (transportProbe));
+    auto parsedTransport = juce::JSON::parse (transport);
+    evalSync (*browser, "WT.native('journeySet', { speed: 240, loop: true }); true");
+    for (int k = 0; k < 10; ++k) { processor.processBlock (buffer, midi); pump (25); }
+    const auto set = processor.getJourney();
+    const bool setOk = set.speed == 240.0 && set.loop && processor.getSky().model().speed() == 240.0;
+    evalSync (*browser, "document.getElementById('tp-day').click();"
+                        " document.querySelectorAll('#tp-days [role=\"menuitemradio\"]')[2].click(); true");
+    for (int k = 0; k < 40; ++k) { processor.processBlock (buffer, midi); pump (25); }
+    const auto picked = evalSync (*browser, "JSON.stringify({ day: __wtState.day && __wtState.day.day,"
+                                            " tel: __wtState.tel.journey && __wtState.tel.journey.day,"
+                                            " menu: document.getElementById('tp-days').hidden })");
+    const auto parsedPicked = juce::JSON::parse (picked);
+    const bool pickOk = processor.getSkyFeed().dayId() == "2025-01-25" && parsedPicked["day"].toString() == "2025-01-25"
+                     && parsedPicked["tel"].toString() == "2025-01-25" && static_cast<bool> (parsedPicked["menu"]);
+    evalSync (*browser, "WT.native('journeySet', { day: '2024-05-10', speed: 24, loop: false }); true");
+    for (int k = 0; k < 40; ++k) { processor.processBlock (buffer, midi); pump (25); }
+    const bool transportOk = parsedTransport.isObject() && parsedTransport["bad"].isArray() && parsedTransport["bad"].size() == 0
+                          && static_cast<int> (parsedTransport["speeds"]) == static_cast<int> (worldtable::JourneyState::kSpeeds.size())
+                          && static_cast<int> (parsedTransport["days"]) == 3
+                          && parsedTransport["journey"].isObject() && parsedTransport["journey"]["day"].toString() == "2024-05-10"
+                          && setOk && pickOk && processor.getSkyFeed().dayId() == "2024-05-10";
+
     auto parsed = juce::JSON::parse (state);
     const bool ok = ready == "true"
+                 && transportOk
                  && accessOk
                  && layoutOk
                  && parsedSky["date"].toString().startsWith ("10 May")
@@ -350,6 +395,9 @@ int main (int argc, char* argv[])
               << "sky/chord:  " << skyState << "\n"
               << "keyboard, hints, colour, rings: " << access << "\n"
               << "layout, canvases, More: " << layout << "\n"
+              << "transport:  " << transport << "; journeySet 240x + loop → C++ " << set.speed << "x, loop " << (set.loop ? "on" : "off")
+              << "; day menu → " << picked << " (C++ " << processor.getSkyFeed().dayId() << " after the restore, load "
+              << juce::String (processor.getSkyFeed().lastLoadMs(), 1) << " ms)" << (transportOk ? "" : "  FAILED") << "\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
 
     if (probe.isNotEmpty())
