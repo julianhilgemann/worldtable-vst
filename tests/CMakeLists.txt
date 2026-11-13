@@ -19,6 +19,7 @@ target_sources(WorldtableTests PRIVATE
     unit/PlayModeTests.cpp
     unit/BandTests.cpp
     unit/EqTests.cpp
+    unit/ModTests.cpp
     unit/AllocationCounter.cpp)
 
 target_compile_definitions(WorldtableTests PRIVATE
