@@ -54,15 +54,8 @@ constexpr std::array<const char*, 3> kOnsetKindNames { "loaded", "forced", "pseu
 } // namespace
 
 PluginEditor::PluginEditor (PluginProcessor& p)
-    : AudioProcessorEditor (p), wtProcessor (p),
-      history (static_cast<size_t> (kFftSize), 0.0f),
-      fftData (static_cast<size_t> (2 * kFftSize), 0.0f),
-      window (static_cast<size_t> (kFftSize), 0.0f)
+    : AudioProcessorEditor (p), wtProcessor (p)
 {
-    for (int i = 0; i < kFftSize; ++i)
-        window[static_cast<size_t> (i)] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * static_cast<float> (i) / kFftSize);
-    bands.fill (-100.0f);
-
    #if WORLDTABLE_WEB_UI
     auto options = juce::WebBrowserComponent::Options {}
         .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
@@ -199,9 +192,18 @@ std::optional<juce::WebBrowserComponent::Resource> PluginEditor::getResource (co
 }
 
 //==============================================================================
-void PluginEditor::updateAnalyzer()
+PluginEditor::Analyzer::Analyzer()
+    : history (static_cast<size_t> (kFftSize), 0.0f),
+      fftData (static_cast<size_t> (2 * kFftSize), 0.0f),
+      window (static_cast<size_t> (kFftSize), 0.0f)
 {
-    auto& scope = wtProcessor.getInstrument().getScope();
+    for (int i = 0; i < kFftSize; ++i)
+        window[static_cast<size_t> (i)] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * static_cast<float> (i) / kFftSize);
+    bands.fill (-100.0f);
+}
+
+void PluginEditor::Analyzer::update (dsp::ScopeFifo& scope, double sr)
+{
     std::array<float, 2048> chunk {};
     for (int n; (n = scope.pull (chunk.data(), static_cast<int> (chunk.size()))) > 0;)
         for (int i = 0; i < n; ++i)
@@ -215,7 +217,6 @@ void PluginEditor::updateAnalyzer()
     std::fill (fftData.begin() + kFftSize, fftData.end(), 0.0f);
     fft.performFrequencyOnlyForwardTransform (fftData.data(), true);
 
-    const double sr = wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0;
     const double binHz = sr / kFftSize;
     const float norm = 4.0f / kFftSize;   // Hann window coherent gain, single-sided
 
@@ -232,6 +233,23 @@ void PluginEditor::updateAnalyzer()
         auto& band = bands[static_cast<size_t> (b)];
         band = db > band ? db : band + 0.18f * (db - band);   // fast attack, slow fall
     }
+}
+
+juce::var PluginEditor::Analyzer::toVar() const
+{
+    juce::Array<juce::var> spec;
+    spec.ensureStorageAllocated (kBands);
+    for (auto b : bands)
+        spec.add (std::round (b * 10.0f) / 10.0f);
+    return spec;
+}
+
+void PluginEditor::updateAnalyzer()
+{
+    auto& instrument = wtProcessor.getInstrument();
+    const double sr = wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0;
+    outAnalyzer.update (instrument.getScope(), sr);
+    inAnalyzer.update (instrument.getInputScope(), sr);   // T6.12: the sources before the tone stage
 }
 
 juce::var PluginEditor::makeSkyTelemetry()
@@ -465,10 +483,12 @@ juce::var PluginEditor::makeTelemetry()
     }
     o->setProperty ("filterHz", std::round (static_cast<double> (t.filterHz.load())));
 
-    juce::Array<juce::var> spec;
-    for (auto b : bands)
-        spec.add (std::round (b * 10.0f) / 10.0f);
-    o->setProperty ("spectrum", spec);
+    o->setProperty ("spectrum", outAnalyzer.toVar());
+    // T6.12: the sources' spectrum before the tone stage (same bands) and the phaser's LFO phase,
+    // for the phaser picture; the sample rate for its exact response
+    o->setProperty ("spectrumIn", inAnalyzer.toVar());
+    o->setProperty ("phaser", round3 (t.phaserPhase.load()));
+    o->setProperty ("sampleRate", wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0);
 
     return juce::var (o);
 }

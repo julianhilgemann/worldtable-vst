@@ -10,6 +10,8 @@
 namespace worldtable::dsp
 {
 
+class ScopeFifo;   // dsp/Instrument.h
+
 /** Everything that sounds beside the curtain, and the filter after it (T3.7, spec/05):
 
     ```
@@ -56,6 +58,10 @@ public:
     void prepare (double sampleRate, uint32_t seed, const Settings&) noexcept;
     void setSettings (const Settings&) noexcept;
 
+    /** T6.12: where the sources' mix goes before the tone stage (the editor's input spectrum), or
+        nullptr. Read-only: a mono copy of what reaches the filter, lock-free and allocation-free. */
+    void setInputTap (ScopeFifo* fifo) noexcept { inputTap = fifo; }
+
     /** The low band's floor before the first tick (after it, every tick reads SkySound's bands). */
     void setLowFloor (int floorNote) noexcept { low.setFloor (floorNote); }
 
@@ -100,6 +106,7 @@ private:
     double lowEnv = 0.0;                 ///< Play mode: the low's envelope (gate: a note held)
     double lowSwellStart = -1.0, lowSwellAmp = 0.0;   ///< drone mode: the onset swell
     uint64_t ticks = 0;
+    ScopeFifo* inputTap = nullptr;       ///< T6.12, owned by the Instrument
 };
 
 } // namespace worldtable::dsp

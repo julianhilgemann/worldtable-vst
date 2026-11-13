@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <vector>
 
 using namespace worldtable;
@@ -213,4 +214,63 @@ TEST_CASE ("shimmer adds the octave and the fifth", "[fx][shimmer]")
     CHECK (wet1320 > dry1320 * 100.0);
     CHECK (wet880 > wet440 * 1.0e-5);
     CHECK (wet1320 > wet440 * 1.0e-6);
+}
+
+//==================================================================================================
+TEST_CASE ("the phaser picture's response is the phaser's, on a sine sweep", "[fx][phaser][T6.12]")
+{
+    // T6.12: views.js `phaserResponse` draws dsp::Phaser::magnitude. Freeze the LFO where a run at
+    // 0.25 Hz leaves it, read the break frequency from lfoPhase(), then play sines through it.
+    constexpr double fs = 48000.0;
+    struct Case { int stages; float feedback, mix, depth; double runSeconds; };
+    const Case cases[] = { { 6, 0.3f, 0.4f, 0.6f, 0.0 }, { 8, 0.8f, 1.0f, 1.0f, 1.0 }, { 4, 0.8f, 0.5f, 1.0f, 3.0 },
+                           { 2, 0.0f, 0.7f, 0.5f, 0.5 }, { 6, 0.55f, 0.6f, 0.8f, 2.2 } };
+    double worst = 0.0;
+    for (const auto& c : cases)
+    {
+        for (int k = 0; k <= 36; ++k)
+        {
+            const double hz = 21.0 * std::pow (950.0, k / 36.0);   // 21 Hz … 20 kHz
+            dsp::Phaser phaser;
+            phaser.prepare (fs);
+            dsp::Phaser::Settings s;
+            s.stages = c.stages;
+            s.feedback = c.feedback;
+            s.mix = c.mix;
+            s.depth = c.depth;
+            s.rateHz = 0.25f;
+            phaser.setSettings (s);
+            if (c.runSeconds > 0.0)
+            {
+                std::vector<float> l (static_cast<size_t> (c.runSeconds * fs)), r (l.size());
+                phaser.process (l.data(), r.data(), static_cast<int> (l.size()));
+            }
+            s.rateHz = 0.0f;   // hold the sweep where it is
+            phaser.setSettings (s);
+            const double breakHz = dsp::Phaser::breakHz (c.depth, phaser.lfoPhase());
+
+            const int n = static_cast<int> (fs);
+            std::vector<float> l (static_cast<size_t> (n)), r (static_cast<size_t> (n));
+            constexpr double amp = 0.01;   // small: the feedback's tanh stays linear
+            for (int i = 0; i < n; ++i)
+                l[static_cast<size_t> (i)] = r[static_cast<size_t> (i)] = static_cast<float> (amp * std::sin (2.0 * std::numbers::pi * hz * i / fs));
+            phaser.process (l.data(), r.data(), n);
+            // the steady state: the second half, against the input's own power there
+            const std::vector<float> out (l.begin() + n / 2, l.end());
+            std::vector<float> in (static_cast<size_t> (n / 2));
+            for (int i = 0; i < n / 2; ++i)
+                in[static_cast<size_t> (i)] = static_cast<float> (amp * std::sin (2.0 * std::numbers::pi * hz * (i + n / 2) / fs));
+            const double measured = 10.0 * std::log10 (goertzelPower (out, hz, fs) / goertzelPower (in, hz, fs));
+            const double drawn = 20.0 * std::log10 (dsp::Phaser::magnitude (hz, breakHz, fs, c.stages, c.feedback, c.mix));
+            if (drawn < -6.0)
+                continue;   // a notch: away from them the picture must hold to 1 dB
+            INFO ("stages " << c.stages << " fb " << c.feedback << " mix " << c.mix << " fc " << breakHz
+                  << " Hz, at " << hz << " Hz: drawn " << drawn << " dB, measured " << measured << " dB");
+            CHECK (std::abs (measured - drawn) <= 1.0);
+            worst = std::max (worst, std::abs (measured - drawn));
+        }
+    }
+    INFO ("worst error away from the notches " << worst << " dB");
+    CHECK (worst < 0.25);   // T6.12: the formula is the filter's own, not an approximation
+    WARN ("phaser picture vs Phaser, worst error away from the notches: " << worst << " dB");
 }
