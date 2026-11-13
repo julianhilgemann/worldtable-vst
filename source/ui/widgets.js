@@ -109,7 +109,7 @@
     transpose: "Shifts every chord and played note by semitones.",
     detune: "A few cents between neighbouring resonators, for thickness.",
     drift: "Slow wander of each resonator's pitch, like worn tape.",
-    play: "Play: your MIDI notes play the resonators. Off: the sky plays, MIDI holds a chord.",
+    play: "Drone: the sky plays, MIDI holds a chord. Play: your keyboard plays the resonators.",
     play_attack: "How fast a played note swells in.",
     play_release: "How long a played note rings on after you let go.",
     play_velocity: "How much louder a harder note plays. At 0 every note is the same.",
@@ -278,7 +278,7 @@
   }
 
   // ---------- Knob v2: a solid disc, a value arc outside it, a modulation ring outside that ----------
-  const SIZES = { sm: 28, macro: 40 };
+  const SIZES = { sm: 28, macro: 50 };   // macros at 50 px while they fill the centre block (T6.8; T4.2: 40)
   /** The disc's fill, shared by every knob. */
   function ensureDefs() {
     if (document.getElementById("kg")) return;
@@ -414,12 +414,13 @@
     root.setAttribute("role", "radiogroup");
     root.setAttribute("aria-label", m.name);
     const names = labels || m.choices;
+    const said = m.choices || names;   // a bool as a pair of choices (Drone | Play) says its labels
     const buttons = names.map((name, i) => {
       const b = el("button", opts.classOf ? opts.classOf(i) : "", root);
       b.type = "button";
       b.setAttribute("role", "radio");
       b.textContent = name;
-      b.setAttribute("aria-label", m.choices[i]);
+      b.setAttribute("aria-label", said[i]);
       b.addEventListener("click", () => gesture(id).commit(i));
       return b;
     });
@@ -435,7 +436,7 @@
         b.setAttribute("aria-checked", String(i === k));
         b.tabIndex = i === k ? 0 : -1;
       });
-      root.setAttribute("aria-valuetext", m.choices[k] || "");
+      root.setAttribute("aria-valuetext", said[k] || "");
     });
     return root;
   }
@@ -447,7 +448,7 @@
     return Seg(host, id, KEY_NAMES, { cls: "keys", classOf: (i) => (ACCIDENTAL.includes(i) ? "acc" : "") });
   }
 
-  // ---------- switches: a chip (Toggle) and the header's Play (T3.7) ----------
+  // ---------- switches: a chip (Toggle) ----------
   function bindSwitch(btn, id, label) {
     btn.dataset.param = id;
     btn.dataset.hint = UI.hintOf(id);
@@ -477,7 +478,6 @@
     b.textContent = label;
     return bindSwitch(b, id, label);
   }
-  function PlayButton(btn, id) { return bindSwitch(btn, id, "Play"); }
 
   // ---------- canvas ----------
   /** Sizes a canvas backing store for the stage zoom and the display; returns {ctx, w, h} in CSS px.
@@ -504,5 +504,5 @@
   const MONO = (px) => `${px}px "JetBrains Mono", ui-monospace, monospace`;
   const SANS = (px, w) => `${w || 400} ${px}px "Instrument Sans", -apple-system, sans-serif`;
 
-  Object.assign(UI, { Knob, Seg, Keys, Toggle, PlayButton, fit, el, svg, C, rgba, MONO, SANS, KEY_NAMES, defaultValue, clamp });
+  Object.assign(UI, { Knob, Seg, Keys, Toggle, fit, el, svg, C, rgba, MONO, SANS, KEY_NAMES, defaultValue, clamp });
 })();

@@ -30,7 +30,6 @@
   for (const n of document.querySelectorAll("[data-seg]")) UI.Seg(n, n.dataset.seg, n.dataset.labels ? n.dataset.labels.split(",") : null);
   for (const n of document.querySelectorAll("[data-keys]")) UI.Keys(n, n.dataset.keys);
   for (const n of document.querySelectorAll("[data-toggle]")) UI.Toggle(n, n.dataset.toggle, n.dataset.label || "");
-  for (const n of document.querySelectorAll("[data-play]")) UI.PlayButton(n, n.dataset.play);
 
   // ---------------------------------------------------------------- the hint line (spec/09 §2 rule 5)
   // One sentence about what the thing under the pointer (or, from the keyboard, in focus) does.
@@ -93,15 +92,20 @@
   }
   UI.updateRings();
 
-  // ---------------------------------------------------------------- details popover
-  // One page (T6.5); observer, journey and data sources open over it from the header.
+  // ---------------------------------------------------------------- popovers: More, Details, View
+  // One page (T6.5). Parameters without a visible knob live in their module's More popover (spec/09
+  // §5, T6.8): every `button.more-btn` opens the panel its aria-controls names. Details (observer,
+  // journey, the sky's numbers, data) opens from the bottom bar, View over the dome.
   const hash = new URLSearchParams(location.hash.slice(1));
   // #shot: no CSS transitions (headless review screenshots run on virtual time, which they ignore)
   if (hash.has("shot")) document.documentElement.classList.add("shot");
-  /** A button that opens a panel; Escape or a click outside closes it. */
-  function popover(btnId, panelId, onOpen) {
-    const btn = $(btnId), panel = $(panelId);
-    const p = { open: false, set(open) {
+  const pops = [];
+  /** A button that opens a panel; one is open at a time; Escape or a click outside closes it, and
+   *  focus that was inside the panel goes back to its button. */
+  function popover(btn, panel, onOpen) {
+    const p = { open: false, btn, panel, set(open) {
+      if (open) for (const q of pops) if (q !== p && q.open) q.set(false);
+      if (!open && panel.contains(document.activeElement)) btn.focus({ preventScroll: true });
       p.open = open;
       panel.hidden = !open;
       btn.setAttribute("aria-expanded", String(open));
@@ -109,17 +113,24 @@
     } };
     btn.addEventListener("click", (e) => { e.stopPropagation(); p.set(!p.open); });
     panel.addEventListener("click", (e) => e.stopPropagation());
-    document.addEventListener("click", () => { if (p.open) p.set(false); });
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && p.open) p.set(false); });
+    pops.push(p);
     return p;
   }
-  const details = popover("details-btn", "details", () => { if (S.tel.sky) showJourney(S.tel.sky); });
-  const viewPop = popover("view-btn", "view-panel");
-  const bandsPop = popover("bands-btn", "bands-panel");   // T3.8: plain band controls until T6.11
-  const eqPop = popover("eq-btn", "eq-panel");            // T3.9: the EQ's frequencies and widths until T6.14
-  if (hash.has("eq")) eqPop.set(true);                    // for review screenshots
-  if (hash.has("bands")) bandsPop.set(true);              // for review screenshots
-  if (hash.has("details")) details.set(true);   // for review screenshots
+  document.addEventListener("click", () => { for (const p of pops) if (p.open) p.set(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") for (const p of pops) if (p.open) p.set(false); });
+  const CHEVRON = '<svg class="chev" width="8" height="5" viewBox="0 0 8 5" fill="none" aria-hidden="true"><path d="M1 1l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const more = {};
+  for (const btn of document.querySelectorAll(".more-btn[aria-controls]")) {
+    btn.insertAdjacentHTML("beforeend", CHEVRON);
+    more[btn.closest(".module").id] = popover(btn, $(btn.getAttribute("aria-controls")));
+  }
+  UI.more = more;   // module id → its More popover ({ open, set(open) })
+  const details = popover($("details-btn"), $("details"), () => { if (S.tel.sky) showJourney(S.tel.sky); });
+  const viewPop = popover($("view-btn"), $("view-panel"));
+  // for review screenshots: #more=resonators opens that module's popover, #details the details
+  if (hash.has("more") && more[hash.get("more")]) more[hash.get("more")].set(true);
+  if (hash.has("bands")) more.resonators.set(true);
+  if (hash.has("details")) details.set(true);
   // mock only, for review screenshots: #set=play:1,eq4_freq:800
   if (WT.isMock && hash.has("set"))
     for (const kv of hash.get("set").split(",")) {
@@ -139,12 +150,9 @@
   rescale();
 
   // ---------------------------------------------------------------- views
-  const voicing = UI.VoicingView($("cv-voicing"));
-  const phaseTrack = UI.PhaseTrack($("phase-track"));
-  const ticker = UI.Ticker($("ticker"));
   const mag = UI.MagnetogramView($("cv-mag"));
   const layers = UI.LayersView($("cv-layers"));
-  const keys = UI.KeysView($("cv-keys"));
+  const keys = UI.KeyboardView($("cv-keys"));
   const fx = {
     phaser: UI.PhaserView($("cv-phaser")), chorus: UI.ChorusView($("cv-chorus")),
     delay: UI.DelayView($("cv-delay")), reverb: UI.ReverbView($("cv-reverb")), output: UI.OutputView($("cv-output")),
@@ -163,9 +171,7 @@
     cv.addEventListener("pointerleave", () => mag.setHover(null));
     cv.addEventListener("click", (e) => {
       const utc = mag.utcAt(xOf(e));
-      if (utc === null) return;
-      WT.native("seek", utc);
-      ticker.push(`<span class="t">${new Date(utc * 1000).toISOString().slice(11, 16)} UT</span>jump to ${mag.phaseAt(utc)}`);
+      if (utc !== null) WT.native("seek", utc);
     });
   }
 
@@ -242,8 +248,8 @@
     primed = true;
   }
 
-  // Emission per layer (red, green, violet) and the sky's colour, for the voicing view, the glow
-  // behind the dome and the macro rings.
+  // Emission per layer (red, green, violet) and the sky's colour, for the keyboard strip and the
+  // glow behind the dome.
   const emission = [0, 0, 0];
   const glow = { r: 92, g: 242, b: 160, a: 0.06 };
   function measureEmission(d) {
@@ -267,7 +273,7 @@
     // written as the stage's own background, not as an inherited custom property: a custom property
     // on #stage restyled every element under it four times a second (T6.7: 63 → 42 % of a core)
     const c = `${glow.r | 0}, ${glow.g | 0}, ${glow.b | 0}`;
-    $("stage").style.backgroundImage = `radial-gradient(circle at 664px 520px, rgba(${c}, ${glow.a.toFixed(3)}) 0, rgba(${c}, 0) 330px)`;
+    $("stage").style.backgroundImage = `radial-gradient(circle at 676px 374px, rgba(${c}, ${glow.a.toFixed(3)}) 0, rgba(${c}, 0) 330px)`;
   }
 
   // ---------------------------------------------------------------- the day
@@ -281,15 +287,22 @@
   const signed = (v, d) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d);
   const WINDS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
   const wind = (az) => WINDS[Math.round(((az % 360) + 360) % 360 / 22.5) % 16];
-  const latLon = (lat, lon) => `${Math.abs(lat).toFixed(2)}${lat >= 0 ? "N" : "S"} ${Math.abs(lon).toFixed(2)}${lon >= 0 ? "E" : "W"}`;
+  const PHASES = ["quiet", "growth", "onset", "recovery"];
+  const KIND = { loaded: "energy released", forced: "seen in the magnetometer", pseudo: "a small one" };
+  /** What happened in the day, in time order: onsets and the phases' beginnings (the Sky block's last event). */
+  let dayEvents = [];
 
   WT.on("day", (day) => {
     S.day = day;
     mag.setDay(day);
+    dayEvents = day.onsets.map((o) => ({ utc: o.utc, say: "substorm onset, " + (KIND[o.kind] || o.kind) }));
+    for (let i = 1; i < day.phase.length; i++)
+      if (day.phase[i] !== day.phase[i - 1] && PHASES[day.phase[i]] !== "onset")
+        dayEvents.push({ utc: day.t0 + i * day.step, say: PHASES[day.phase[i]] + " begins" });
+    dayEvents.sort((x, y) => x.utc - y.utc);
     const st = day.station;
     if (st) {
       dome.obs = new SKY.Observer({ code: st.code, name: st.name, lat: st.lat, lon: st.lon, elevKm: st.elevKm }, { lat: st.poleLat, lon: st.poleLon });
-      $("ro-station").innerHTML = `${st.code} <b>${latLon(st.lat, st.lon)}</b>`;
       $("dome-station").textContent = st.code;
       $("dome-place").textContent = st.name;
       $("info-station").innerHTML =
@@ -302,31 +315,32 @@
   });
 
   // ---------------------------------------------------------------- Play mode (T3.7)
-  // Key, mood, scale and shape only steer the sky's chords; in Play mode the keyboard strip and the
-  // Play controls take their place in the same card.
+  // Mood and scale only steer the sky's chords; in Play mode the Play controls take their place in
+  // the Harmony card, and the keyboard strip shows the keys you hold.
   const noteName = (n) => UI.KEY_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
-  let playShown = null;
-  WT.onParam("play", (v) => {
-    const on = !!v;
-    $("harmony").classList.toggle("is-play", on);
-    $("harmony-title").textContent = on ? "Play" : "Harmony";
-    $("harmony-note").textContent = on ? "MIDI plays the resonators, the sky colours them" : "the sky writes the progression, MIDI holds a chord";
-    if (playShown !== null && playShown !== on && S.tel.sky)
-      ticker.push(`<span class="t">${new Date(S.tel.sky.utc * 1000).toISOString().slice(11, 16)} UT</span>${on ? "<b>Play</b>, your notes take over" : "Play off, the sky writes again"}`);
-    playShown = on;
-  });
+  WT.onParam("play", (v) => $("harmony").classList.toggle("is-play", !!v));
 
-  // ---------------------------------------------------------------- chord readout
+  // ---------------------------------------------------------------- the chord, why, the rule
   const FN = ["home", "tension", "awe", "borrowed"];
   const FN_WHY = { home: "the sky is quiet", tension: "the sky is in growth", awe: "a substorm has broken out", borrowed: "the sky is recovering" };
   const FN_TITLE = { home: "home", tension: "tension", awe: "the awe move", borrowed: "borrowed chord" };
-  const FN_REASON = { home: "quiet → home", tension: "growth → tension", awe: "onset → chromatic mediant", borrowed: "recovery → borrowed" };
-  let chordSig = "", chordChanges = -1, chordTimer = 0;
+  let chordSig = "", chordTimer = 0, ruleShown = -2;
   const ut = (utc) => new Date(utc * 1000).toISOString().slice(11, 16);
+  /** Who writes the chords, in words (and weight when it is you): the head of the Harmony card. */
+  function showState(text, cls) {
+    const n = $("chord-state");
+    if (n.textContent !== text) n.textContent = text;
+    if (n.className !== cls) n.className = "note" + (cls ? " " + cls : "");
+  }
+  /** The rule row: the phase → chord rule that applies now is filled (none for a held or played chord). */
+  function showRule(i) {
+    if (i === ruleShown) return;
+    ruleShown = i;
+    [...$("rule").children].forEach((n, k) => n.classList.toggle("on", k === i));
+  }
 
-  function showChord(c, sky) {
+  function showChord(c) {
     if (!c) return;
-    voicing.setChord(c.notes);
     if (c.play) { showPlayed(c); return; }
     const fn = FN[c.function] || "home";
     const sig = `${c.label}|${c.roman}|${c.latched}`;
@@ -342,18 +356,15 @@
       clearTimeout(chordTimer);
       if (first) apply(); else { text.classList.add("out"); chordTimer = setTimeout(apply, 900); }
       $("chord-why").innerHTML = c.latched ? `<b>held on MIDI</b>, the sky keeps listening` : `<b>${FN_TITLE[fn]}</b>, because ${FN_WHY[fn]}`;
-      if (!first && chordChanges >= 0 && sky)
-        ticker.push(`<span class="t">${ut(sky.utc)} UT</span>${c.latched ? "MIDI" : FN_REASON[fn]} → <b>${c.label}</b> <span class="dim">${c.roman}</span>`);
     }
-    chordChanges = c.changes;
-    const pill = $("chord-state");
     const hold = !c.latched && WT.get("progression") < 0.005;
-    pill.className = "pill" + (c.latched ? " midi" : hold ? " hold" : "");
-    pill.innerHTML = `<i></i><span>${c.latched ? "MIDI hold" : hold ? "Hold" : "The sky writes"}</span>` + (c.pending ? `<span class="next">next chord waiting</span>` : "");
-    $("chord-count").textContent = c.changes ? `${c.changes} change${c.changes === 1 ? "" : "s"} so far` : "";
+    if (c.latched) showState("a chord held on MIDI", "held");
+    else if (hold) showState("Progression holds the chord", "hold");
+    else showState(c.pending ? "the sky writes, a chord waits" : "the sky writes the chords", "");
+    showRule(c.latched ? -1 : FN.indexOf(fn));
   }
 
-  /** Play mode: the held notes' name at once (no fade: you are playing), no ticker per chord. */
+  /** Play mode: the held notes' name at once (no fade: you are playing). */
   function showPlayed(c) {
     const sig = `play|${c.label}|${c.held}`;
     if (sig !== chordSig) {
@@ -367,60 +378,73 @@
       $("chord-why").innerHTML = (c.held ? `<b>played</b>, ${c.held} note${c.held === 1 ? "" : "s"} held` : `<b>played</b>, waiting for notes`)
         + `, ${drone < 0.005 ? "the drone rests" : "the drone under at " + Math.round(drone * 100) + " %"}`;
     }
-    const pill = $("chord-state");
-    pill.className = "pill play";
-    pill.innerHTML = `<i></i><span>Play</span>`;
-    $("chord-count").textContent = "";
+    showState("your keyboard plays the resonators", "held");
+    showRule(-1);
   }
 
-  // ---------------------------------------------------------------- sky readouts and events
-  let lastPhase = "", started = false, textShown = 0;
-  const KIND = { loaded: "energy released", forced: "data-forced", pseudo: "pseudo-breakup" };
+  /** The keyboard strip's keys: the chord's voices (or the keys you hold), each in its band's colour. */
+  const BAND_OF = ["ink", "red", "green", "violet"];
+  const lit = new Map();
+  function litKeys(tel) {
+    lit.clear();
+    const low = tel.low && tel.low.note >= 0 ? tel.low.note : -1;
+    const c = tel.chord;
+    if (WT.get("play") || (c && c.play)) {
+      // a played note sounds in the band whose range holds it (T3.8's edges, as the engine voiced them)
+      const e = c && c.edges && c.edges.length === 5 ? c.edges : ["band_floor", "band_x1", "band_x2", "band_x3", "band_ceiling"].map((id) => WT.get(id));
+      const band = (n) => BAND_OF[n < e[1] ? 0 : n < e[2] ? 1 : n < e[3] ? 2 : 3];
+      for (const [n, level, held] of (tel.play && tel.play.voices) || [])
+        lit.set(n, [band(n), held ? 0.45 + 0.55 * clamp(level, 0, 1) : 0.6 * clamp(level, 0, 1)]);
+    } else if (c && c.notes) {
+      const lv = [P("red_level"), P("green_level"), P("violet_level")];
+      c.notes.forEach((layer, l) => {
+        const a = (0.3 + 0.7 * emission[l]) * (0.35 + 0.65 * lv[l]);
+        for (const n of layer) lit.set(n, [BAND_OF[l + 1], a]);
+      });
+    }
+    if (low >= 0 && !lit.has(low)) lit.set(low, ["ink", 0.35 + 0.5 * clamp(P("low_level"), 0, 1)]);
+    return lit;
+  }
+
+  // ---------------------------------------------------------------- the Sky block, the clock, Details
+  let textShown = 0;
+  const PHASE_TITLE = { quiet: "Quiet", growth: "Growth", onset: "Onset", recovery: "Recovery" };
 
   function showSky(sky, d) {
     if (!sky) return;
     if (S.journeyFrom === undefined) S.journeyFrom = sky.utc;
-    if (!started && S.day) {
-      // open with what the day has already done: the last two onsets before now, then the start
-      started = true;
-      for (const e of S.day.onsets.filter((o) => o.utc < sky.utc - 30).slice(-2))
-        ticker.push(`<span class="t">${ut(e.utc)} UT</span>substorm onset, ${KIND[e.kind] || e.kind}`);
-      ticker.push(`<span class="t">${ut(sky.utc)} UT</span>journey ${DAY_LABELS[sky.day] || sky.day}, at ${Math.round(sky.speed)}×`);
-    }
-    for (const e of sky.newOnsets || [])
-      ticker.push(`<span class="t">${ut(e.utc)} UT</span>${e.kind === "pseudo" ? "substorm onset" : "<b>substorm onset</b>"}, ${KIND[e.kind] || e.kind}, strength ${e.strength.toFixed(2)}`);
-    if (lastPhase && sky.phase !== lastPhase && sky.phase !== "onset")
-      ticker.push(`<span class="t">${ut(sky.utc)} UT</span>${sky.phase} begins`);
-    lastPhase = sky.phase;
-
-    phaseTrack.set(sky.phase, sky.progress);
-
     const t = performance.now();
     if (t - textShown < 250) return;   // text at 4 Hz is plenty
     textShown = t;
     const date = new Date(sky.utc * 1000);
-    $("ro-date").innerHTML = `<b class="num l" style="--w:11">${date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</b>`;
-    $("ro-ut").innerHTML = `<b>${ut(sky.utc)}</b> UT`;
-    $("ro-kp").innerHTML = `Kp ${num(sky.kp.toFixed(1), 3, "b", "l")}${num(sky.kp >= 5 ? "storm" : "", 5, "b", "l state")}`;
-    $("ro-bz").innerHTML = `Bz ${num(signed(sky.bz, 1), 5)} nT${num(sky.bz < 0 ? "south" : "", 5, "b", "l state")}`;
-    $("ro-v").innerHTML = `v ${num(Math.round(sky.wind), 4)} km/s`;
+    setHtml("ro-date", date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }));
+    setHtml("ro-ut", `<b>${ut(sky.utc)}</b> UT`);
     const frozen = (sky.speed || 0) < 0.01;
-    $("mode").innerHTML = `<i></i>${frozen ? "Frozen" : "Journey"} <b id="mode-speed" class="num l" style="--w:4">${frozen ? "" : Math.round(sky.speed) + "×"}</b>`;
+    setHtml("mode", `<i></i>${frozen ? "Frozen" : "Journey"} <b id="mode-speed" class="num l" style="--w:4">${frozen ? "" : Math.round(sky.speed) + "×"}</b>`);
 
-    const e = clamp(sky.energy / 1.5, 0, 1);
-    $("sky-row").innerHTML =
-      `<span>ΔH ${num(Math.round(sky.dh), 5)} nT <span class="dim">model ${num(Math.round(sky.dhModel), 5, "span", "l")}</span></span>` +
-      `<span>E ${num((sky.coupling || 0).toFixed(1), 4)} mV/m</span>` +
-      `<span>energy<span class="bar"><i style="width:${(e * 100).toFixed(1)}%"></i><u style="left:${(100 / 1.5).toFixed(1)}%"></u></span>${num(sky.energy.toFixed(2), 4, "b", "l")}</span>` +
-      `<span>activity ${num(sky.activity.toFixed(2), 4, "b", "l")}</span>` +
-      `<span>whistlers ${num(sky.whistlers, 2, "b", "l")}</span>`;
-    $("sky-note").textContent = { quiet: "quiet: the arc rests low", growth: "growth: loading from the solar wind", onset: "onset: the reservoir lets go", recovery: "recovery: patchy, pulsating" }[sky.phase] || "";
-    $("sky-onsets").textContent = `${sky.onsets} onset${sky.onsets === 1 ? "" : "s"}`;
+    // the Sky block: phase and how far through it; wind, Bz, Kp; energy against the release mark,
+    // activity; the last thing that happened
+    setHtml("sky-ph", PHASE_TITLE[sky.phase] || "—");
+    $("sky-prog").firstChild.style.width = (clamp(sky.progress, 0, 1) * 100).toFixed(1) + "%";
+    const bzSay = sky.bz < -0.5 ? "S" : sky.bz > 0.5 ? "N" : "";
+    setHtml("sky-nums", `${num(Math.round(sky.wind), 4)} <span class="u">km/s</span> Bz ${num(signed(sky.bz, 1), 5)} <span class="u num l" style="--w:1">${bzSay}</span> Kp ${num(sky.kp.toFixed(1), 3, "b", "l")}`);
+    const day = S.day;
+    let thr = 1;
+    if (day && day.threshold && day.threshold.length) thr = day.threshold[clamp(Math.round((sky.utc - day.t0) / day.step), 0, day.threshold.length - 1)] || 1;
+    const full = Math.max(1.5, thr * 1.25, sky.energy);
+    const bar = $("sky-energy");
+    bar.firstChild.style.width = (clamp(sky.energy / full, 0, 1) * 100).toFixed(1) + "%";
+    bar.lastChild.style.left = (clamp(thr / full, 0, 1) * 100).toFixed(1) + "%";
+    $("sky-act").firstChild.style.width = (clamp(sky.activity, 0, 1) * 100).toFixed(1) + "%";
+    let ev = null;
+    for (const e of dayEvents) { if (e.utc > sky.utc) break; ev = e; }
+    setHtml("sky-ev", ev ? `<b>${ut(ev.utc)}</b>${ev.say}` : "the recording begins");
+
     if (d) {
-      $("dome-astro").innerHTML = `sun ${num(signed(d.sunEl, 1) + "°", 6)}${num(wind(d.sunAz), 3, "span", "gap")}<br>moon ${num(Math.round(d.moonIllum * 100) + " %", 5)}${num(signed(d.moonEl, 0) + "°", 4, "span", "gap")}`;
-      if ($("info-astro")) $("info-astro").innerHTML = `sun ${d.sunEl.toFixed(1)}° el, moon ${Math.round(d.moonIllum * 100)} % lit, ${d.moonEl.toFixed(0)}° el`;
+      setHtml("dome-astro", `sun ${num(signed(d.sunEl, 1) + "°", 6)}${num(wind(d.sunAz), 3, "span", "gap")}<br>moon ${num(Math.round(d.moonIllum * 100) + " %", 5)}${num(signed(d.moonEl, 0) + "°", 4, "span", "gap")}`);
+      if (details.open && $("info-astro")) $("info-astro").innerHTML = `sun ${d.sunEl.toFixed(1)}° el, moon ${Math.round(d.moonIllum * 100)} % lit, ${d.moonEl.toFixed(0)}° el`;
     }
-    $("dome-oval").innerHTML = `arc ${num(sky.arcLat.toFixed(1) + "°", 5)} mlat<br>MLT ${num(sky.mlt.toFixed(1) + " h", 6)}`;
+    setHtml("dome-oval", `arc ${num(sky.arcLat.toFixed(1) + "°", 5)} mlat<br>MLT ${num(sky.mlt.toFixed(1) + " h", 6)}`);
     if (details.open) showJourney(sky);
   }
 
@@ -430,6 +454,16 @@
       `<span class="k">day</span><span><b>${DAY_LABELS[sky.day] || sky.day}</b></span>` +
       `<span class="k">speed</span><span>${num(Math.round(sky.speed) + "×", 4, "b", "l")}<span class="gap">${sky.speed > 0 ? (24 / sky.speed).toFixed(sky.speed >= 24 ? 1 : 0) + " h of listening per day" : "frozen"}</span></span>` +
       `<span class="k">now</span><span><b>${new Date(sky.utc * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} ${ut(sky.utc)} UT</b><span class="gap">MLT ${num(sky.mlt.toFixed(1), 4, "span")} h</span></span>`;
+    // the sky's full numbers (the Sky block keeps only a few)
+    const c = S.tel.chord;
+    $("info-sky").innerHTML =
+      `<span class="k">phase</span><span><b>${sky.phase}</b><span class="gap">${Math.round(clamp(sky.progress, 0, 1) * 100)} % through</span></span>` +
+      `<span class="k">Kp</span><span>${num(sky.kp.toFixed(1), 3, "b", "l")}${num(sky.kp >= 5 ? "storm" : "", 5, "b", "l state")}</span>` +
+      `<span class="k">wind</span><span>${num(Math.round(sky.wind), 4)} km/s<span class="gap">Bz ${num(signed(sky.bz, 1), 5)} nT</span>${num(sky.bz < 0 ? "south" : "", 5, "b", "l state")}</span>` +
+      `<span class="k">field</span><span>ΔH ${num(Math.round(sky.dh), 5)} nT<span class="gap">model ${num(Math.round(sky.dhModel), 5, "b", "l")}</span></span>` +
+      `<span class="k">coupling</span><span>E ${num((sky.coupling || 0).toFixed(1), 4)} mV/m</span>` +
+      `<span class="k">stored</span><span>energy ${num(sky.energy.toFixed(2), 4, "b", "l")}<span class="gap">activity ${num(sky.activity.toFixed(2), 4, "b", "l")}</span></span>` +
+      `<span class="k">counts</span><span>${num(sky.onsets, 2, "b")} onsets<span class="gap">${num(sky.whistlers, 2, "b")} whistlers</span><span class="gap">${num(c && c.changes ? c.changes : 0, 3, "b")} chords</span></span>`;
     if (!day) return;
     const span = day.phase.length * day.step;
     const f = clamp((sky.utc - day.t0) / span, 0, 1);
@@ -453,7 +487,7 @@
       measureEmission(tel.dome);
     }
     showSky(tel.sky, tel.dome);
-    showChord(tel.chord, tel.sky);
+    showChord(tel.chord);
     env += (Math.max(tel.peakL || 0, tel.peakR || 0) - env) * 0.05;
     if (tel.autoGain) {
       const db = 20 * Math.log10(tel.autoGain);
@@ -494,8 +528,6 @@
     if (t - last < (reduced ? 1 / 15 : 1 / 30) - 0.002) return;
     last = t;
 
-    voicing.setEmission(emission, [P("red_level"), P("green_level"), P("violet_level")]);
-    voicing.draw();
     if (tel.sky) mag.draw(tel.sky.utc);
     hmeter.draw(tel.peakL || 0, tel.peakR || 0, P("lim_ceiling"));
 
@@ -508,14 +540,14 @@
       S.lowShown = low;
       $("low-note").innerHTML = low >= 0 ? `<b class="num" style="--w:3">${noteName(low)}</b>` : "";
     }
-    if (P("play") || (tel.play && tel.play.voices && tel.play.voices.length)) keys.draw(tel.play ? tel.play.voices : [], low);
+    keys.draw(litKeys(tel));
     {
       fx.phaser.draw(t, { rate: P("ph_rate"), depth: P("ph_depth"), fb: P("ph_feedback"), stages: P("ph_stages"), mix: P("ph_mix") }, tel.spectrum);
       fx.chorus.draw(t, { rate: P("ch_rate"), depth: P("ch_depth"), mix: P("ch_mix") });
       fx.delay.draw({ time: P("dly_time"), fb: P("dly_fb"), tone: P("dly_tone"), mix: P("dly_mix"), ping: P("dly_pingpong") });
       fx.reverb.draw({ size: P("rev_size"), decay: P("rev_decay"), damp: P("rev_damp"), pre: P("rev_predelay"), shimmer: P("rev_shimmer"), mix: P("rev_mix") }, tel.verb || 0);
       fx.output.draw(tel.peakL || 0, tel.peakR || 0, tel.gr || 1, P("lim_ceiling"));
-      setHtml("verb-note", `${num(P("rev_decay").toFixed(1), 4, "span")} s<span class="gap">size ${num(Math.round(P("rev_size") * 100), 3, "span")} %</span>`);
+      setHtml("verb-note", `${num(P("rev_decay").toFixed(1), 4, "span")} s`);
     }
   }
   requestAnimationFrame(frame);
