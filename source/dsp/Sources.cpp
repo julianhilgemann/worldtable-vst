@@ -1,5 +1,6 @@
 #include "Sources.h"
 
+#include "Instrument.h"   // ScopeFifo
 #include "sky/SkyRandom.h"
 
 #include <algorithm>
@@ -223,6 +224,8 @@ void Sources::renderSamples (float* left, float* right, int numSamples) noexcept
 
     voices.process (left, right, numSamples);
     low.process (left, right, numSamples);
+    if (inputTap != nullptr)   // T6.12: the mix before the tone stage, for the editor (read-only)
+        inputTap->push (left, right, numSamples);
     tone.process (left, right, numSamples);
 }
 
