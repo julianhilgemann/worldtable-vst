@@ -62,38 +62,44 @@
       <div class="col" id="col-left">
         <div class="module frame" id="resonators">
           <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="resonators-more" data-hint="The bands: where each sits on the pitch axis, which chord tones it rings, its shift.">Resonators</button>
-            <!-- More: T3.8's band parameters, plain, until the resonator display (T6.11) draws them -->
-            <div class="more frame wide" id="resonators-more" aria-label="Bands" hidden>
+            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="resonators-more" data-hint="More: how far neighbouring bands reach into each other.">Resonators</button>
+            <!-- More: the blend (T6.11: the edges are grips in the picture, tones and shift in the band row) -->
+            <div class="more frame" id="resonators-more" aria-label="Bands" hidden>
               <div class="head"><span class="cap">Bands</span><span class="note">a move re-voices after 300 ms</span></div>
-              <div class="knobs">
-                <div data-knob="band_floor" data-label="Floor"></div>
-                <div data-knob="band_x1" data-label="Low|Red"></div>
-                <div data-knob="band_x2" data-label="Red|Grn"></div>
-                <div data-knob="band_x3" data-label="Grn|Vio"></div>
-                <div data-knob="band_ceiling" data-label="Ceiling"></div>
-                <div data-knob="band_blend" data-label="Blend"></div>
-              </div>
-              <div class="band-rows">
-                <span class="cap">Red</span><div data-seg="red_tones" data-labels="Root,Root+5,Chord,Colours,All"></div><div data-knob="red_shift" data-label="Shift" data-color="red"></div>
-                <span class="cap">Green</span><div data-seg="green_tones" data-labels="Root,Root+5,Chord,Colours,All"></div><div data-knob="green_shift" data-label="Shift" data-color="green"></div>
-                <span class="cap">Violet</span><div data-seg="violet_tones" data-labels="Root,Root+5,Chord,Colours,All"></div><div data-knob="violet_shift" data-label="Shift" data-color="violet"></div>
-              </div>
+              <div class="knobs"><div data-knob="band_blend" data-label="Blend"></div></div>
             </div>
-            <span class="note">the low resonator and three bands</span>
+            <span class="note">drag a grip for a crossover, a band for its level</span>
             <span class="spacer"></span>
             <span class="note low-note" id="low-note" data-hint="The low resonator's note: the chord's root, or the lowest note you hold."></span>
           </div>
-          <canvas class="view" id="cv-layers" data-hint="Each band's level and how long it rings on; the low resonator in grey."></canvas>
-          <div class="res-knobs">
-            <div class="kcol"><div data-knob="low_level" data-label="Low"></div><div data-knob="low_decay" data-label="Decay"></div></div>
-            <div class="kcol"><div data-knob="red_level" data-label="Red" data-color="red"></div><div data-knob="red_decay" data-label="Decay" data-color="red"></div></div>
-            <div class="kcol"><div data-knob="green_level" data-label="Green" data-color="green"></div><div data-knob="green_decay" data-label="Decay" data-color="green"></div></div>
-            <div class="kcol"><div data-knob="violet_level" data-label="Violet" data-color="violet"></div><div data-knob="violet_decay" data-label="Decay" data-color="violet"></div></div>
-            <i class="vr"></i>
-            <div class="kcol"><div data-knob="detune" data-label="Detune"></div><div data-knob="drift" data-label="Drift"></div></div>
-            <div class="kcol"><div data-knob="width" data-label="Width"></div></div>
+          <!-- ======== T6.11: the resonator display (resonators.js); the grips' and levels' proxies are added into the well -->
+          <div class="well res-well">
+            <canvas class="res-view" id="cv-res" data-hint="The resonators on a pitch axis. Each line is one note ringing."></canvas>
           </div>
+          <!-- the band row: the selected band's name, Tones, Shift, Level (a view: its binding is the band's handle), Decay │ Detune, Drift, Width -->
+          <div class="bandrow">
+            <div class="bn-band" id="bn-low">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#c9d3e6"></i>Low band</div>
+                <button type="button" class="chip vchip off" tabindex="-1" aria-disabled="true" data-hint="The low resonator rings the chord's root, within an octave above the floor."><span>Tones</span><b>the root</b></button>
+                <button type="button" class="chip vchip off" tabindex="-1" aria-disabled="true" data-hint="The low resonator follows the root; move the floor to move it."><span>Shift</span><b>0 st</b></button></div>
+              <div class="kr"><div data-knob="low_level" data-view data-label="Level" data-hint="Level of the low resonator. Dragging the band in the picture does the same."></div><div data-knob="low_decay" data-label="Decay"></div></div>
+            </div>
+            <div class="bn-band" id="bn-red">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#ff6b6b"></i>Red band</div></div>
+              <div class="kr"><div data-knob="red_level" data-view data-label="Level" data-color="red" data-hint="Level of the red band. Dragging the band in the picture does the same."></div><div data-knob="red_decay" data-label="Decay" data-color="red"></div></div>
+            </div>
+            <div class="bn-band" id="bn-green">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#5cf2a0"></i>Green band</div></div>
+              <div class="kr"><div data-knob="green_level" data-view data-label="Level" data-color="green" data-hint="Level of the green band. Dragging the band in the picture does the same."></div><div data-knob="green_decay" data-label="Decay" data-color="green"></div></div>
+            </div>
+            <div class="bn-band" id="bn-violet">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#8f7bff"></i>Violet band</div></div>
+              <div class="kr"><div data-knob="violet_level" data-view data-label="Level" data-color="violet" data-hint="Level of the violet band. Dragging the band in the picture does the same."></div><div data-knob="violet_decay" data-label="Decay" data-color="violet"></div></div>
+            </div>
+            <i class="vr"></i>
+            <div class="kr res-globals"><div data-knob="detune" data-label="Detune"></div><div data-knob="drift" data-label="Drift"></div><div data-knob="width" data-label="Width"></div></div>
+          </div>
+          <!-- ======== end T6.11 -->
         </div>
 
         <!-- the tone module: T3.9's EQ as plain knobs (gain over drive per band) until its display (T6.14) -->
@@ -331,6 +337,7 @@
   <script src="dome.js"></script>
   <script src="widgets.js"></script>
   <script src="views.js"></script>
+  <script src="resonators.js"></script>
   <script src="app.js"></script>
   <script src="mock.js"></script>
 </body>
