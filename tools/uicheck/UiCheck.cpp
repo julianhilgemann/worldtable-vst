@@ -19,6 +19,9 @@
 // every parameter's control has a hint, a role and a value text and can be set with the keyboard
 // alone (and a typed value lands), every picture has a hint, red/green/violet stay on the bands in
 // the DOM, and the macro rings follow the engine (Space 0 / 0.5 / 1 → reverb mix ×0.5 / ×1 / ×1.5).
+// T6.8 (spec/09 §3, §5): every module has its size in the layout, no canvas's backing store is wider
+// than its box × the pixel ratio, and every More popover opens from its title by pointer, is next in
+// the Tab order, and closes on Escape with the focus back on the title.
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
@@ -86,7 +89,7 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
     if (r === 'focus' && (el.closest('.play-stack') || el.closest('[hidden]'))) hidden.push(id); else if (r) bad[r].push(id);
   });
   // hidden controls are reached as a person reaches them: the Play controls in Play mode, a closed
-  // popover's controls (T3.8's Bands) through its button; transitions held
+  // popover's controls (T6.8's More popovers) through its button; transitions held
   if (hidden.length) {
     var root = document.documentElement, shot = root.classList.contains('shot'), play0 = WT.get('play');
     root.classList.add('shot');
@@ -112,10 +115,10 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
   rm.blur();
   [].forEach.call(document.querySelectorAll('#stage canvas'), function (c) { if (!c.closest('[data-hint]')) bad.pictures.push(c.id || 'canvas'); });
   // spec/09 rule 2 in the DOM (canvas pixels are reviewed in the code): the bands' knobs, the
-  // Layers picture, the voicing view, the keyboard strip, the dome, the magnetogram, the brand mark
+  // Layers picture, the keyboard strip, the dome, the day strip, the brand mark
   var HUE = { red: '255, 107, 107', green: '92, 242, 160', violet: '143, 123, 255' };
   [].forEach.call(document.querySelectorAll('#stage *'), function (e) {
-    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #mag, #cv-layers, #cv-voicing, #cv-keys, .brand')) return;
+    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #mag, #cv-layers, #cv-keys, .brand')) return;
     var cs = getComputedStyle(e);
     var v = [cs.color, cs.backgroundColor, cs.borderTopColor, cs.borderBottomColor, cs.borderLeftColor, cs.borderRightColor,
              cs.fill, cs.stroke, cs.backgroundImage, cs.boxShadow, cs.outlineColor].join('|');
@@ -129,6 +132,55 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
   bad.typed = typed;
   bad.spaceRing = ring;
   return bad;
+})()))JS";
+
+// T6.8: the regrouped page (spec/09 §3) and its More popovers (§5), in the real editor.
+const char* const layoutProbe = R"JS(JSON.stringify((function () {
+  var out = { sizes: [], canvas: [], more: [], moreCount: 0, moreParams: 0 };
+  // module → [width, height] at the design size (CSS px, before the stage's zoom)
+  var SIZE = { mag: [1110, 92], sky: [213, 92], resonators: [435, 264], tone: [435, 177], 'dome-wrap': [448, 448],
+               harmony: [433, 448], phaser: [214, 260], chorus: [214, 260], macros: [448, 260], delay: [146, 260],
+               reverb: [175, 260], output: [98, 260], topbar: [1350, 44], hintbar: [1350, 28] };
+  Object.keys(SIZE).forEach(function (id) {
+    var e = document.getElementById(id);
+    if (!e || e.offsetWidth !== SIZE[id][0] || e.offsetHeight !== SIZE[id][1])
+      out.sizes.push(id + ' ' + (e ? e.offsetWidth + 'x' + e.offsetHeight : 'missing'));
+  });
+  // no canvas grows past its box (the Retina trap, spec/06 §Rendering)
+  var k = Math.min(3, UI.dpr * UI.scale);
+  [].forEach.call(document.querySelectorAll('#stage canvas'), function (c) {
+    if (c.width > Math.ceil(c.clientWidth * k) + 1 || c.height > Math.ceil(c.clientHeight * k) + 1)
+      out.canvas.push((c.id || 'canvas') + ' ' + c.clientWidth + 'x' + c.clientHeight + ' css, ' + c.width + 'x' + c.height + ' px');
+  });
+  // the More popovers: a click on the title opens it and shows its controls; the first of them is the
+  // next stop in the Tab order after the title; Escape closes it and gives the focus back to the title
+  var focusables = function () {
+    return [].filter.call(document.querySelectorAll('#stage button, #stage [tabindex]'), function (e) {
+      return e.tabIndex >= 0 && !e.disabled && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
+    });
+  };
+  [].forEach.call(document.querySelectorAll('.more-btn[aria-controls]'), function (btn) {
+    var panel = document.getElementById(btn.getAttribute('aria-controls')), id = btn.closest('.module').id;
+    out.moreCount++;
+    if (!panel || !panel.hidden) { out.more.push(id + ' not closed'); return; }
+    btn.click();
+    var params = panel.querySelectorAll('[data-param]');
+    out.moreParams += params.length;
+    if (panel.hidden || btn.getAttribute('aria-expanded') !== 'true') out.more.push(id + ' click');
+    [].forEach.call(params, function (p) { if (p.getClientRects().length === 0) out.more.push(id + ' ' + p.dataset.param + ' hidden'); });
+    var f = focusables(), i = f.indexOf(btn);
+    if (i < 0 || !panel.contains(f[i + 1])) out.more.push(id + ' tab');
+    if (params.length) {
+      var first = params[0].matches('[tabindex]') ? params[0] : params[0].querySelector('[tabindex="0"]');
+      first.focus();
+      document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      if (!panel.hidden) out.more.push(id + ' escape');
+      if (document.activeElement !== btn) out.more.push(id + ' focus back');
+    }
+    if (!panel.hidden) btn.click();
+    btn.blur();
+  });
+  return out;
 })()))JS";
 } // namespace
 
@@ -246,6 +298,14 @@ int main (int argc, char* argv[])
     const auto access = evalSync (*browser, juce::String::fromUTF8 (accessProbe), 20000);
     pump (600);   // let the restored values travel back to C++
     auto parsedAccess = juce::JSON::parse (access);
+
+    // T6.8: the layout, the canvases, the More popovers
+    const auto layout = evalSync (*browser, juce::String::fromUTF8 (layoutProbe), 20000);
+    auto parsedLayout = juce::JSON::parse (layout);
+    bool layoutOk = parsedLayout.isObject();
+    for (const auto* list : { "sizes", "canvas", "more" })
+        layoutOk = layoutOk && parsedLayout[list].isArray() && parsedLayout[list].size() == 0;
+    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 7 && static_cast<int> (parsedLayout["moreParams"]) >= 20;
     bool accessOk = parsedAccess.isObject();
     for (const auto* list : { "hint", "long", "role", "text", "focus", "keys", "pictures", "hues" })
         accessOk = accessOk && parsedAccess[list].isArray() && parsedAccess[list].size() == 0;
@@ -259,6 +319,7 @@ int main (int argc, char* argv[])
     auto parsed = juce::JSON::parse (state);
     const bool ok = ready == "true"
                  && accessOk
+                 && layoutOk
                  && parsedSky["date"].toString().startsWith ("10 May")
                  && parsedSky["ut"].toString().endsWith ("UT")
                  && parsedSky["day"].toString() == "2024-05-10"
@@ -288,6 +349,7 @@ int main (int argc, char* argv[])
               << "dome:       " << dome << "\n"
               << "sky/chord:  " << skyState << "\n"
               << "keyboard, hints, colour, rings: " << access << "\n"
+              << "layout, canvases, More: " << layout << "\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
 
     if (probe.isNotEmpty())
