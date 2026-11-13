@@ -62,7 +62,6 @@ namespace id
     inline constexpr const char* eq3_drive = "eq3_drive";
     inline constexpr const char* eq4_freq = "eq4_freq";
     inline constexpr const char* eq4_drive = "eq4_drive";
-    inline constexpr const char* eq_sky = "eq_sky";
     inline constexpr const char* ph_rate = "ph_rate";
     inline constexpr const char* ph_depth = "ph_depth";
     inline constexpr const char* ph_feedback = "ph_feedback";
@@ -83,6 +82,15 @@ namespace id
     inline constexpr const char* rev_shimmer = "rev_shimmer";
     inline constexpr const char* rev_mod = "rev_mod";
     inline constexpr const char* rev_mix = "rev_mix";
+    inline constexpr const char* lfo1_rate = "lfo1_rate";
+    inline constexpr const char* lfo1_shape = "lfo1_shape";
+    inline constexpr const char* lfo2_rate = "lfo2_rate";
+    inline constexpr const char* lfo2_shape = "lfo2_shape";
+    inline constexpr const char* env_attack = "env_attack";
+    inline constexpr const char* env_decay = "env_decay";
+    inline constexpr const char* env_sustain = "env_sustain";
+    inline constexpr const char* env_release = "env_release";
+    inline constexpr const char* env_trigger = "env_trigger";
     inline constexpr const char* lim_ceiling = "lim_ceiling";
     inline constexpr const char* lim_release = "lim_release";
     inline constexpr const char* master = "master";
@@ -96,6 +104,9 @@ struct ChordShape { enum : int { kShape1 = 0, kShape2 = 1, kShape3 = 2, kCount =
 struct RedTones { enum : int { kRoot = 0, kRootFifth = 1, kChord = 2, kColours = 3, kAll = 4, kCount = 5 }; };
 struct GreenTones { enum : int { kRoot = 0, kRootFifth = 1, kChord = 2, kColours = 3, kAll = 4, kCount = 5 }; };
 struct VioletTones { enum : int { kRoot = 0, kRootFifth = 1, kChord = 2, kColours = 3, kAll = 4, kCount = 5 }; };
+struct Lfo1Shape { enum : int { kSine = 0, kTriangle = 1, kSmoothRandom = 2, kSteppedRandom = 3, kCount = 4 }; };
+struct Lfo2Shape { enum : int { kSine = 0, kTriangle = 1, kSmoothRandom = 2, kSteppedRandom = 3, kCount = 4 }; };
+struct EnvTrigger { enum : int { kOnset = 0, kNote = 1, kFireOnly = 2, kCount = 3 }; };
 
 /** Raw value pointers into the APVTS, for lock-free reads on the audio thread. */
 struct ParamPointers
@@ -152,7 +163,6 @@ struct ParamPointers
     std::atomic<float>* eq3_drive = nullptr;
     std::atomic<float>* eq4_freq = nullptr;
     std::atomic<float>* eq4_drive = nullptr;
-    std::atomic<float>* eq_sky = nullptr;
     std::atomic<float>* ph_rate = nullptr;
     std::atomic<float>* ph_depth = nullptr;
     std::atomic<float>* ph_feedback = nullptr;
@@ -173,6 +183,15 @@ struct ParamPointers
     std::atomic<float>* rev_shimmer = nullptr;
     std::atomic<float>* rev_mod = nullptr;
     std::atomic<float>* rev_mix = nullptr;
+    std::atomic<float>* lfo1_rate = nullptr;
+    std::atomic<float>* lfo1_shape = nullptr;
+    std::atomic<float>* lfo2_rate = nullptr;
+    std::atomic<float>* lfo2_shape = nullptr;
+    std::atomic<float>* env_attack = nullptr;
+    std::atomic<float>* env_decay = nullptr;
+    std::atomic<float>* env_sustain = nullptr;
+    std::atomic<float>* env_release = nullptr;
+    std::atomic<float>* env_trigger = nullptr;
     std::atomic<float>* lim_ceiling = nullptr;
     std::atomic<float>* lim_release = nullptr;
     std::atomic<float>* master = nullptr;
@@ -180,7 +199,7 @@ struct ParamPointers
     void bind (juce::AudioProcessorValueTreeState&);
 };
 
-inline constexpr int kNumParameters = 76;
+inline constexpr int kNumParameters = 84;
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 

@@ -37,7 +37,6 @@ void Sources::prepare (double rate, uint32_t soundSeed, const Settings& s) noexc
     lowSwellStart = -1.0;
     lowSwellAmp = 0.0;
     ticks = 0;
-    tone.setSkyOctaves (0.0f);
     tone.reset();
 }
 
@@ -45,8 +44,7 @@ void Sources::setSettings (const Settings& s) noexcept
 {
     settings = s;
     settings.droneUnder = std::clamp (s.droneUnder, 0.0, 1.0);
-    settings.lowLevel = std::clamp (s.lowLevel, 0.0, 1.0);
-    settings.eqSky = std::clamp (s.eqSky, 0.0, 1.0);
+    settings.lowLevel = std::clamp (s.lowLevel, 0.0, kMaxLevel);
 
     auto v = s.voices;
     v.bow = kBowPerBed * s.bed;
@@ -110,6 +108,14 @@ void Sources::readCurtain (const sky::SkyModel& model, const SkySound& sound) no
     redWeight = n > 0 ? red / n : 1.0;
 }
 
+void Sources::slewActivity (const sky::SkyModel& model, int tickSamples) noexcept
+{
+    const double tickS = static_cast<double> (std::max (1, tickSamples)) / sampleRate;
+    const double act = std::clamp (static_cast<double> (model.current().activity), 0.0, 1.5);
+    activity = primed ? activity + (act - activity) * (1.0 - std::exp (-tickS / kSkySlewSeconds)) : act;
+    primed = true;
+}
+
 void Sources::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEvent> events, const SkySound& sound, int tickSamples) noexcept
 {
     const auto& s = model.current();
@@ -128,11 +134,7 @@ void Sources::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEve
     droneStep = (droneTarget - drone) / samples;
     droneRampLeft = (droneTarget < drone || droneTarget > drone) ? samples : 0;
 
-    // the sky's activity, slewed ≥ 2 s (rule 4): the EQ's high cut opens with it, the bow follows it
-    const double act = std::clamp (static_cast<double> (s.activity), 0.0, 1.5);
-    activity = primed ? activity + (act - activity) * (1.0 - std::exp (-tickS / kSkySlewSeconds)) : act;
-    primed = true;
-    tone.setSkyOctaves (static_cast<float> (settings.eqSky * kEqSkyOctaves * std::min (activity, 1.0)));
+    // the sky's activity was slewed before this tick (slewActivity); the bow follows it below
 
     double onset = 0.0;
     for (const auto& e : events)

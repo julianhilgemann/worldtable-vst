@@ -38,7 +38,8 @@ public:
 
     void process (float* left, float* right, int numSamples) noexcept;
 
-    /** Smoothed wet energy, for the UI (0..~1). */
+    /** Smoothed wet energy, for the UI (0..~1): updated every kMeterSamples, however the calls are
+        cut (T4.2: the instrument calls it per tick segment). */
     float getWetLevel() const noexcept { return wetLevel; }
 
 private:
@@ -146,6 +147,9 @@ private:
     float predelayTarget = 0.0f, predelayCurrent = 0.0f, predelayCoef = 0.0f;   // glides: the index never jumps
     int coefCount = 0;
     float wetLevel = 0.0f;
+    static constexpr int kMeterSamples = 512;
+    float meterEnergy = 0.0f;
+    int meterCount = 0;
 };
 
 } // namespace worldtable::dsp

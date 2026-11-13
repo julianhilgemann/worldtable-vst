@@ -10,7 +10,10 @@
 #          centre → log-like skew) or `skew` (JUCE skew factor). Optional `step`.
 #   int:   min, max, default
 #   choice: choices, default (must be one of choices)
-#   modulatable: may become a mod-matrix target later (informational for now)
+#   mod_law: the parameter is a target of the modulation grid (T4.2, dsp/mod/ModMatrix.h), and
+#          the law its routes follow: mul (base × Π(1 + depth·source)), add (base + Σ depth·source
+#          × half the range) or oct (base × 2^(3·Σ depth·source)). A test checks it against
+#          ModMatrix.h's tables.
 #   rebuild: changing it rebuilds a table on a builder thread
 #   Template groups (`count` + `template`) expand {n}; a list default gives one value per copy.
 
@@ -21,10 +24,10 @@ groups:
     - { id: mood,        name: "Mood",        type: choice, choices: [Bright, Bittersweet, Nocturnal], default: Bright }
     - { id: scale,       name: "Scale",       type: choice, choices: [Major, Lydian, Penta Major, Minor, Dorian, Penta Minor], default: Major }
     - { id: chord_shape, name: "Chord Shape", type: choice, choices: [Shape 1, Shape 2, Shape 3], default: Shape 1 }
-    - { id: progression, name: "Progression", type: float, min: 0, max: 1, default: 1, modulatable: true }
+    - { id: progression, name: "Progression", type: float, min: 0, max: 1, default: 1, mod_law: mul }
     - { id: transpose,   name: "Transpose",   type: int, min: -24, max: 24, default: 0, unit: st }
-    - { id: detune,      name: "Detune",      type: float, min: 0, max: 12, default: 3, unit: ct, modulatable: true }
-    - { id: drift,       name: "Drift",       type: float, min: 0, max: 20, default: 4, unit: ct, modulatable: true }
+    - { id: detune,      name: "Detune",      type: float, min: 0, max: 12, default: 3, unit: ct, mod_law: mul }
+    - { id: drift,       name: "Drift",       type: float, min: 0, max: 20, default: 4, unit: ct, mod_law: mul }
 
   # Play mode (T3.7, ADR-0008): MIDI notes play the resonators; the drone stays under at play_drone.
   play:
@@ -35,15 +38,15 @@ groups:
     - { id: play_drone,    name: "Play Drone",    type: float, min: 0, max: 1, default: 0 }
 
   layers:
-    - { id: red_level,    name: "Red Level",    type: float, min: 0, max: 1, default: 1 }
-    - { id: green_level,  name: "Green Level",  type: float, min: 0, max: 1, default: 0.7 }
-    - { id: violet_level, name: "Violet Level", type: float, min: 0, max: 1, default: 0.4 }
+    - { id: red_level,    name: "Red Level",    type: float, min: 0, max: 1, default: 1, mod_law: mul }
+    - { id: green_level,  name: "Green Level",  type: float, min: 0, max: 1, default: 0.7, mod_law: mul }
+    - { id: violet_level, name: "Violet Level", type: float, min: 0, max: 1, default: 0.4, mod_law: mul }
     - { id: red_decay,    name: "Red Decay",    type: float, min: 5, max: 60, default: 20, mid: 20, unit: s }
     - { id: green_decay,  name: "Green Decay",  type: float, min: 2, max: 30, default: 6, mid: 8, unit: s }
     - { id: violet_decay, name: "Violet Decay", type: float, min: 1, max: 15, default: 2.5, mid: 3, unit: s }
-    - { id: width,        name: "Width",        type: float, min: 0, max: 1, default: 0.9 }
+    - { id: width,        name: "Width",        type: float, min: 0, max: 1, default: 0.9, mod_law: mul }
     # the low resonator under red (T3.7): the bass note, in the low band (T3.8: from band_floor up)
-    - { id: low_level,    name: "Low Level",    type: float, min: 0, max: 1, default: 0.5 }
+    - { id: low_level,    name: "Low Level",    type: float, min: 0, max: 1, default: 0.5, mod_law: mul }
     - { id: low_decay,    name: "Low Decay",    type: float, min: 1, max: 30, default: 8, mid: 8, unit: s }
 
   # The resonator bands (T3.8): one pitch axis (MIDI notes) cut by three crossovers between a floor
@@ -74,57 +77,68 @@ groups:
 
   # The tone stage (T3.9, dsp/fx/Eq.h): a low shelf, two bells and a 12 dB/oct high cut in series
   # after the sources, each band with its own drive in parallel (only that band saturates). Replaces
-  # flt_type, flt_cutoff, flt_reso, flt_sky and drive. eq4_freq at 20000 is "open". eq_sky is a
-  # stopgap: T4.2 turns it into the route Activity -> eq4_freq and removes it.
+  # flt_type, flt_cutoff, flt_reso, flt_sky and drive. eq4_freq at 20000 is "open". The sky opens
+  # the cut through the modulation grid (T4.2: the route Activity -> Cut, which replaced eq_sky).
   eq:
-    - { id: eq1_freq,  name: "EQ 1 Freq",  type: float, min: 30,  max: 400,   default: 110,   mid: 110,  unit: Hz, modulatable: true }
-    - { id: eq1_gain,  name: "EQ 1 Gain",  type: float, min: -12, max: 12,    default: 0,     unit: dB, modulatable: true }
-    - { id: eq1_drive, name: "EQ 1 Drive", type: float, min: 0,   max: 1,     default: 0,     modulatable: true }
-    - { id: eq2_freq,  name: "EQ 2 Freq",  type: float, min: 80,  max: 3000,  default: 420,   mid: 490,  unit: Hz, modulatable: true }
-    - { id: eq2_gain,  name: "EQ 2 Gain",  type: float, min: -12, max: 12,    default: 0,     unit: dB, modulatable: true }
+    - { id: eq1_freq,  name: "EQ 1 Freq",  type: float, min: 30,  max: 400,   default: 110,   mid: 110,  unit: Hz }
+    - { id: eq1_gain,  name: "EQ 1 Gain",  type: float, min: -12, max: 12,    default: 0,     unit: dB, mod_law: add }
+    - { id: eq1_drive, name: "EQ 1 Drive", type: float, min: 0,   max: 1,     default: 0, mod_law: add }
+    - { id: eq2_freq,  name: "EQ 2 Freq",  type: float, min: 80,  max: 3000,  default: 420,   mid: 490,  unit: Hz }
+    - { id: eq2_gain,  name: "EQ 2 Gain",  type: float, min: -12, max: 12,    default: 0,     unit: dB, mod_law: add }
     - { id: eq2_q,     name: "EQ 2 Q",     type: float, min: 0.3, max: 6,     default: 1,     mid: 1.34 }
-    - { id: eq2_drive, name: "EQ 2 Drive", type: float, min: 0,   max: 1,     default: 0,     modulatable: true }
-    - { id: eq3_freq,  name: "EQ 3 Freq",  type: float, min: 500, max: 12000, default: 2400,  mid: 2450, unit: Hz, modulatable: true }
-    - { id: eq3_gain,  name: "EQ 3 Gain",  type: float, min: -12, max: 12,    default: 0,     unit: dB, modulatable: true }
+    - { id: eq2_drive, name: "EQ 2 Drive", type: float, min: 0,   max: 1,     default: 0, mod_law: add }
+    - { id: eq3_freq,  name: "EQ 3 Freq",  type: float, min: 500, max: 12000, default: 2400,  mid: 2450, unit: Hz }
+    - { id: eq3_gain,  name: "EQ 3 Gain",  type: float, min: -12, max: 12,    default: 0,     unit: dB, mod_law: add }
     - { id: eq3_q,     name: "EQ 3 Q",     type: float, min: 0.3, max: 6,     default: 1,     mid: 1.34 }
-    - { id: eq3_drive, name: "EQ 3 Drive", type: float, min: 0,   max: 1,     default: 0,     modulatable: true }
-    - { id: eq4_freq,  name: "EQ 4 Cut",   type: float, min: 200, max: 20000, default: 20000, mid: 2000, unit: Hz, modulatable: true }
-    - { id: eq4_drive, name: "EQ 4 Drive", type: float, min: 0,   max: 1,     default: 0,     modulatable: true }
-    - { id: eq_sky,    name: "EQ Sky",     type: float, min: 0,   max: 1,     default: 0.3 }
+    - { id: eq3_drive, name: "EQ 3 Drive", type: float, min: 0,   max: 1,     default: 0, mod_law: add }
+    - { id: eq4_freq,  name: "EQ 4 Cut",   type: float, min: 200, max: 20000, default: 20000, mid: 2000, unit: Hz, mod_law: oct }
+    - { id: eq4_drive, name: "EQ 4 Drive", type: float, min: 0,   max: 1,     default: 0, mod_law: add }
 
   phaser:
     - { id: ph_rate,     name: "Phaser Rate",     type: float, min: 0.005, max: 0.5, default: 0.05, mid: 0.05, unit: Hz }
     - { id: ph_depth,    name: "Phaser Depth",    type: float, min: 0, max: 1, default: 0.6 }
     - { id: ph_feedback, name: "Phaser Feedback", type: float, min: 0, max: 0.8, default: 0.3 }
-    - { id: ph_mix,      name: "Phaser Mix",      type: float, min: 0, max: 1, default: 0.4, modulatable: true }
+    - { id: ph_mix,      name: "Phaser Mix",      type: float, min: 0, max: 1, default: 0.4, mod_law: mul }
     - { id: ph_stages,   name: "Phaser Stages",   type: int, min: 2, max: 8, default: 6 }
 
   chorus:
     - { id: ch_rate,  name: "Chorus Rate",  type: float, min: 0.01, max: 1, default: 0.1, mid: 0.1, unit: Hz }
     - { id: ch_depth, name: "Chorus Depth", type: float, min: 0, max: 10, default: 3, unit: ms }
-    - { id: ch_mix,   name: "Chorus Mix",   type: float, min: 0, max: 1, default: 0.25, modulatable: true }
+    - { id: ch_mix,   name: "Chorus Mix",   type: float, min: 0, max: 1, default: 0.25, mod_law: mul }
 
   delay:
     - { id: dly_time,     name: "Delay Time",     type: float, min: 0.05, max: 4, default: 1.8, mid: 1.0, unit: s }
-    - { id: dly_fb,       name: "Delay Feedback", type: float, min: 0, max: 0.95, default: 0.35, modulatable: true }
+    - { id: dly_fb,       name: "Delay Feedback", type: float, min: 0, max: 0.95, default: 0.35, mod_law: mul }
     - { id: dly_tone,     name: "Delay Tone",     type: float, min: 0, max: 1, default: 0.5 }
     - { id: dly_pingpong, name: "Delay Ping-Pong", type: bool, default: true }
-    - { id: dly_mix,      name: "Delay Mix",      type: float, min: 0, max: 1, default: 0.25, modulatable: true }
+    - { id: dly_mix,      name: "Delay Mix",      type: float, min: 0, max: 1, default: 0.25, mod_law: mul }
 
   reverb:
     - { id: rev_size,     name: "Reverb Size",      type: float, min: 0, max: 1, default: 0.85 }
-    - { id: rev_decay,    name: "Reverb Decay",     type: float, min: 0.3, max: 60, default: 9, mid: 8, unit: s, modulatable: true }
+    - { id: rev_decay,    name: "Reverb Decay",     type: float, min: 0.3, max: 60, default: 9, mid: 8, unit: s, mod_law: mul }
     - { id: rev_damp,     name: "Reverb Damping",   type: float, min: 0, max: 1, default: 0.35 }
     - { id: rev_predelay, name: "Reverb Pre-Delay", type: float, min: 0, max: 250, default: 20, unit: ms }
-    - { id: rev_shimmer,  name: "Reverb Shimmer",   type: float, min: 0, max: 1, default: 0.2, modulatable: true }
+    - { id: rev_shimmer,  name: "Reverb Shimmer",   type: float, min: 0, max: 1, default: 0.2, mod_law: mul }
     - { id: rev_mod,      name: "Reverb Modulation", type: float, min: 0, max: 1, default: 0.4 }
-    - { id: rev_mix,      name: "Reverb Mix",       type: float, min: 0, max: 1, default: 0.35, modulatable: true }
+    - { id: rev_mix,      name: "Reverb Mix",       type: float, min: 0, max: 1, default: 0.35, mod_law: mul }
+
+  # The grid's moving sources (T4.2, dsp/mod/SlowLfo.h and Envelope.h). The routes themselves are
+  # not parameters (the `modulation` state child). Defaults are the mockup's.
+  motion:
+    - { id: lfo1_rate,   name: "LFO 1 Rate",  type: float, min: 0.01, max: 2, default: 0.12, mid: 0.14, unit: Hz }
+    - { id: lfo1_shape,  name: "LFO 1 Shape", type: choice, choices: [Sine, Triangle, Smooth Random, Stepped Random], default: Sine }
+    - { id: lfo2_rate,   name: "LFO 2 Rate",  type: float, min: 0.01, max: 2, default: 0.03, mid: 0.14, unit: Hz }
+    - { id: lfo2_shape,  name: "LFO 2 Shape", type: choice, choices: [Sine, Triangle, Smooth Random, Stepped Random], default: Smooth Random }
+    - { id: env_attack,  name: "Env Attack",  type: float, min: 0.01, max: 10, default: 0.1, mid: 0.32, unit: s }
+    - { id: env_decay,   name: "Env Decay",   type: float, min: 0.01, max: 10, default: 0.6, mid: 0.32, unit: s }
+    - { id: env_sustain, name: "Env Sustain", type: float, min: 0, max: 1, default: 0.35 }
+    - { id: env_release, name: "Env Release", type: float, min: 0.01, max: 10, default: 1.5, mid: 0.32, unit: s }
+    - { id: env_trigger, name: "Env Trigger", type: choice, choices: [Onset, Note, Fire only], default: Onset }
 
   output:
     - { id: lim_ceiling, name: "Limiter Ceiling", type: float, min: -12, max: 0, default: -1, unit: dB }
     - { id: lim_release, name: "Limiter Release", type: float, min: 10, max: 1000, default: 200, mid: 150, unit: ms }
     - { id: master,      name: "Output",          type: float, min: -60, max: 0, default: 0, unit: dB }
 
-# Non-automatable state (ValueTree, not APVTS): modulation matrix, focus, frozen snapshot.
-state:
-  mod_matrix_slots: 16
+# Non-automatable state (ValueTree, not APVTS): the `modulation` child (T4.2: the grid's depths, one
+# `route` per non-zero cell by stable keys, dsp/mod/ModMatrix.h) and the `journey` child (T6.9).

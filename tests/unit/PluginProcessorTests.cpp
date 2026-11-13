@@ -660,7 +660,7 @@ TEST_CASE ("The editor's taps read the sound without changing it", "[processor][
     for (auto* p : { &a, &b })
     {
         setParam (*p, "eq4_freq", 300.0f);     // a closed tone stage: the tap sees what it removes
-        setParam (*p, "eq_sky", 0.0f);
+        p->setRoute (worldtable::dsp::mod::Source::activity, worldtable::dsp::mod::Destination::eqCut, 0.0f);
         setParam (*p, "ph_rate", 0.25f);
         p->setPlayConfigDetails (0, 2, 48000.0, 512);
         p->prepareToPlay (48000.0, 512);

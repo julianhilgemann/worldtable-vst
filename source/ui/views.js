@@ -233,8 +233,9 @@
    *  driven band. The curve as set (thin) and as it is now (bright, filled to 0 dB: the sky's opening
    *  of the cut, later T4.2's modulation), from UI.eqDb. A numbered dot per band (drag: frequency
    *  sideways, gain up and down; scroll over a bell: its width), a drive bar under each (pull it up),
-   *  the sky's reach on the top edge (drag its right end: eq_sky) with the cut now as a white dot.
-   *  Each of the 14 parameters has one focusable proxy on its handle (spec/09 §5), placed here; the
+   *  the sky's opening on the top edge (T4.2: the route Activity → Cut; from the cut as set to the
+   *  cut now, a white dot) — read-only here, the grid sets its depth.
+   *  Each of the 13 parameters has one focusable proxy on its handle (spec/09 §5), placed here; the
    *  pointer works on the canvas. The title row reads out the band pointed at or selected. Ink only. */
   function EqView(canvas, well, say) {
     const WT = window.WT;
@@ -244,7 +245,7 @@
       { kind: 1, name: "bell", f: "eq3_freq", g: "eq3_gain", q: "eq3_q", d: "eq3_drive" },
       { kind: 2, name: "high cut", f: "eq4_freq", g: null, q: null, d: "eq4_drive" },
     ];
-    const SKY = 4, OPEN = 19980, FX0 = Math.log(20), FX1 = Math.log(20000), OCT = 3;   // Sources.cpp: kEqSkyOctaves
+    const SKY = 4, OPEN = 19980, FX0 = Math.log(20), FX1 = Math.log(20000);
     const P = (id) => WT.get(id);
     /** The picture's frame (the mockup's eqG): the drive lane is the bottom 32 px, 0 dB halfway above it. */
     function geo() {
@@ -258,7 +259,7 @@
         G: (y) => (mid - y) / span * 12,
       };
     }
-    const reachOf = () => Math.min(20000, P("eq4_freq") * Math.pow(2, OCT * P("eq_sky")));
+    const reachOf = () => Math.min(20000, Math.max(P("eq4_freq"), live.eq4_freq || 0));   // the cut now (modulated)
     /** Where each handle is drawn (CSS px in the canvas). */
     const dotAt = (g, k) => { const b = BANDS[k]; return { x: clamp(g.X(P(b.f)), 8, g.w - 8), y: b.kind === 2 ? g.Y(-3) : g.Y(P(b.g)) }; };
     const skyAt = (g) => ({ x: clamp(g.X(reachOf()), 4, g.w - 4), y: 5 });
@@ -297,7 +298,6 @@
       if (b.q) proxy(b.q, "dot", k, NAMES[k] + ", width", UI.hintOf(b.q), false, "],[");
       proxy(b.d, "bar", k, NAMES[k] + ", drive", UI.hintOf(b.d), true);
     });
-    proxy("eq_sky", "sky", SKY, "The sky's opening of the cut", UI.hintOf("eq_sky"), true);
     const proxyOf = (role, k) => proxies.find((e) => e.dataset.role === role && +e.dataset.band === k);
     let placed = "";
     function place(g) {
@@ -360,7 +360,7 @@
       const r = canvas.getBoundingClientRect(), k = r.width / Math.max(1, canvas.clientWidth);
       return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k };
     };
-    /** The handle under p: a dot (nearest within 11 px), else a drive bar (padded to 24 px), else the sky's end. */
+    /** The handle under p: a dot (nearest within 11 px), else a drive bar (padded to 24 px). */
     function hitAt(p) {
       const g = geo();
       let best = null, dBest = 11;
@@ -374,11 +374,9 @@
         for (let k = 0; k < 4; k++) { const d = Math.abs(p.x - dotAt(g, k).x); if (d < dx) { dx = d; best = { role: "bar", k }; } }
         if (best) return best;
       }
-      const s = skyAt(g);
-      if (P("eq4_freq") < OPEN && Math.abs(p.x - s.x) < 12 && p.y < s.y + 10) return { role: "sky", k: SKY };
       return null;
     }
-    const HINT = "Four bands, each with its own gain and drive. The top edge: how far the sky opens the cut.";
+    const HINT = "Four bands, each with its own gain and drive. The top edge: how far the sky opens the cut now.";
     canvas.dataset.hint = HINT;
     function hintFor(h) {
       if (!h) return HINT;
@@ -435,18 +433,6 @@
         const run = UI.drag([b.d]), set = (q) => run.set(b.d, clamp((g.by - q.y) / g.bh, 0, 1));
         set(p);
         drag = { run, move: set };
-      } else {
-        // relative, in octaves of reach; past the edge too (the reach is drawn up to 20 kHz)
-        const run = UI.drag(["eq_sky"]), cut = P("eq4_freq");
-        let vx = g.X(cut * Math.pow(2, OCT * P("eq_sky")));
-        drag = {
-          run,
-          move(q, fine) {
-            vx = clamp(vx + (q.x - last.x) * (fine ? 0.15 : 1), g.X(cut), g.X(cut * Math.pow(2, OCT)));
-            last = q;
-            run.set("eq_sky", Math.log2(g.F(vx) / cut) / OCT);
-          },
-        };
       }
     });
     const release = () => {
@@ -462,7 +448,7 @@
       const h = hitAt(local(e));
       if (!h) return;
       const b = BANDS[h.k];
-      const id = h.role === "sky" ? "eq_sky" : h.role === "bar" ? b.d : b.g || b.f;   // a dot: its gain (the cut: open)
+      const id = h.role === "bar" ? b.d : b.g || b.f;   // a dot: its gain (the cut: open)
       UI.commit(id, UI.defaultValue(id));
     });
     // scroll over a bell (or with a bell selected): its width
@@ -480,7 +466,7 @@
       const k = drag ? sel : hot ? hot.k : sel;
       if (k === SKY) {
         const now = live.eq4_freq;
-        return `sky <b>+${(OCT * P("eq_sky")).toFixed(1)} oct</b> cut now <b>${hz(now)}</b>`;
+        return `sky cut now <b>${hz(now)}</b>`;
       }
       const b = BANDS[k], gain = b.g ? P(b.g) : 0;
       return `band <b>${k + 1}</b> ${b.name} <b>${hz(P(b.f))}</b>`
@@ -496,7 +482,7 @@
       // the values now: the sky's cut (T3.9) and, from T4.2, whatever modulation moves
       live = Object.assign({ eq4_freq: tel.eqCutHz || P("eq4_freq") }, extra || {});
       const g = geo(), w = g.w, h = g.h;
-      const ids = ["eq1_freq", "eq1_gain", "eq1_drive", "eq2_freq", "eq2_gain", "eq2_q", "eq2_drive", "eq3_freq", "eq3_gain", "eq3_q", "eq3_drive", "eq4_freq", "eq4_drive", "eq_sky"];
+      const ids = ["eq1_freq", "eq1_gain", "eq1_drive", "eq2_freq", "eq2_gain", "eq2_q", "eq2_drive", "eq3_freq", "eq3_gain", "eq3_q", "eq3_drive", "eq4_freq", "eq4_drive"];
       const s = ids.map(P).join() + JSON.stringify(live) + (hot ? hot.role + hot.k : "") + sel + !!drag + w + "x" + h + UI.scale
         + (tel.spectrumIn || tel.spectrum || []).join();
       const text = readout();
@@ -553,14 +539,12 @@
       path(setP); c.strokeStyle = "rgba(201,211,230,0.32)"; c.lineWidth = 1; c.stroke();
       path(liveP); c.strokeStyle = C.inkHi; c.lineWidth = 1.8; c.stroke();
 
-      // the sky's reach on the top edge: from the cut as set to the cut at full activity; its end is
-      // the handle for eq_sky; the white dot is the cut now
+      // the sky's opening on the top edge: from the cut as set to the cut now (T4.2: the route
+      // Activity → Cut, set in the grid), the white dot at its end
       const cut = P("eq4_freq");
       if (cut < OPEN) {
-        const x0 = g.X(cut), sk = skyAt(g), on = sel === SKY || (hot && hot.role === "sky");
+        const x0 = g.X(cut), sk = skyAt(g);
         c.fillStyle = "rgba(201,211,230,0.38)"; c.fillRect(x0, 4, Math.max(0, sk.x - x0), 2);
-        c.fillStyle = C.night; c.beginPath(); c.arc(sk.x, sk.y, 3.5, 0, 2 * Math.PI); c.fill();
-        c.strokeStyle = on ? "#fff" : C.ink; c.lineWidth = on ? 1.6 : 1.3; c.stroke();
         c.fillStyle = "#fff"; c.beginPath(); c.arc(clamp(g.X(live.eq4_freq), 3, w - 3), 5, 2.6, 0, 2 * Math.PI); c.fill();
       }
 

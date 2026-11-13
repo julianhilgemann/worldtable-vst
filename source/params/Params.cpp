@@ -111,8 +111,6 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& apvts)
     jassert (eq4_freq != nullptr);
     eq4_drive = apvts.getRawParameterValue (id::eq4_drive);
     jassert (eq4_drive != nullptr);
-    eq_sky = apvts.getRawParameterValue (id::eq_sky);
-    jassert (eq_sky != nullptr);
     ph_rate = apvts.getRawParameterValue (id::ph_rate);
     jassert (ph_rate != nullptr);
     ph_depth = apvts.getRawParameterValue (id::ph_depth);
@@ -153,6 +151,24 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& apvts)
     jassert (rev_mod != nullptr);
     rev_mix = apvts.getRawParameterValue (id::rev_mix);
     jassert (rev_mix != nullptr);
+    lfo1_rate = apvts.getRawParameterValue (id::lfo1_rate);
+    jassert (lfo1_rate != nullptr);
+    lfo1_shape = apvts.getRawParameterValue (id::lfo1_shape);
+    jassert (lfo1_shape != nullptr);
+    lfo2_rate = apvts.getRawParameterValue (id::lfo2_rate);
+    jassert (lfo2_rate != nullptr);
+    lfo2_shape = apvts.getRawParameterValue (id::lfo2_shape);
+    jassert (lfo2_shape != nullptr);
+    env_attack = apvts.getRawParameterValue (id::env_attack);
+    jassert (env_attack != nullptr);
+    env_decay = apvts.getRawParameterValue (id::env_decay);
+    jassert (env_decay != nullptr);
+    env_sustain = apvts.getRawParameterValue (id::env_sustain);
+    jassert (env_sustain != nullptr);
+    env_release = apvts.getRawParameterValue (id::env_release);
+    jassert (env_release != nullptr);
+    env_trigger = apvts.getRawParameterValue (id::env_trigger);
+    jassert (env_trigger != nullptr);
     lim_ceiling = apvts.getRawParameterValue (id::lim_ceiling);
     jassert (lim_ceiling != nullptr);
     lim_release = apvts.getRawParameterValue (id::lim_release);
@@ -260,8 +276,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         NormalisableRange<float> (200.0f, 20000.0f, 0.0f, 0.2890648263178878f), 20000.0f, AudioParameterFloatAttributes().withLabel ("Hz")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq4_drive, 1 }, "EQ 4 Drive",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq_sky, 1 }, "EQ Sky",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.3f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ph_rate, 1 }, "Phaser Rate",
         NormalisableRange<float> (0.005f, 0.5f, 0.0f, 0.2890648263178879f), 0.05f, AudioParameterFloatAttributes().withLabel ("Hz")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ph_depth, 1 }, "Phaser Depth",
@@ -300,6 +314,24 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.4f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::rev_mix, 1 }, "Reverb Mix",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.35f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::lfo1_rate, 1 }, "LFO 1 Rate",
+        NormalisableRange<float> (0.01f, 2.0f, 0.0f, 0.2540531059375852f), 0.12f, AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::lfo1_shape, 1 }, "LFO 1 Shape",
+        StringArray { "Sine", "Triangle", "Smooth Random", "Stepped Random" }, 0));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::lfo2_rate, 1 }, "LFO 2 Rate",
+        NormalisableRange<float> (0.01f, 2.0f, 0.0f, 0.2540531059375852f), 0.03f, AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::lfo2_shape, 1 }, "LFO 2 Shape",
+        StringArray { "Sine", "Triangle", "Smooth Random", "Stepped Random" }, 2));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::env_attack, 1 }, "Env Attack",
+        NormalisableRange<float> (0.01f, 10.0f, 0.0f, 0.1995950393331247f), 0.1f, AudioParameterFloatAttributes().withLabel ("s")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::env_decay, 1 }, "Env Decay",
+        NormalisableRange<float> (0.01f, 10.0f, 0.0f, 0.1995950393331247f), 0.6f, AudioParameterFloatAttributes().withLabel ("s")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::env_sustain, 1 }, "Env Sustain",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.35f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::env_release, 1 }, "Env Release",
+        NormalisableRange<float> (0.01f, 10.0f, 0.0f, 0.1995950393331247f), 1.5f, AudioParameterFloatAttributes().withLabel ("s")));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::env_trigger, 1 }, "Env Trigger",
+        StringArray { "Onset", "Note", "Fire only" }, 0));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::lim_ceiling, 1 }, "Limiter Ceiling",
         NormalisableRange<float> (-12.0f, 0.0f, 0.0f, 1.0f), -1.0f, AudioParameterFloatAttributes().withLabel ("dB")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::lim_release, 1 }, "Limiter Release",
