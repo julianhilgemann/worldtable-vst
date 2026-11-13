@@ -361,7 +361,8 @@ header {
   border-color: var(--line-hi);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
-.details .module { padding: 6px 10px 8px; }
+/* widths, not flex bases: WebKit sizes the absolutely placed popover from its items' widths */
+.details .module { flex: none; padding: 6px 10px 8px; }
 .info-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; row-gap: 5px; margin-top: 6px; font-size: 12px; color: var(--muted); }
 .info-grid b { font-family: var(--mono); color: var(--ink-hi); font-weight: 500; }
 .info-grid .k { color: var(--muted); }
