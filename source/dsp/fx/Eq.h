@@ -72,7 +72,8 @@ struct SvfStage
     Only the nonlinear part is added: eₖ = sat(bₖ) − b̄ₖ, where b̄ₖ is bₖ through the same ADAA
     kernel taken linearly (the half-sample average), DC-blocked at 10 Hz, and
     `out = y + Σ driveₖ · eₖ`. So zero drive is exactly the EQ alone, quiet content passes
-    untouched, and the harmonics come from that band only.
+    untouched, and the harmonics come from that band only. A band whose drive is 0 skips its
+    analysis (it restarts from rest as the drive glides up from 0).
 
     **Nothing jumps** (rule 4): frequencies glide per sample in log frequency (τ 20 ms, as the
     filter did), gains, widths and drives per sample with the same τ, coefficients per sample while
@@ -164,6 +165,7 @@ public:
                 s.fresh = false;
                 s.dc.reset();
             }
+            c.idle.fill (true);
         }
     }
 
@@ -318,6 +320,7 @@ private:
         std::array<SvfStage, kBands> bands {};
         std::array<std::array<SvfStage, 2>, kBands> owners {};
         std::array<SatState, kBands> sat {};
+        std::array<bool, kBands> idle {};   ///< the band's drive is off: its analysis rests (cleared)
     };
 
     /** SVF coefficients for band `band` with the SVF at `svfHz` (no open mapping: the glide passes
@@ -446,20 +449,13 @@ private:
         return o.k * st[1].process (a, o.g, o.k).band;
     }
 
-    /** driveₖ · eₖ: what band `b`'s drive adds (0 when its drive is 0). */
+    /** driveₖ · eₖ: what band `b`'s drive adds (its drive is above 0). */
     float saturate (int b, Channel& c, float part) noexcept
     {
         const auto i = static_cast<size_t> (b);
         const auto& sh = shapers[i];
         auto& st = c.sat[i];
         const double now0 = part;
-        if (sh.amount <= 0.0f)
-        {
-            st.prevB = now0;   // ready to start from here
-            st.fresh = false;
-            st.dc.reset();
-            return 0.0f;
-        }
         const double x = sh.gain * now0 + sh.bias, xp = sh.gain * st.prevB + sh.bias;
         const double fx = logCosh (x);
         const double fxp = st.fresh && ! driveMoved[i] ? st.prevF : logCosh (xp);
@@ -478,13 +474,28 @@ private:
         for (int b = 0; b < kBands; ++b)
             y = stepBand (c.bands[static_cast<size_t> (b)], y, coefs[static_cast<size_t> (b)]);
 
+        // a band whose drive is off costs nothing: its analysis rests, cleared, and starts again from
+        // rest when the drive comes up (gliding from 0, so the start is inaudible)
         bool any = false;
         float add = 0.0f;
         for (int b = 0; b < kBands; ++b)
         {
-            const float part = owned (b, c, y);
-            any = any || shapers[static_cast<size_t> (b)].amount > 0.0f;
-            add += saturate (b, c, part);
+            const auto i = static_cast<size_t> (b);
+            if (shapers[i].amount > 0.0f)
+            {
+                any = true;
+                c.idle[i] = false;
+                add += saturate (b, c, owned (b, c, y));
+            }
+            else if (! c.idle[i])
+            {
+                for (auto& st : c.owners[i])
+                    st.reset();
+                c.sat[i].prevB = c.sat[i].prevF = 0.0;
+                c.sat[i].fresh = false;
+                c.sat[i].dc.reset();
+                c.idle[i] = true;
+            }
         }
         return any ? y + add : y;
     }

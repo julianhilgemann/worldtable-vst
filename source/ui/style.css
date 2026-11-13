@@ -319,10 +319,10 @@ header {
 /* the live picture takes whatever height the module has left */
 .module canvas.view { display: block; width: 100%; flex: 1 1 0; height: 0; min-height: 40px; margin: 4px 0 4px; }
 .module .knobs { display: flex; justify-content: space-around; align-items: flex-start; gap: 0; margin-top: auto; }
-.filter-views { display: flex; gap: 6px; flex: 1 1 0; min-height: 40px; margin: 4px 0 4px; }
-.filter-views canvas.view { height: auto; min-height: 0; margin: 0; }
-.filter-views #cv-filter { flex: 1 1 0; width: 0; min-width: 0; }   /* never sized by its own pixels (T6.6 fix) */
-.filter-views #cv-drive { flex: 0 0 52px; width: 52px; }
+/* T3.9: the EQ as plain knobs until its display (T6.14): a column per band, the drive under the gain */
+#eq { position: relative; }
+.eq-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); justify-items: center; row-gap: 0; margin-top: auto; }
+#eq-panel { left: auto; width: 380px; }   /* wider than the card: it opens leftwards over the macros */
 
 /* harmony and layers */
 #harmony { padding: 6px 12px 8px; }
@@ -421,7 +421,7 @@ header {
 .seg button:focus-visible { outline-offset: 1px; }
 .seg.small button { padding: 0 7px; }
 [data-seg="scale"] button { padding: 0 7px; }
-[data-seg="flt_type"] button, [data-seg="chord_shape"] button { font-family: var(--mono); min-width: 26px; }
+[data-seg="chord_shape"] button { font-family: var(--mono); min-width: 26px; }
 .seg.keys { gap: 2px; background: none; border: 0; }
 .seg.keys button { padding: 0; width: 26px; text-align: center; border-radius: 5px; }
 
