@@ -23,8 +23,6 @@ groups:
     - { id: chord_shape, name: "Chord Shape", type: choice, choices: [Shape 1, Shape 2, Shape 3], default: Shape 1 }
     - { id: progression, name: "Progression", type: float, min: 0, max: 1, default: 1, modulatable: true }
     - { id: transpose,   name: "Transpose",   type: int, min: -24, max: 24, default: 0, unit: st }
-    - { id: register_semis, name: "Register", type: int, min: -24, max: 24, default: 0, unit: st }
-    - { id: spread,      name: "Voicing Spread", type: float, min: 0.5, max: 4, default: 2, unit: oct }
     - { id: detune,      name: "Detune",      type: float, min: 0, max: 12, default: 3, unit: ct, modulatable: true }
     - { id: drift,       name: "Drift",       type: float, min: 0, max: 20, default: 4, unit: ct, modulatable: true }
 
@@ -44,10 +42,28 @@ groups:
     - { id: green_decay,  name: "Green Decay",  type: float, min: 2, max: 30, default: 6, mid: 8, unit: s }
     - { id: violet_decay, name: "Violet Decay", type: float, min: 1, max: 15, default: 2.5, mid: 3, unit: s }
     - { id: width,        name: "Width",        type: float, min: 0, max: 1, default: 0.9 }
-    # the low resonator under red (T3.7): the bass note in the sub (C1–B1) or bass (C2–B2) octave
+    # the low resonator under red (T3.7): the bass note, in the low band (T3.8: from band_floor up)
     - { id: low_level,    name: "Low Level",    type: float, min: 0, max: 1, default: 0.5 }
     - { id: low_decay,    name: "Low Decay",    type: float, min: 1, max: 30, default: 8, mid: 8, unit: s }
-    - { id: low_octave,   name: "Low Octave",   type: choice, choices: [Sub, Bass], default: Sub }
+
+  # The resonator bands (T3.8): one pitch axis (MIDI notes) cut by three crossovers between a floor
+  # and a ceiling: low [floor, x1), red [x1, x2), green [x2, x3), violet [x3, ceiling). Minimum widths
+  # low 12, the others 5; the engine keeps the order and the widths whatever is automated (clamped
+  # from the floor upward). These replace register_semis, spread and low_octave. A change re-voices
+  # the chord through the double-bank crossfade once it has been still for 300 ms.
+  bands:
+    - { id: band_floor,   name: "Band Floor",            type: int, min: 21, max: 60,  default: 24 }
+    - { id: band_x1,      name: "Crossover Low/Red",     type: int, min: 28, max: 84,  default: 36 }
+    - { id: band_x2,      name: "Crossover Red/Green",   type: int, min: 33, max: 96,  default: 50 }
+    - { id: band_x3,      name: "Crossover Green/Violet", type: int, min: 38, max: 103, default: 73 }
+    - { id: band_ceiling, name: "Band Ceiling",          type: int, min: 43, max: 108, default: 91 }
+    - { id: band_blend,   name: "Band Blend",            type: float, min: 0, max: 6, default: 1.5, unit: st }
+    - { id: red_tones,    name: "Red Tones",    type: choice, choices: [Root, Root + fifth, Chord, Colours, All], default: Root + fifth }
+    - { id: green_tones,  name: "Green Tones",  type: choice, choices: [Root, Root + fifth, Chord, Colours, All], default: Chord }
+    - { id: violet_tones, name: "Violet Tones", type: choice, choices: [Root, Root + fifth, Chord, Colours, All], default: Colours }
+    - { id: red_shift,    name: "Red Shift",    type: int, min: -12, max: 12, default: 0, unit: st }
+    - { id: green_shift,  name: "Green Shift",  type: int, min: -12, max: 12, default: 0, unit: st }
+    - { id: violet_shift, name: "Violet Shift", type: int, min: -12, max: 12, default: 0, unit: st }
 
   macros:
     - { id: macro_storm,  name: "Storm",  type: float, min: 0, max: 1, default: 0.5 }

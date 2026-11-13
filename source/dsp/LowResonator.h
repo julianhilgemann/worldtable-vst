@@ -1,13 +1,16 @@
 #pragma once
 
+#include "Voicing.h"
+
 #include <array>
 #include <cstdint>
 
 namespace worldtable::dsp
 {
 
-/** The low resonator (T3.7, spec/05 §1): a resonator layer under red, tuned to the bass note and
-    placed in the sub octave (C1–B1) or the bass octave (C2–B2). Mono, in the centre.
+/** The low resonator (T3.7, spec/05 §1, §14): a resonator layer under red, tuned to the bass note
+    and placed in the low band: the lowest note of its pitch class at or above the band's floor
+    (T3.8, `band_floor`; C1 by default, so C1–B1). Mono, in the centre.
 
     Two banks, each a pair of resonators ± kDetuneCents around the note (slow beating) and one an
     octave up (the body, so the note still speaks on small speakers). A new note goes to the other
@@ -31,19 +34,21 @@ public:
     struct Settings
     {
         double t60 = 8.0;     ///< s
-        int octave = 1;       ///< 1: C1–B1 (sub), 2: C2–B2 (bass)
     };
-
-    /** MIDI note of pitch class `pc` (0–11) in `octave` (1: C1 = 24). */
-    static int noteFor (int pitchClass, int octave) noexcept;
 
     void prepare (double sampleRate, uint32_t seed) noexcept;
 
     void setSettings (const Settings&) noexcept;
 
-    /** The bass note's pitch class (< 0: keep the current one; an octave change still applies). A
-        new note goes to the other bank; the excitation crossfades to it over `crossfadeSeconds`.
-        Immediate, so a strike right after lands on the new note. */
+    /** The low band's floor (T3.8): the note sits at or above it, within an octave. A new floor takes
+        effect at the next setNote(), as a new note does. */
+    void setFloor (int floorNote) noexcept;
+    int floor() const noexcept { return floorNote; }
+
+    /** The bass note's pitch class (< 0: keep the current one; a floor change still applies). A new
+        note goes to the other bank; the excitation crossfades to it over `crossfadeSeconds`.
+        Immediate, so a strike right after lands on the new note. The same note again (a new floor
+        that keeps it) changes nothing. */
     void setNote (int pitchClass, double crossfadeSeconds) noexcept;
 
     /** One control tick: `excitation` is the continuous input level, `gain` the output gain reached
@@ -71,7 +76,8 @@ private:
     Settings settings;
     double sampleRate = 48000.0;
     int cur = 0;
-    int currentNote = -1, currentPc = -1, currentOctave = 1;
+    int currentNote = -1, currentPc = -1;
+    int floorNote = BandEdges {}.floor;
     double xf = 1.0;                 ///< 0 … 1 toward the current bank
     double xfSeconds = 4.0;          ///< of the running crossfade
 

@@ -83,14 +83,22 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
     if (['slider', 'switch', 'radiogroup'].indexOf(el.getAttribute('role')) < 0) bad.role.push(id);
     if (!el.getAttribute('aria-valuetext')) bad.text.push(id);
     var r = keyboard(id, el);
-    if (r === 'focus' && el.closest('.play-stack')) hidden.push(id); else if (r) bad[r].push(id);
+    if (r === 'focus' && (el.closest('.play-stack') || el.closest('[hidden]'))) hidden.push(id); else if (r) bad[r].push(id);
   });
-  // the Play controls show (and take focus) in Play mode: switch it on, transitions held
+  // hidden controls are reached as a person reaches them: the Play controls in Play mode, a closed
+  // popover's controls (T3.8's Bands) through its button; transitions held
   if (hidden.length) {
     var root = document.documentElement, shot = root.classList.contains('shot'), play0 = WT.get('play');
     root.classList.add('shot');
     UI.commit('play', 1);
-    hidden.forEach(function (id) { var r = keyboard(id, document.querySelector('[data-param="' + id + '"]')); if (r) bad[r].push(id); });
+    hidden.forEach(function (id) {
+      var el = document.querySelector('[data-param="' + id + '"]'), pop = el.closest('[hidden]');
+      var btn = pop ? document.querySelector('[aria-controls="' + pop.id + '"]') : null;
+      if (btn) btn.click();
+      var r = keyboard(id, el);
+      if (r) bad[r].push(id);
+      if (btn && !pop.hidden) btn.click();
+    });
     UI.commit('play', play0);
     if (!shot) root.classList.remove('shot');
   }

@@ -115,6 +115,8 @@
   }
   const details = popover("details-btn", "details", () => { if (S.tel.sky) showJourney(S.tel.sky); });
   const viewPop = popover("view-btn", "view-panel");
+  const bandsPop = popover("bands-btn", "bands-panel");   // T3.8: plain band controls until T6.11
+  if (hash.has("bands")) bandsPop.set(true);              // for review screenshots
   if (hash.has("details")) details.set(true);   // for review screenshots
   // mock only, for review screenshots: #set=play:1,flt_cutoff:800
   if (WT.isMock && hash.has("set"))

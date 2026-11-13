@@ -22,17 +22,11 @@ double white (uint32_t& state) noexcept
 }
 } // namespace
 
-int LowResonator::noteFor (int pitchClass, int octave) noexcept
-{
-    return 12 * (std::clamp (octave, 1, 2) + 1) + ((pitchClass % 12) + 12) % 12;
-}
-
 void LowResonator::prepare (double rate, uint32_t seed) noexcept
 {
     sampleRate = rate > 0.0 ? rate : 48000.0;
     cur = 0;
     currentNote = currentPc = -1;
-    currentOctave = settings.octave;
     xf = 1.0;
     re.fill (0.0);
     im.fill (0.0);
@@ -55,7 +49,11 @@ void LowResonator::setSettings (const Settings& next) noexcept
 {
     settings = next;
     settings.t60 = std::clamp (next.t60, 0.1, 60.0);
-    settings.octave = std::clamp (next.octave, 1, 2);
+}
+
+void LowResonator::setFloor (int note) noexcept
+{
+    floorNote = std::clamp (note, 0, 127 - 11);
 }
 
 double LowResonator::radius (double t60Seconds) const noexcept
@@ -75,14 +73,15 @@ void LowResonator::setNote (int pitchClass, double crossfadeSeconds) noexcept
 {
     if (pitchClass < 0)
     {
-        if (currentPc < 0 || settings.octave == currentOctave)
+        if (currentPc < 0)
             return;
-        pitchClass = currentPc;   // the octave moved: same note, new place
+        pitchClass = currentPc;   // the floor may have moved: same note, maybe a new place
     }
-    if (pitchClass == currentPc && settings.octave == currentOctave)
+    pitchClass = ((pitchClass % 12) + 12) % 12;
+    const int note = lowNote (pitchClass, floorNote);
+    if (note == currentNote)
         return;
 
-    const int note = noteFor (pitchClass, settings.octave);
     if (currentNote < 0)
     {
         tune (cur, note);   // the first note: no crossfade from silence
@@ -100,7 +99,6 @@ void LowResonator::setNote (int pitchClass, double crossfadeSeconds) noexcept
     }
     currentNote = note;
     currentPc = pitchClass;
-    currentOctave = settings.octave;
 }
 
 void LowResonator::tick (double excitation, double gain, int tickSamples) noexcept

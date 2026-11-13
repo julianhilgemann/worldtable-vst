@@ -3,10 +3,14 @@
 //   WorldtableRender --out renders/instrument.wav --seconds 45 [--rate 48000]
 //                    [--set progression=0 --set mood=Bittersweet --set drive=0.3 ...]
 //                    [--midi notes.mid] [--block 512] [--bands]
+//                    [--sweep band_x2=33:96[:t0:t1] ...]
 //
 // --midi plays a Standard MIDI File into the processor at its sample positions (all tracks, the
 // file's tempo map); with --set play=1 that is Play mode (T3.7). --bands prints the mono mix's
 // octave-band levels (31.5 Hz … 16 kHz), for the low end and the filter.
+// --sweep moves a parameter in a straight line from one value to another, between t0 and t1
+// seconds (default: the whole render), on a 0.1 s grid; the blocks are cut at the grid, so the
+// same sweep lands on the same samples whatever --block is (T3.8: the band edges).
 // The default path renders the plug-in as it plays: the Sky Model's bundled Journey (10–11 May
 // 2024, 24×), SkySound, the full FX chain, the chord hold and the MIDI latch (T3.6). Values for
 // --set are real parameter values (Hz, s, dB …); choices accept the index or the choice name.
@@ -19,7 +23,7 @@
 //   WorldtableRender --sky --out renders/T3.1-storm.wav [--day 2024-05-10] [--from 17:20]
 //                    [--speed 24] [--seconds 300] [--voices 64|128] [--seed 1] [--gain 0] [--dry]
 //                    [--mood bright|bittersweet|nocturnal] [--root D] [--chord 0..2]
-//                    [--transpose 0] [--register 0] [--spread 2] [--progression 0..1]
+//                    [--transpose 0] [--edges 24,36,50,73,91] [--blend 1.5] [--progression 0..1]
 
 #include "PluginProcessor.h"
 #include "data/SkyDays.h"
@@ -40,6 +44,8 @@
 #include <chrono>
 #include <ctime>
 #include <iostream>
+#include <optional>
+#include <vector>
 
 namespace
 {
@@ -116,6 +122,36 @@ bool setParameter (juce::AudioProcessorValueTreeState& apvts, const juce::String
     return true;
 }
 
+constexpr double kSweepStepSeconds = 0.1;
+
+/** --sweep id=from:to[:t0:t1]: a straight line from `from` (at t0) to `to` (at t1), seconds. */
+struct Sweep
+{
+    juce::String id;
+    double from = 0.0, to = 0.0, t0 = 0.0, t1 = 0.0;
+
+    /** The value at `t`, or nothing outside [t0, t1]. */
+    std::optional<double> valueAt (double t) const
+    {
+        if (t < t0 - 1.0e-9 || t > t1 + 1.0e-9)
+            return std::nullopt;
+        return from + (to - from) * (t1 > t0 ? (t - t0) / (t1 - t0) : 1.0);
+    }
+};
+
+bool parseSweep (const juce::String& text, double seconds, Sweep& out)
+{
+    out.id = text.upToFirstOccurrenceOf ("=", false, false).trim();
+    const auto parts = juce::StringArray::fromTokens (text.fromFirstOccurrenceOf ("=", false, false), ":", "");
+    if (out.id.isEmpty() || (parts.size() != 2 && parts.size() != 4))
+        return false;
+    out.from = parts[0].getDoubleValue();
+    out.to = parts[1].getDoubleValue();
+    out.t0 = parts.size() == 4 ? parts[2].getDoubleValue() : 0.0;
+    out.t1 = parts.size() == 4 ? parts[3].getDoubleValue() : seconds;
+    return out.t1 >= out.t0;
+}
+
 std::unique_ptr<juce::AudioFormatWriter> createWav (const juce::File& out, double rate)
 {
     out.getParentDirectory().createDirectory();
@@ -141,7 +177,7 @@ struct SkyRenderOptions
     // The held chord (T3.2): the sketch's default is bright, root D, chord 0 → Dmaj7.
     worldtable::dsp::Mood mood = worldtable::dsp::Mood::bright;
     int root = 2, chord = 0, transpose = 0;
-    double registerSemitones = 0.0, spread = 2.0;
+    worldtable::dsp::BandEdges edges;   // T3.8: the default bands
     double progression = 0.0;           // 0: hold the chord; 1: the sky writes the progression
 };
 
@@ -205,8 +241,7 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
     dsp::SkySound sound;
     dsp::SkySound::Settings settings;
     settings.voicesPerNode = o.voices > params.nodes ? 2 : 1;
-    settings.registerSemitones = o.registerSemitones;
-    settings.spread = o.spread;
+    settings.bands.edges = o.edges;
 
     auto& harmony = sound.harmony();
     harmony.setSeed (o.seed);
@@ -406,7 +441,7 @@ int main (int argc, char* argv[])
     bool skyMode = false, secondsGiven = false, bands = false;
     int block = 512;
     juce::File midiFile;
-    juce::StringArray sets;
+    juce::StringArray sets, sweepArgs;
     SkyRenderOptions sky;
 
     for (int i = 1; i < argc; ++i)
@@ -441,8 +476,19 @@ int main (int argc, char* argv[])
         }
         else if (a == "--chord")   sky.chord = juce::jlimit (0, 2, next().getIntValue());
         else if (a == "--transpose") sky.transpose = next().getIntValue();
-        else if (a == "--register") sky.registerSemitones = next().getDoubleValue();
-        else if (a == "--spread")  sky.spread = next().getDoubleValue();
+        else if (a == "--edges")
+        {
+            const auto parts = juce::StringArray::fromTokens (next(), ",", "");
+            if (parts.size() != 5)
+                return fail ("--edges takes five MIDI notes: floor,x1,x2,x3,ceiling");
+            sky.edges.floor = parts[0].getIntValue();
+            sky.edges.x1 = parts[1].getIntValue();
+            sky.edges.x2 = parts[2].getIntValue();
+            sky.edges.x3 = parts[3].getIntValue();
+            sky.edges.ceiling = parts[4].getIntValue();
+        }
+        else if (a == "--blend")   sky.edges.blend = next().getDoubleValue();
+        else if (a == "--sweep")   sweepArgs.add (next());
         else if (a == "--progression") sky.progression = juce::jlimit (0.0, 1.0, next().getDoubleValue());
         else return fail ("unknown argument " + a);
     }
@@ -464,6 +510,15 @@ int main (int argc, char* argv[])
     if (midiFile != juce::File() && ! loadMidi (midiFile, events))
         return fail ("cannot read MIDI file " + midiFile.getFullPathName());
 
+    std::vector<Sweep> sweeps;
+    for (const auto& s : sweepArgs)
+    {
+        Sweep sw;
+        if (! parseSweep (s, seconds, sw) || processor.getValueTreeState().getParameter (sw.id) == nullptr)
+            return fail ("--sweep wants id=from:to[:t0:t1] with a known parameter, not " + s);
+        sweeps.push_back (sw);
+    }
+
     processor.setPlayConfigDetails (0, 2, rate, block);
     processor.prepareToPlay (rate, block);
 
@@ -473,10 +528,19 @@ int main (int argc, char* argv[])
     juce::MidiBuffer midi;
 
     const auto t0 = std::chrono::steady_clock::now();
+    const auto grid = std::max (1, static_cast<int> (std::lround (kSweepStepSeconds * rate)));
     int nextEvent = 0;
-    for (int pos = 0; pos < total; pos += block)
+    for (int pos = 0, n = 0; pos < total; pos += n)
     {
-        const int n = std::min (block, total - pos);
+        n = std::min (block, total - pos);
+        if (! sweeps.empty())
+        {
+            if (pos % grid == 0)
+                for (const auto& sw : sweeps)
+                    if (const auto value = sw.valueAt (pos / rate))
+                        setParameter (processor.getValueTreeState(), sw.id + "=" + juce::String (*value));
+            n = std::min (n, grid - pos % grid);   // the next grid point starts a block
+        }
         buffer.setSize (2, n, false, false, true);
         midi.clear();
         for (; nextEvent < events.getNumEvents(); ++nextEvent)
@@ -512,6 +576,14 @@ int main (int argc, char* argv[])
     }
     const auto rms = std::sqrt (sumSq / (2.0 * total));
     const auto name = processor.getInstrument().currentChordName();
+    if (! sweeps.empty())
+    {
+        // where the band sweep left the instrument (T3.8)
+        const auto& b = processor.getInstrument().sound().bands();
+        std::cout << "bands:   applied edges " << b.edges.floor << " " << b.edges.x1 << " " << b.edges.x2 << " "
+                  << b.edges.x3 << " " << b.edges.ceiling << ", blend " << b.edges.blend << "; "
+                  << processor.getInstrument().chordChanges() << " chord changes and re-voicings\n";
+    }
 
     std::cout << "journey: " << processor.getSkyFeed().dayId() << ", " << processor.getInstrument().voices()
               << " voices per layer, chord " << juce::String::fromUTF8 (name.label.data())

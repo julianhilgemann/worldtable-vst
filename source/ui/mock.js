@@ -38,18 +38,30 @@
       onsets: trace.events.filter((e) => e.type === "onset").map((e) => ({ utc: e.t / 1000, kind: e.kind, strength: e.strength })),
     });
 
-    // ---- harmony: the sketch's progression, voiced like SkySound (5 slots per layer)
+    // ---- harmony: the sketch's progression, voiced like SkySound (5 slots per layer) in the bands
+    // (T3.8: dsp::Voicing's clampEdges, bandRange, bandSlots, without the per-voice spread)
     const FN = ["home", "tension", "awe", "borrowed"];
     const harmony = new H.Harmony({ seed: 1, mood: H.MOODS[Math.round(WT.get("mood"))], key: Math.round(WT.get("key")), progression: WT.get("progression") });
     harmony.start(model.snapshot().phase);
     let chord = harmony.chord(), changes = 0, lastTake = 0, slots = null, notes = [[], [], []];
+    const TONES_AS = ["root", "red", "green", "violet", "green"];   // Root, Root + fifth, Chord, Colours, All
+    function bandEdges() {
+      const want = ["band_floor", "band_x1", "band_x2", "band_x3", "band_ceiling"].map((id) => Math.round(WT.get(id)));
+      const max = [60, 84, 96, 103, 108], minW = [0, 12, 5, 5, 5], e = [];
+      for (let i = 0; i < 5; i++) e.push(i === 0 ? Math.min(Math.max(want[0], 21), 60) : Math.min(Math.max(want[i], e[i - 1] + minW[i]), Math.max(max[i], e[i - 1] + minW[i])));
+      return e;
+    }
     function voice(c) {
-      const reg = WT.get("register_semis") + WT.get("transpose"), spread = WT.get("spread");
-      const next = H.LAYERS.map((L) => H.layerSlots(c, c.key, L));
+      const e = bandEdges(), reach = Math.round(WT.get("band_blend")), L = ["red", "green", "violet"];
+      const next = L.map((name, l) => {
+        const as = TONES_AS[Math.round(WT.get(name + "_tones"))], shift = Math.round(WT.get(name + "_shift"));
+        const pcs = as === "root" ? Array(H.SLOTS).fill((c.key + c.deg) % 12) : H.layerSlots(c, c.key, as);
+        return pcs.map((pc) => (((pc + shift) % 12) + 12) % 12);
+      });
       slots = slots ? next.map((s, l) => H.leadSlots(slots[l], s).slots) : next;
-      notes = H.LAYERS.map((L, l) => {
-        const [lo, hi] = H.layerRange(L, reg, spread), centre = Math.round((lo + hi) / 2);
-        const prev = notes[l];
+      notes = L.map((name, l) => {
+        const lo = Math.max(e[0], e[l + 1] - reach), hi = Math.min(e[4] - 1, e[l + 2] - 1 + (l === 2 ? 0 : reach));
+        const centre = Math.round((lo + hi) / 2), prev = notes[l];
         return slots[l].map((pc, k) => H.nearestNote(pc, prev[k] ?? centre, lo, hi));
       });
     }
@@ -68,6 +80,15 @@
     WT.onParam("key", (v) => harmony.setKey(Math.round(v)));
     WT.onParam("mood", (v) => harmony.setMood(H.MOODS[Math.round(v)]));
     WT.onParam("progression", (v) => harmony.setProgression(v));
+    let revoiceTimer = null, armed = false;   // T3.8: a band change re-voices once still for 300 ms
+    for (const id of ["band_floor", "band_x1", "band_x2", "band_x3", "band_ceiling", "band_blend", "red_tones", "green_tones",
+                      "violet_tones", "red_shift", "green_shift", "violet_shift"])
+      WT.onParam(id, () => {
+        if (!armed) return;   // onParam calls once at once with the current value
+        clearTimeout(revoiceTimer);
+        revoiceTimer = setTimeout(() => { voice(chord); changes += 1; }, 300);
+      });
+    armed = true;
 
     // ---- real time → model ticks (10 ms), 30 telemetry frames a second
     const t0 = performance.now();
@@ -102,7 +123,7 @@
       { notes: [50, 57, 61, 64, 66], label: "Dmaj9" }, { notes: [47, 54, 61, 62, 64], label: "Bm11" },
       { notes: [43, 50, 54, 59, 61], label: "Gmaj7♯11" }, { notes: [45, 52, 59, 64, 69], label: "Asus2" },
     ];
-    const lowNoteOf = (pc) => 12 * (Math.round(WT.get("low_octave")) + 2) + ((pc % 12) + 12) % 12;
+    const lowNoteOf = (pc) => { const f = bandEdges()[0]; return f + ((((pc - f) % 12) + 12) % 12); };   // from the floor up (T3.8)
     function playDemo(r) {
       const bar = 3, i = Math.floor(r / bar) % PHRASE.length, t = r % bar, held = t < 2.2;
       const rel = Math.max(0.02, WT.get("play_release"));
@@ -145,6 +166,7 @@
         chord: playing ? playing.chord : {
           label: chord.label, roman: chord.roman, key: chord.key, function: FN.indexOf(chord.fn), shape: chord.index,
           voices: notes[0].length, bank: changes % 2, latched: false, pending: !!harmony.pending, changes, tick: 0, notes,
+          edges: bandEdges(), blend: WT.get("band_blend"),
         },
       };
     }

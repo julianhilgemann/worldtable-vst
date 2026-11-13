@@ -158,14 +158,16 @@ void Sources::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEve
         redWeight = n > 0 ? red / n : 1.0;
     }
 
-    // the low resonator: the chord's root (drone) or the lowest held note (Play)
+    // the low resonator: the chord's root (drone) or the lowest held note (Play), in the low band
+    // as SkySound applies it (a floor move waits for the same 300 ms as the other edges)
+    low.setFloor (sound.bands().edges.floor);
     const int held = voices.lowestHeld();
     if (settings.play)
     {
         if (held != PlayVoices::kNoNote)
             low.setNote (((held % 12) + 12) % 12, std::max (0.02, settings.voices.attack));
         else
-            low.setNote (-1, kLowDroneCrossfade);   // keeps the note; applies an octave change
+            low.setNote (-1, kLowDroneCrossfade);   // keeps the note; applies a floor change
     }
     else
     {

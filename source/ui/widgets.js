@@ -60,6 +60,10 @@
     play_velocity: (v) => (v < 0.005 ? "fixed" : Math.round(v * 30) + " dB"),
     play_drone: (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " %"),
   };
+  const NOTE_NAMES = ["C", "D♭", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
+  const noteName = (n) => NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
+  for (const id of ["band_floor", "band_x1", "band_x2", "band_x3", "band_ceiling"]) FORMAT[id] = (v) => noteName(Math.round(v));
+  FORMAT.band_blend = (v) => v.toFixed(1) + " st";
   UI.format = (id, v) => (FORMAT[id] ? FORMAT[id](v) : WT.fmt(id, v).replace("-", "−").replace(/(\d)%$/, "$1 %"));
 
   /** A typed value (Enter on a knob) → the parameter's value, or null. Reads what the knob shows:
@@ -79,6 +83,9 @@
     const m = WT.META[id];
     const t = String(text).trim().toLowerCase().replace(/−/g, "-").replace(",", ".");
     if (WORDS[id] && t in WORDS[id]) return WORDS[id][t];
+    const note = /^([a-g])\s*([#♯b♭]?)\s*(-?\d)$/.exec(t);   // a note name: C2, F#3, Bb1
+    if (note && id.startsWith("band_") && id !== "band_blend")
+      return 12 * (+note[3] + 1) + [0, 2, 4, 5, 7, 9, 11]["cdefgab".indexOf(note[1])] + (/[#♯]/.test(note[2]) ? 1 : note[2] ? -1 : 0);
     let n = parseFloat(t.replace(/^\+/, ""));
     if (!isFinite(n)) return null;
     if (PARSE[id]) return PARSE[id](n);
@@ -98,8 +105,6 @@
     chord_shape: "Which of the chord's shapes holds while Progression is at 0.",
     progression: "From holding one chord to following every move of the sky.",
     transpose: "Shifts every chord and played note by semitones.",
-    register_semis: "Moves all three bands up or down together, in semitones.",
-    spread: "How far apart the three bands sit, in octaves.",
     detune: "A few cents between neighbouring resonators, for thickness.",
     drift: "Slow wander of each resonator's pitch, like worn tape.",
     play: "Play: your MIDI notes play the resonators. Off: the sky plays, MIDI holds a chord.",
@@ -116,7 +121,18 @@
     green_decay: "How long the green band rings on after the sky strikes it.",
     violet_decay: "How long the violet band rings on after the sky strikes it.",
     width: "How wide the curtain is spread between the speakers.",
-    low_octave: "Where the low resonator sits: the sub octave (C1–B1) or the bass (C2–B2).",
+    band_floor: "The low band's lowest note. The low resonator sits within an octave above it.",
+    band_x1: "Where the low band ends and the red band begins.",
+    band_x2: "Where the red band ends and the green band begins.",
+    band_x3: "Where the green band ends and the violet band begins.",
+    band_ceiling: "The first note above the violet band.",
+    band_blend: "How far neighbouring bands reach into each other, in semitones.",
+    red_tones: "Which chord tones the red band rings: root, root and fifth, chord, colours, all.",
+    green_tones: "Which chord tones the green band rings: root, root and fifth, chord, colours, all.",
+    violet_tones: "Which chord tones the violet band rings: root, root and fifth, chord, colours, all.",
+    red_shift: "Transposes the red band against the chord. +7 rings a fifth above.",
+    green_shift: "Transposes the green band against the chord. +7 rings a fifth above.",
+    violet_shift: "Transposes the violet band against the chord. +7 rings a fifth above.",
     macro_storm: "Storm: how hard the sky plays every band.",
     macro_breath: "Breath: a slow swell, five times a minute.",
     macro_glow: "Glow: more violet and more shimmer.",
