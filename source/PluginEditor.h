@@ -43,6 +43,7 @@ private:
     juce::var makeChordTelemetry();
     juce::var makeDomeTelemetry() const;
     juce::var makeDayEvent() const;
+    juce::var makeJourneyTelemetry() const;
     void updateAnalyzer();
 
     PluginProcessor& wtProcessor;

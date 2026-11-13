@@ -58,7 +58,11 @@ void SkyModel::setTimeline (const SkyTimeline* next) noexcept
         return;
     }
 
-    const bool reseek = previous == nullptr || timeline->seed != seed || ! (timeline->params == params);
+    // T6.9: a new track (another day) is a seek, so the slow state is the new track's and the sound
+    // hears a jump (seeks()), not a move. Model time is clamped to the new track until a landing
+    // seek (SkyRuntime::land) moves it on.
+    const bool reseek = previous == nullptr || previous->track != timeline->track || timeline->seed != seed
+                     || ! (timeline->params == params);
     params = timeline->params;
     seed = timeline->seed;
     obs = Observer (data::stationInfo (timeline->track->station), params.poleLatDeg, params.poleLonDeg);

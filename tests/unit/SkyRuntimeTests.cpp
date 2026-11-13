@@ -12,10 +12,12 @@
 
 #include <array>
 #include <atomic>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <random>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 using namespace worldtable;
@@ -417,4 +419,82 @@ TEST_CASE ("The telemetry carries the Breath cycle for the UI", "[processor][ui]
     }
     CHECK (lo < 0.05f);   // it starts out
     CHECK (hi > 0.8f);    // and breathes in
+}
+
+//==================================================================================================
+// T6.9: the Journey transport's engine side — a day lands with its track, Loop wraps on the tick grid
+TEST_CASE ("A new day lands at its Journey start with the track, as one seek; older seeks are dropped", "[sky][runtime][journey]")
+{
+    auto rt = std::make_unique<sky::SkyRuntime>();
+    sky::SkyFeed feed (*rt);
+    rt->prepare (48000.0);
+    rt->setSpeed (24.0);
+    REQUIRE (feed.loadJourney (data::kDefaultSkyDay));
+    // before any block the landing is the time a saved state would carry
+    CHECK_THAT (rt->modelTimeNow(), Catch::Matchers::WithinULP (kStormStart + sky::SkyFeed::kDefaultJourneyStart, 0));
+    for (int k = 0; k < 20; ++k)
+        rt->process (512);
+    const auto seeksBefore = rt->model().seeks();
+
+    rt->seek (kStormStart + 20 * 3600.0);   // meant for the storm day, superseded by the new day
+    REQUIRE (feed.loadJourney ("2025-01-19"));
+    std::printf ("SkyFeed::load of 2025-01-19: %.1f ms on this thread\n", feed.lastLoadMs());
+    const double landing = feed.dayStartUtc() + sky::SkyFeed::journeyStart ("2025-01-19");
+    CHECK_THAT (rt->modelTimeNow(), Catch::Matchers::WithinULP (landing, 0));
+
+    const auto allocations = testing::allocationsOnThisThread();
+    rt->process (512);   // picks the day up: one block, no allocation
+    CHECK (testing::allocationsOnThisThread() == allocations);
+    // landed (the 512 samples hold one or two ticks at 0.24 s each), not at the stale seek's time
+    CHECK (rt->model().modelTimeUtc() >= landing);
+    CHECK (rt->model().modelTimeUtc() < landing + 1.0);
+    CHECK (rt->model().seeks() > seeksBefore);
+
+    // a seek after the landing applies on the new day
+    rt->seek (landing + 3600.0);
+    rt->process (512);
+    CHECK (rt->model().modelTimeUtc() >= landing + 3600.0);
+    CHECK (rt->model().modelTimeUtc() < landing + 3601.0);
+}
+
+TEST_CASE ("Loop wraps to the track's start on the tick grid; without it the sky holds at the end", "[sky][runtime][journey][determinism]")
+{
+    // From 30 s before the end at 1440× (14.4 model seconds per tick): the end comes after three
+    // ticks and, with Loop, the next tick lands at the start.
+    const auto run = [] (bool loop, int block)
+    {
+        auto rt = std::make_unique<sky::SkyRuntime>();
+        sky::SkyFeed feed (*rt);
+        REQUIRE (feed.loadJourney (data::kDefaultSkyDay));
+        rt->prepare (48000.0);
+        rt->process (0);
+        rt->seek (feed.dayEndUtc() - 30.0);
+        rt->setSpeed (sky::SkyModel::kMaxSpeed);
+        rt->setLoop (loop);
+        std::array<sky::SkyEvent, 256> ev {};
+        for (int done = 0; done < 40 * 480;)   // 40 ticks
+        {
+            const int n = std::min (block, 40 * 480 - done);
+            rt->process (n);
+            done += n;
+            rt->readEvents (sky::SkyRuntime::Reader::osc, ev);
+        }
+        sky::SkySnapshot s {};
+        rt->readSnapshot (sky::SkyRuntime::Reader::osc, s);
+        return std::make_tuple (s, rt->atTrackEnd(), feed.dayStartUtc(), feed.dayEndUtc(), rt->model().seeks());
+    };
+
+    const auto [held, heldAtEnd, start, end, heldSeeks] = run (false, 512);
+    CHECK (heldAtEnd);
+    CHECK (held.modelTimeUtc >= end - 1.0);
+
+    const auto [looped, loopedAtEnd, start2, end2, loopSeeks] = run (true, 512);
+    CHECK_FALSE (loopedAtEnd);
+    CHECK (loopSeeks == heldSeeks + 1);                // the wrap is one seek
+    CHECK (looped.modelTimeUtc >= start);
+    CHECK (looped.modelTimeUtc < start + 40 * 14.4);   // back at the start, moving on
+
+    const auto [odd, oddAtEnd, start3, end3, oddSeeks] = run (true, 37);
+    CHECK (sameSky (odd, looped));                     // the wrap doesn't depend on the block size
+    CHECK (oddSeeks == loopSeeks);
 }

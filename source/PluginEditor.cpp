@@ -92,6 +92,22 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                      if (const double utc = args[0]; std::isfinite (utc))
                                          wtProcessor.getSky().seek (utc);
                                  complete (true);
+                             })
+        .withNativeFunction ("journeySet", [this] (const juce::Array<juce::var>& args, auto complete)
+                             {
+                                 // T6.9: the transport. { frozen?, speed?, loop?, day? }; answers
+                                 // with the Journey as it now is.
+                                 JourneyChange change;
+                                 if (! args.isEmpty() && args[0].isObject())
+                                 {
+                                     const auto& a = args[0];
+                                     if (a.hasProperty ("frozen")) change.frozen = static_cast<bool> (a["frozen"]);
+                                     if (a.hasProperty ("speed"))  change.speed = static_cast<double> (a["speed"]);
+                                     if (a.hasProperty ("loop"))   change.loop = static_cast<bool> (a["loop"]);
+                                     if (a.hasProperty ("day"))    change.day = a["day"].toString();
+                                 }
+                                 wtProcessor.setJourney (change);
+                                 complete (makeJourneyTelemetry());
                              });
 
     for (auto* param : wtProcessor.getParameters())
@@ -375,6 +391,33 @@ juce::var PluginEditor::makeDayEvent() const
     o->setProperty ("threshold", floats (c.threshold, 1000.0));
     o->setProperty ("phase", phases);
     o->setProperty ("onsets", onsets);
+
+    // T6.9: what the transport offers: the bundled days and the speeds
+    juce::Array<juce::var> days, speeds;
+    for (const auto& d : data::kSkyDays)
+    {
+        auto* day = new juce::DynamicObject();
+        day->setProperty ("id", juce::String (d.id));
+        day->setProperty ("label", juce::String::fromUTF8 (d.label));
+        days.add (juce::var (day));
+    }
+    for (const double s : JourneyState::kSpeeds)
+        speeds.add (s);
+    o->setProperty ("days", days);
+    o->setProperty ("speeds", speeds);
+    return juce::var (o);
+}
+
+juce::var PluginEditor::makeJourneyTelemetry() const
+{
+    // T6.9: the transport's state; `speed` is the running speed, also while frozen
+    const auto j = wtProcessor.getJourney();
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("day", j.day);
+    o->setProperty ("frozen", j.frozen);
+    o->setProperty ("speed", j.speed);
+    o->setProperty ("loop", j.loop);
+    o->setProperty ("ended", wtProcessor.journeyEnded());
     return juce::var (o);
 }
 
@@ -454,6 +497,7 @@ juce::var PluginEditor::makeTelemetry()
     o->setProperty ("verb", round3 (t.reverbLevel.load()));
     o->setProperty ("breath", round3 (t.breath.load()));
     o->setProperty ("sky", makeSkyTelemetry());
+    o->setProperty ("journey", makeJourneyTelemetry());
     o->setProperty ("dome", makeDomeTelemetry());
     o->setProperty ("chord", makeChordTelemetry());
     o->setProperty ("play", makePlayTelemetry());

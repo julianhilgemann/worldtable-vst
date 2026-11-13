@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 namespace worldtable::sky
@@ -17,6 +18,12 @@ struct TrackBundle
 {
     data::WorldSnapshot track;
     SkyTimeline timeline;
+
+    /** T6.9: where the model lands when the audio thread picks this track up (SkyRuntime::land), as
+        one seek request with the track, so a new day never plays a block at the old day's time.
+        NaN: the model keeps its time (clamped to the track). */
+    double landingUtc = std::numeric_limits<double>::quiet_NaN();
+    uint32_t landingTicket = 0;   ///< the seek request this landing answers (SkyRuntime's count)
 };
 
 /** Current, pending and one being built. */
@@ -54,9 +61,26 @@ public:
     /** The track hand-off: the data side fills a slot and publishes it (SkyFeed). */
     TrackExchange& tracks() noexcept { return exchange; }
 
+    /** Producer thread (T6.9): publishes a filled slot and lands the model at `utc` when the audio
+        thread picks it up, as one seek. Seeks asked for before this call are dropped (they were
+        meant for the old track); seeks asked for after it apply on the new track. */
+    void land (int slot, double utc) noexcept;
+
     //== Any thread: applied at the start of the next block ===========================================
     void setSpeed (double modelSecondsPerSecond) noexcept;
     void seek (double modelTimeUtc) noexcept;
+
+    /** T6.9: at the track's end, start again from its beginning (a seek, so the sound re-bases)
+        instead of holding there. Decided on the tick grid, so it doesn't depend on the block size. */
+    void setLoop (bool loop) noexcept;
+
+    //== Any thread: what the audio thread last did ==================================================
+    /** Model time after the last block, or the target of a seek or landing not applied yet (so a
+        state saved right after a restore, before any audio, saves the restored time). */
+    double modelTimeNow() const noexcept;
+
+    /** Model time has reached the track's end (it holds there unless looping). */
+    bool atTrackEnd() const noexcept { return endReached.load (std::memory_order_relaxed); }
 
     //== Audio thread =================================================================================
     void prepare (double sampleRate) noexcept;
@@ -80,7 +104,8 @@ public:
 
 private:
     void pickUpTrack() noexcept;
-    void applyRequests() noexcept;
+    void applyRequests (uint32_t requests) noexcept;
+    bool modelAtTrackEnd() const noexcept;
     void publish (std::span<const SkyEvent>) noexcept;
 
     SkyModel sky;
@@ -94,9 +119,17 @@ private:
     std::atomic<double>   requestedSpeed { 0.0 };
     std::atomic<double>   requestedSeek { 0.0 };
     std::atomic<uint32_t> seekRequests { 0 };
+    std::atomic<bool>     loopRequested { false };
     uint32_t              seeksApplied = 0;
+    bool                  looping = false;
+
+    // written by the audio thread after each block, read anywhere
+    std::atomic<double>   timeNow { 0.0 };
+    std::atomic<uint32_t> seeksDone { 0 };
+    std::atomic<bool>     endReached { false };
 
     static_assert (std::atomic<double>::is_always_lock_free);
+    static_assert (std::atomic<bool>::is_always_lock_free);
 };
 
 } // namespace worldtable::sky
