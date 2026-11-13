@@ -1,11 +1,11 @@
-/* Worldtable UI (spec/06; v2 language since T6.7, spec/09 §4).
+/* Worldtable UI (spec/06; v2 language since T6.7, spec/06 §4).
  * Toward FabFilter: display-led, solid, soft. Every module is a soft panel, every picture sits in a
  * well, knobs are solid discs. One colour, one meaning: red, green and violet are the three emission
  * lines and the three resonator bands; everything a person sets is in starlight ink, and state is
- * said in words, weight and fill (spec/09 §2). Light lives in the dome and the day strip's keogram.
+ * said in words, weight and fill (spec/06 §2). Light lives in the dome and the day strip's keogram.
  * Type: Instrument Sans for words (12 labels, 13 titles), JetBrains Mono for numbers (11 values,
  * 17 clock); nothing under 12 px for words outside pictures and the Sky block (10.5 there), 10 px
- * for axis numbers. Layout (T6.8): spec/09 §3, the page follows the signal. */
+ * for axis numbers. Layout (T6.8): spec/06 §3, the page follows the signal. */
 
 @font-face {
   font-family: "Instrument Sans";
@@ -22,7 +22,7 @@
 }
 
 :root {
-  /* tokens (spec/09 §4); contrast on the panel's lighter top #0f1522 in the comments */
+  /* tokens (spec/06 §4); contrast on the panel's lighter top #0f1522 in the comments */
   --ground: #05070d;
   --panel: linear-gradient(180deg, #0f1522, #0b1019);
   --panel-line: rgba(201, 211, 230, 0.07);
@@ -65,7 +65,7 @@ html, body {
 }
 
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; }
-/* the focus ring (spec/09 §4): 2 px ink-high, 2 px off the control */
+/* the focus ring (spec/06 §4): 2 px ink-high, 2 px off the control */
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--ink-hi); outline-offset: 2px; }
 
@@ -78,7 +78,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   padding: 0 10px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  /* spec/09 §3 (T6.8): top bar, the day, resonators │ dome │ harmony, effects │ macros │ effects, the hint line */
+  /* spec/06 §3 (T6.8): top bar, the day, resonators │ dome │ harmony, effects │ macros │ effects, the hint line */
   grid-template-rows: 44px 92px 448px 260px 28px;
   row-gap: 7px;
   overflow: hidden;
@@ -128,7 +128,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .note { font: 400 12px/1.2 var(--sans); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .note b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
 
-/* a module's title opens its More popover (spec/09 §5): the parameters without a visible knob */
+/* a module's title opens its More popover (spec/06 §5): the parameters without a visible knob */
 .more-btn {
   display: inline-flex; align-items: center; gap: 4px; flex: none;
   height: 24px; margin-left: -5px; padding: 0 5px; border-radius: 6px;
@@ -169,7 +169,7 @@ header {
 .clock b { font: 500 17px/1 var(--mono); color: var(--ink-hi); }
 #cv-hmeter { width: 120px; height: 22px; display: block; }
 
-/* chips: Loop, Ping-pong, Details (spec/09 §4: 22–28 high, radius 5–7) */
+/* chips: Loop, Ping-pong, Details (spec/06 §4: 22–28 high, radius 5–7) */
 .chip {
   display: inline-flex; align-items: center; gap: 7px;
   height: 28px; padding: 0 11px;
@@ -238,7 +238,7 @@ header {
 .info-btn { width: 24px; height: 24px; padding: 0; justify-content: center; font: 600 12.5px/1 var(--mono); }
 #out-note { min-width: 96px; text-align: right; font: 400 12px/1 var(--mono); color: var(--muted); }
 
-/* ---------------------------------------------------------------- rows and columns (spec/09 §3) */
+/* ---------------------------------------------------------------- rows and columns (spec/06 §3) */
 #dayrow { display: grid; grid-template-columns: 1110px 213px; column-gap: 7px; min-height: 0; }
 #main, #lower { display: grid; grid-template-columns: 435px 448px 433px; column-gap: 7px; min-height: 0; }
 .col { display: flex; flex-direction: column; gap: 7px; min-height: 0; min-width: 0; }
@@ -249,7 +249,7 @@ header {
 #delay { flex: 0 0 146px; }
 #output { flex: 0 0 98px; }
 
-/* ---------------------------------------------------------------- the dome (unchanged, spec/09 §6) */
+/* ---------------------------------------------------------------- the dome (unchanged, spec/06 §6) */
 #dome-wrap {
   position: relative;
   flex: none;
@@ -342,7 +342,7 @@ header {
 .res-well { position: relative; flex: 1 1 0; min-height: 0; margin: 6px 0 4px; overflow: hidden; }
 /* sized by the well, never by its own backing store (spec/06 §Rendering) */
 .res-well canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-/* a handle's proxy (spec/09 §5): the picture takes the pointer, the proxy the focus and the keys */
+/* a handle's proxy (spec/06 §5): the picture takes the pointer, the proxy the focus and the keys */
 .proxy { position: absolute; left: 0; top: 0; pointer-events: none; border-radius: 5px; }
 .proxy.grip { width: 14px; height: 28px; margin: -14px 0 0 -7px; }
 .proxy.level { width: 24px; height: 12px; margin: -6px 0 0 -12px; }
@@ -464,6 +464,16 @@ header {
   border-color: var(--line-hi);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
+/* the modulation grid (T4.2): over the dome and Harmony, 888 × 448; its own compositing layer, it
+   sits over the dome's WebGL canvas. Under the details popover, the tour, the menu and About */
+.modgrid {
+  position: absolute; left: 452px; top: 150px; width: 888px; height: 448px; z-index: 5; transform: translateZ(0);
+  padding: 10px 12px; background: #0b1019; border-color: var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+.modgrid .note { font-size: 11.5px; }
+#cv-grid { position: absolute; left: 0; top: 34px; width: 886px; height: 404px; display: block; touch-action: none; border-radius: 0 0 10px 10px; }
+#cv-grid:focus-visible { outline: none; }
 /* widths, not flex bases: WebKit sizes the absolutely placed popover from its items' widths */
 .details .module { flex: none; padding: 6px 10px 8px; }
 .info-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; row-gap: 5px; margin-top: 6px; font-size: 12px; color: var(--muted); }
@@ -474,7 +484,7 @@ header {
 .journey-bar u { position: absolute; top: -3px; width: 2px; height: 10px; border-radius: 1px; background: var(--ink-hi); }
 .toggle-stack { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 
-/* ---------------------------------------------------------------- knob v2 (spec/09 §4) */
+/* ---------------------------------------------------------------- knob v2 (spec/06 §4) */
 .knob { display: flex; flex-direction: column; align-items: center; cursor: ns-resize; position: relative; min-width: 48px; border-radius: 8px; touch-action: none; }
 .knob svg { display: block; overflow: visible; }
 .knob .track { stroke: rgba(201, 211, 230, 0.13); }

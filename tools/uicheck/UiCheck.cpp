@@ -21,7 +21,7 @@
 // Checks: backend attached (not the browser mock), telemetry is streaming, parameters
 // sync C++ → JS and JS → C++, every parameter has exactly one control, the header shows the
 // replayed storm (T2.4), the chord readout shows the sounding chord (T3.6), the dome draws
-// the plug-in's sky with WebGL and the day strip got the day's chart (T6.1). T6.7 (spec/09 §5):
+// the plug-in's sky with WebGL and the day strip got the day's chart (T6.1). T6.7 (spec/06 §5):
 // every parameter's control has a hint, a role and a value text and can be set with the keyboard
 // alone (and a typed value lands), every picture has a hint, red/green/violet stay on the bands in
 // the DOM, and the rings follow the engine (T4.2: Space 0 / 0.5 / 1 → reverb mix ×0.5 / ×1 / ×1.5,
@@ -30,12 +30,14 @@
 // T6.10: the day strip is a slider with a hint and a value sentence, its keogram is built, its canvas
 // is no larger than its box × dpr, an arrow key seeks 10 minutes on, and a pointer drag across it
 // seeks (at its start and on release) and the sky lands there.
-// T6.8 (spec/09 §3, §5): every module has its size in the layout, no canvas's backing store is wider
+// T6.8 (spec/06 §3, §5): every module has its size in the layout, no canvas's backing store is wider
 // than its box × the pixel ratio, and every More popover opens from its title by pointer, is next in
 // the Tab order, and closes on Escape with the focus back on the title.
 // T6.12: the effect pictures are controls: a drag in each sets its parameters (read back in C++), the
 // telemetry carries the input spectrum and the phaser's phase, every proxy sits inside its picture,
 // and the page's phaser response is dsp::Phaser::magnitude.
+// T4.2: the modulation grid opens from its button over the dome, a depth set from its keys reaches
+// the processor and the editor's `modulation` echo, Backspace clears it, Escape closes the grid.
 // T6.14: the EQ display draws, a dot dragged, a bell scrolled, a drive bar pulled, the sky's end
 // dragged and a dot's keys set the right parameters, and the processor gets them.
 // T6.11: a crossover dragged in the resonator display moves its parameter in the engine; the
@@ -142,7 +144,7 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
   UI.commit('rev_mix', rm0);
   rm.blur();
   [].forEach.call(document.querySelectorAll('#stage canvas'), function (c) { if (!c.closest('[data-hint]')) bad.pictures.push(c.id || 'canvas'); });
-  // spec/09 rule 2 in the DOM (canvas pixels are reviewed in the code): the bands' knobs, the
+  // spec/06 §2 rule 2 in the DOM (canvas pixels are reviewed in the code): the bands' knobs, the
   // resonator display and the band row's swatches (T6.11), the keyboard strip, the dome, the day
   // strip, the brand mark
   var HUE = { red: '255, 107, 107', green: '92, 242, 160', violet: '143, 123, 255' };
@@ -199,7 +201,7 @@ const char* const stripProbe = R"JS(JSON.stringify((function () {
   return r;
 })()))JS";
 
-// T6.8: the regrouped page (spec/09 §3) and its More popovers (§5), in the real editor.
+// T6.8: the regrouped page (spec/06 §3) and its More popovers (§5), in the real editor.
 const char* const layoutProbe = R"JS(JSON.stringify((function () {
   var out = { sizes: [], canvas: [], more: [], moreCount: 0, moreParams: 0 };
   // module → [width, height] at the design size (CSS px, before the stage's zoom)
@@ -454,7 +456,7 @@ const char* const menuProbe = R"JS(JSON.stringify((function () {
   // over the dome: the window menu, the current size ticked
   if (!rc(document.getElementById('dome'), 0.5, 0.5)) r.problems.push('dome: not prevented');
   if (M.hidden || M.dataset.kind !== 'window') r.problems.push('dome: no window menu');
-  if (actions() !== 'size-0,size-1,size-2,tour,about') r.problems.push('dome: items ' + actions());
+  if (actions() !== 'size-0,size-1,size-2,grid,tour,about') r.problems.push('dome: items ' + actions());   // T4.2: the grid
   var cur = M.querySelector('[aria-checked="true"]');
   if (!cur || cur.dataset.action !== 'size-' + UI.settings.get().size) r.problems.push('dome: tick');
   if (!inside()) r.problems.push('dome: outside');
@@ -513,10 +515,47 @@ const char* const menuProbe = R"JS(JSON.stringify((function () {
   return r;
 })()))JS";
 
+// T4.2: the modulation grid. The Modulation button opens it (its own compositing layer, the canvas
+// at its size); from the keyboard LFO 1 → Width is set to +0.20 (the C++ side reads it back, and the
+// editor's `modulation` echo must carry it), then Backspace clears it; Escape closes the grid.
+const char* const gridProbe = R"JS(JSON.stringify((function () {
+  var r = { problems: [] }, I = UI.mod.info, P = document.getElementById('modgrid'), cv = document.getElementById('cv-grid');
+  if (!I) { r.problems.push('no modulation payload'); return r; }
+  var i = I.sources.map(function (s) { return s.key; }).indexOf('lfo1'), j = I.destinations.map(function (d) { return d.key; }).indexOf('width');
+  if (i < 0 || j < 0) { r.problems.push('no lfo1 or width'); return r; }
+  r.cell = [i, j]; r.before = I.depths[i][j];
+  if (!window.__gridEcho) { window.__gridEcho = { at: null }; WT.on('modulation', function (p) { if (window.__gridEcho.at) window.__gridEcho.depth = p.depths[window.__gridEcho.at[0]][window.__gridEcho.at[1]]; }); }
+  window.__gridEcho.at = [i, j]; window.__gridEcho.depth = null;
+  document.getElementById('mod-btn').click();
+  if (P.hidden || !UI.grid.open) r.problems.push('open');
+  if (getComputedStyle(P).transform === 'none') r.problems.push('no layer');
+  if (cv.clientWidth !== 886 || cv.clientHeight !== 404) r.problems.push('canvas ' + cv.clientWidth + 'x' + cv.clientHeight);
+  var key = function (k) { cv.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); };
+  cv.focus();
+  for (var n = 0; n < 12; n++) key('ArrowUp');
+  key('Home');
+  for (n = 0; n < i; n++) key('ArrowDown');
+  for (n = 0; n < j; n++) key('ArrowRight');
+  for (n = 0; n < 4; n++) key('+');
+  r.set = UI.mod.info.depths[i][j];
+  r.hint = document.getElementById('hint').textContent;
+  return r;
+})()))JS";
+
+const char* const gridClearProbe = R"JS(JSON.stringify((function () {
+  var r = { echo: window.__gridEcho.depth }, cv = document.getElementById('cv-grid');
+  window.__gridEcho.depth = null;
+  cv.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+  r.cleared = UI.mod.info.depths[window.__gridEcho.at[0]][window.__gridEcho.at[1]];
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  r.closed = !UI.grid.open && document.getElementById('modgrid').hidden;
+  return r;
+})()))JS";
+
 // T6.13: after a size change: the window, the zoom, every canvas re-fitted to its box × min(3, dpr ×
 // zoom) (the dome: × min(dpr × zoom, 2.5)), the tour's spotlights at this size, and the words drawn
 // under 10 px on screen (reported, not failed: the Sky block, the dome's corners and axis numbers are
-// smaller by design, spec/09 §4).
+// smaller by design, spec/06 §4).
 const char* const sizeProbe = R"JS(JSON.stringify((function () {
   var r = { inner: [innerWidth, innerHeight], scale: Math.round(UI.scale * 1000) / 1000, dpr: UI.dpr, canvas: [], fitted: 0,
             seg: document.getElementById('size-seg').getAttribute('aria-valuetext') };
@@ -888,6 +927,25 @@ int main (int argc, char* argv[])
     const bool menuOk = parsedMenu.isObject() && parsedMenu["problems"].isArray() && parsedMenu["problems"].size() == 0
                      && parsedMenu["version"].toString().startsWith (WORLDTABLE_VERSION);
 
+    // T4.2: the modulation grid: a depth set from the page reaches the engine and comes back, then goes
+    using worldtable::dsp::mod::Source;
+    using worldtable::dsp::mod::Destination;
+    const auto gridRun = evalSync (*browser, juce::String::fromUTF8 (gridProbe), 10000);
+    for (int k = 0; k < 20; ++k) { processor.processBlock (buffer, midi); pump (25); }
+    const float gridSet = processor.getModulation().get (Source::lfo1, Destination::width);
+    const auto gridClear = evalSync (*browser, juce::String::fromUTF8 (gridClearProbe), 10000);
+    for (int k = 0; k < 20; ++k) { processor.processBlock (buffer, midi); pump (25); }
+    const float gridCleared = processor.getModulation().get (Source::lfo1, Destination::width);
+    const auto parsedGrid = juce::JSON::parse (gridRun), parsedGridClear = juce::JSON::parse (gridClear);
+    const bool gridOk = parsedGrid.isObject() && parsedGrid["problems"].isArray() && parsedGrid["problems"].size() == 0
+                     && std::abs (static_cast<double> (parsedGrid["before"])) < 1.0e-6
+                     && std::abs (static_cast<double> (parsedGrid["set"]) - 0.2) < 1.0e-6
+                     && std::abs (gridSet - 0.2f) < 1.0e-6f
+                     && parsedGridClear.isObject() && ! parsedGridClear["echo"].isVoid()
+                     && std::abs (static_cast<double> (parsedGridClear["echo"]) - 0.2) < 1.0e-6
+                     && std::abs (static_cast<double> (parsedGridClear["cleared"])) < 1.0e-9
+                     && gridCleared == 0.0f && static_cast<bool> (parsedGridClear["closed"]);
+
     // T6.13: the sizes, from the bottom bar: S and L by a click, back to M by the arrow key; at each
     // the editor takes the size, the settings file keeps it, the page re-fits; it ends where it opened
     struct SizeStep { int index; bool byKey; };
@@ -928,6 +986,7 @@ int main (int argc, char* argv[])
     const bool ok = ready == "true"
                  && tourOk
                  && menuOk
+                 && gridOk
                  && sizesOk
                  && transportOk
                  && accessOk
@@ -983,6 +1042,7 @@ int main (int argc, char* argv[])
               << ", tour seen in the file " << (tourSeenInFile ? "yes" : "no") << "\n"
               << "tour:       " << tour << "\n"
               << "menu:       " << menu << "\n"
+              << "grid:       " << gridRun << " → C++ " << gridSet << "; " << gridClear << " → C++ " << gridCleared << (gridOk ? "" : "  FAILED") << "\n"
               << "sizes:      " << sizeReports.joinIntoString ("\n            ") << "\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
 

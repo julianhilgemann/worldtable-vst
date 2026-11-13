@@ -1,4 +1,4 @@
-/* The window (T6.13, spec/09 §3): three sizes, the page's own context menu, About.
+/* The window (T6.13, spec/06 §3): three sizes, the page's own context menu, About.
  *
  * Sizes: Small 85 %, Medium 100 %, Large 125 % of the 1350 × 900 page. In the plug-in the editor
  * sets the window's size (native `setUiSize`) and keeps the choice per computer (a settings file,
@@ -139,6 +139,7 @@
     menu.dataset.kind = "window";
     SIZES.forEach((s, i) => item(s.name, s.px, () => settings.setSize(i), { radio: true, on: i === S.size, action: "size-" + i }));
     rule();
+    if (UI.grid) item("Modulation grid", "", () => UI.grid.toggle(), { action: "grid" });
     item("Welcome tour", "", () => UI.tour && UI.tour.start(0), { action: "tour" });
     item("About Worldtable", "", () => about.set(true), { action: "about" });
   }
@@ -152,7 +153,7 @@
     return UI.format(id, v);
   }
 
-  /** The key a control takes (spec/09 §5), sent to it as the keyboard would: its own code path. */
+  /** The key a control takes (spec/06 §5), sent to it as the keyboard would: its own code path. */
   const press = (ctl, key) => ctl.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
 
   /** A control (a knob, a handle or its proxy, a value chip, a choice, a switch): its hint, Reset to

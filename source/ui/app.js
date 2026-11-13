@@ -40,7 +40,7 @@
   for (const n of document.querySelectorAll("[data-cycle]"))
     UI.Cycle(n, n.dataset.cycle, n.dataset.values.split(",").map(Number), (v) => `<b>${v}</b> stages`);
 
-  // ---------------------------------------------------------------- the hint line (spec/09 §2 rule 5)
+  // ---------------------------------------------------------------- the hint line (spec/06 §2 rule 5)
   // One sentence about what the thing under the pointer (or, from the keyboard, in focus) does.
   const HINT0 = "Point at anything to read what it does.";
   const showHint = (node) => {
@@ -56,7 +56,7 @@
 
   // ---------------------------------------------------------------- modulation: rings and sources (T4.2)
   // Every routing is the grid's (UI.mod, mod.js). A knob with at least one route carries the ring
-  // (spec/09 §2 rule 3): the arc is the range its sources can push it, the dot the value the engine
+  // (spec/06 §2 rule 3): the arc is the range its sources can push it, the dot the value the engine
   // uses now (telemetry mod.val, lo, hi); the number under it stays the value set. Pointing at a
   // source (a macro, the LFO panel, the envelope panel) lights the knobs it moves, and its hint says
   // what it moves.
@@ -116,7 +116,7 @@
   });
 
   // ---------------------------------------------------------------- popovers: More, Details, View
-  // One page (T6.5). Parameters without a visible knob live in their module's More popover (spec/09
+  // One page (T6.5). Parameters without a visible knob live in their module's More popover (spec/06
   // §5, T6.8): every `button.more-btn` opens the panel its aria-controls names. Details (observer,
   // journey, the sky's numbers, data) opens from the bottom bar, View over the dome.
   const hash = new URLSearchParams(location.hash.slice(1));
