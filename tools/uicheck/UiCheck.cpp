@@ -21,7 +21,9 @@
 // the DOM, and the macro rings follow the engine (Space 0 / 0.5 / 1 → reverb mix ×0.5 / ×1 / ×1.5).
 // T6.8 (spec/09 §3, §5): every module has its size in the layout, no canvas's backing store is wider
 // than its box × the pixel ratio, and every More popover opens from its title by pointer, is next in
-// the Tab order, and closes on Escape with the focus back on the title.
+// the Tab order, and closes on Escape with the focus back on the title. T6.14: the EQ display draws,
+// a dot dragged, a bell scrolled, a drive bar pulled, the sky's end dragged and a dot's keys set the
+// right parameters, and the processor gets them.
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
@@ -71,8 +73,10 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
     if (!target || !el.contains(document.activeElement)) return 'focus';
     var v0 = WT.get(id);
     var key = function (k) { document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); };
-    key('ArrowUp');
-    if (WT.get(id) === v0) key('ArrowDown');
+    // a picture's handle may name the keys that move it (T6.14: a dot's frequency is ← →, its width [ ])
+    var keys = (el.getAttribute('data-keys') || 'ArrowUp,ArrowDown').split(',');
+    key(keys[0]);
+    if (WT.get(id) === v0) key(keys[1]);
     var moved = WT.get(id) !== v0;
     UI.commit(id, v0);
     return moved ? '' : 'keys';
@@ -180,6 +184,74 @@ const char* const layoutProbe = R"JS(JSON.stringify((function () {
     if (!panel.hidden) btn.click();
     btn.blur();
   });
+  return out;
+})()))JS";
+
+// T6.14: the EQ display in the real editor (spec/tasks/T6.14-eq-display.md). Synthetic pointer, wheel
+// and key events on the picture; the values it touches are kept in window.__eqSaved and restored after
+// the C++ side has read them.
+const char* const eqProbe = R"JS(JSON.stringify((function () {
+  var out = { bad: [] };
+  var cv = document.getElementById('cv-eq');
+  // the picture is drawn: the share of its backing store's pixels that are not empty
+  var px = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, lit = 0;
+  for (var i = 3; i < px.length; i += 4) if (px[i] > 0) lit++;
+  out.drawn = Math.round(lit / (px.length / 4) * 1000) / 1000;
+  out.size = [cv.clientWidth, cv.clientHeight, cv.width, cv.height];
+  var ids = ['eq1_drive', 'eq2_freq', 'eq2_gain', 'eq3_q', 'eq4_freq', 'eq_sky'];
+  var saved = { eq2_q: WT.get('eq2_q') };
+  ids.forEach(function (id) { saved[id] = WT.get(id); });
+  window.__eqSaved = saved;
+  UI.commit('eq4_freq', 6500);   // a cut below the top, so the sky's reach is drawn
+  UI.commit('eq_sky', 0.3);
+  var ev = function (type, x, y) {
+    cv.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, button: 0,
+                                              buttons: type === 'pointerup' ? 0 : 1, isPrimary: true, pointerType: 'mouse' }));
+  };
+  var pull = function (a, dx, dy) {
+    ev('pointerdown', a.x, a.y);
+    for (var i = 1; i <= 4; i++) ev('pointermove', a.x + dx * a.scale * i / 4, a.y + dy * a.scale * i / 4);
+    ev('pointerup', a.x + dx * a.scale, a.y + dy * a.scale);
+  };
+  var near = function (x, y, tol) { return Math.abs(x - y) <= tol; };
+  // a dot: band 2, 30 px right (frequency) and 15 px up (gain)
+  var a = UI.eq.at('dot', 1), f0 = WT.get('eq2_freq'), g0 = WT.get('eq2_gain');
+  pull(a, 30, -15);
+  var fx = f0 * Math.pow(1000, 30 / a.w), gx = Math.min(12, g0 + 15 / a.span * 12);
+  out.dot = [Math.round(WT.get('eq2_freq')), Math.round(fx), WT.get('eq2_gain'), Math.round(gx * 10) / 10];
+  if (!near(Math.log(WT.get('eq2_freq') / fx), 0, 0.02) || !near(WT.get('eq2_gain'), gx, 0.15)) out.bad.push('dot');
+  // scroll over a bell: band 3's width, one notch up (narrower)
+  var b = UI.eq.at('dot', 2), q0 = WT.get('eq3_q');
+  cv.dispatchEvent(new WheelEvent('wheel', { clientX: b.x, clientY: b.y, deltaY: -100, bubbles: true, cancelable: true }));
+  out.wheel = [q0, Math.round(WT.get('eq3_q') * 1000) / 1000];
+  if (!near(WT.get('eq3_q'), q0 * Math.exp(0.11), 0.01)) out.bad.push('wheel');
+  // pull a drive bar: band 1, from its foot 11 px up → 12 of its 22 px
+  var c = UI.eq.at('bar', 0);
+  pull(c, 0, -11);
+  out.bar = Math.round(WT.get('eq1_drive') * 1000) / 1000;
+  if (!near(WT.get('eq1_drive'), 12 / c.bh, 0.02)) out.bad.push('bar');
+  // the sky's reach: its end 20 px to the left
+  var s = UI.eq.at('sky'), s0 = WT.get('eq_sky');
+  pull(s, -20, 0);
+  var sx = s0 - 20 / s.w * Math.log2(1000) / 3;
+  out.sky = [s0, Math.round(WT.get('eq_sky') * 1000) / 1000, Math.round(sx * 1000) / 1000];
+  if (!near(WT.get('eq_sky'), sx, 0.01)) out.bad.push('sky');
+  // the keys on a dot: up and down move the gain, left and right the frequency, ] the width
+  var dot = document.querySelector('[data-param="eq2_freq"]'), key = function (k) {
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  };
+  dot.focus();
+  var v = [WT.get('eq2_freq'), WT.get('eq2_gain'), WT.get('eq2_q')];
+  key('ArrowUp');
+  if (WT.get('eq2_gain') <= v[1] || WT.get('eq2_freq') !== v[0]) out.bad.push('key up');
+  key('ArrowLeft');
+  if (WT.get('eq2_freq') >= v[0]) out.bad.push('key left');
+  key(']');
+  if (WT.get('eq2_q') <= v[2]) out.bad.push('key ]');
+  key('Backspace');   // the frequency's default
+  dot.blur();
+  cv.dispatchEvent(new PointerEvent('pointerleave', { pointerId: 1, pointerType: 'mouse' }));   // the pointer goes
+  out.after = ids.map(function (id) { return Math.round(WT.get(id) * 1000) / 1000; });
   return out;
 })()))JS";
 } // namespace
@@ -305,7 +377,29 @@ int main (int argc, char* argv[])
     bool layoutOk = parsedLayout.isObject();
     for (const auto* list : { "sizes", "canvas", "more" })
         layoutOk = layoutOk && parsedLayout[list].isArray() && parsedLayout[list].size() == 0;
-    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 7 && static_cast<int> (parsedLayout["moreParams"]) >= 20;
+    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 6 && static_cast<int> (parsedLayout["moreParams"]) >= 20;   // T6.14: the EQ's went
+
+    // T6.14: the EQ display, by pointer and keys; the values it set arrive in the processor
+    const auto eqRun = evalSync (*browser, juce::String::fromUTF8 (eqProbe), 20000);
+    pump (400);
+    auto parsedEq = juce::JSON::parse (eqRun);
+    bool eqOk = parsedEq.isObject() && parsedEq["bad"].isArray() && parsedEq["bad"].size() == 0
+             && static_cast<double> (parsedEq["drawn"]) > 0.05;
+    juce::String eqCpp;
+    {
+        const char* const ids[] = { "eq1_drive", "eq2_freq", "eq2_gain", "eq3_q", "eq4_freq", "eq_sky" };
+        const auto* after = parsedEq["after"].getArray();
+        eqOk = eqOk && after != nullptr && after->size() == 6;
+        for (int i = 0; eqOk && i < 6; ++i)
+        {
+            const double cpp = processor.getValueTreeState().getRawParameterValue (ids[i])->load();
+            const double js = (*after)[i];
+            eqCpp << (i ? ", " : "") << ids[i] << " " << cpp;
+            eqOk = eqOk && std::abs (cpp - js) <= 0.002 * std::max (1.0, std::abs (js));
+        }
+    }
+    evalSync (*browser, "Object.keys(window.__eqSaved).forEach(function (id) { UI.commit(id, window.__eqSaved[id]); }); true");
+    pump (300);
     bool accessOk = parsedAccess.isObject();
     for (const auto* list : { "hint", "long", "role", "text", "focus", "keys", "pictures", "hues" })
         accessOk = accessOk && parsedAccess[list].isArray() && parsedAccess[list].size() == 0;
@@ -319,6 +413,7 @@ int main (int argc, char* argv[])
     auto parsed = juce::JSON::parse (state);
     const bool ok = ready == "true"
                  && accessOk
+                 && eqOk
                  && layoutOk
                  && parsedSky["date"].toString().startsWith ("10 May")
                  && parsedSky["ut"].toString().endsWith ("UT")
@@ -350,6 +445,8 @@ int main (int argc, char* argv[])
               << "sky/chord:  " << skyState << "\n"
               << "keyboard, hints, colour, rings: " << access << "\n"
               << "layout, canvases, More: " << layout << "\n"
+              << "EQ display: " << eqRun << "\n"
+              << "EQ in C++:  " << eqCpp << "\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
 
     if (probe.isNotEmpty())

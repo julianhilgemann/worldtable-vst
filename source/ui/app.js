@@ -153,6 +153,7 @@
   const mag = UI.MagnetogramView($("cv-mag"));
   const layers = UI.LayersView($("cv-layers"));
   const keys = UI.KeyboardView($("cv-keys"));
+  const eq = (UI.eq = UI.EqView($("cv-eq"), $("eq-well"), $("eq-say")));   // T6.14; UI.eq for the UI check
   const fx = {
     phaser: UI.PhaserView($("cv-phaser")), chorus: UI.ChorusView($("cv-chorus")),
     delay: UI.DelayView($("cv-delay")), reverb: UI.ReverbView($("cv-reverb")), output: UI.OutputView($("cv-output")),
@@ -493,8 +494,6 @@
       const db = 20 * Math.log10(tel.autoGain);
       setHtml("out-note", `auto ${num(signed(db, 1), 4, "span")} dB`);
     }
-    if (tel.eqCutHz)   // T3.9: the EQ's high cut now, after the sky
-      setHtml("eq-note", tel.eqCutHz >= 19980 ? "cut open" : `cut ${num(UI.format("eq4_freq", tel.eqCutHz), 8, "span")}`);
   });
 
   // ---------------------------------------------------------------- render loop
@@ -541,6 +540,7 @@
       $("low-note").innerHTML = low >= 0 ? `<b class="num" style="--w:3">${noteName(low)}</b>` : "";
     }
     keys.draw(litKeys(tel));
+    eq.draw(tel);   // the cut now comes from tel.eqCutHz; T4.2 passes its modulated values as a second argument
     {
       fx.phaser.draw(t, { rate: P("ph_rate"), depth: P("ph_depth"), fb: P("ph_feedback"), stages: P("ph_stages"), mix: P("ph_mix") }, tel.spectrum);
       fx.chorus.draw(t, { rate: P("ch_rate"), depth: P("ch_depth"), mix: P("ch_mix") });

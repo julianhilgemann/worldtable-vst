@@ -199,6 +199,15 @@
     });
   }
   UI.commit = (id, v) => gesture(id).commit(v);
+  /** A run of discrete changes (keys, wheel) to one parameter as one gesture, for a picture's handles (T6.14). */
+  UI.step = (id, fn) => gesture(id).step(fn);
+  /** A pointer drag of a picture's handle over one or more parameters (T6.14: a dot moves frequency
+   *  and gain at once): one host gesture per parameter for the whole drag, a pending key or wheel run
+   *  on any of them ended first. Returns { set(id, v), end() }. */
+  UI.drag = function (ids) {
+    for (const id of ids) { gesture(id).flush(); WT.begin(id); }
+    return { set: (id, v) => WT.set(id, v), end() { for (const id of ids) WT.end(id); } };
+  };
 
   // ---------- drag (vertical, shift = fine) and wheel ----------
   function verticalDrag(target, id, opts = {}) {
@@ -263,6 +272,7 @@
     if (k === "Backspace" || k === "Delete") { g.commit(defaultValue(id)); return true; }
     return false;
   }
+  UI.sliderKey = sliderKey;
 
   /** Arrow keys in a radiogroup (the ARIA pattern): Right/Down next, Left/Up previous, wrapping;
    *  Home/End; Backspace or Delete = default. Returns true if handled. */
@@ -478,6 +488,42 @@
     b.textContent = label;
     return bindSwitch(b, id, label);
   }
+
+  // ---------- the EQ's response (T6.14; the phaser's picture uses it too) ----------
+  /** The EQ's small-signal response at `f` Hz, in dB, from the formulas of `dsp/fx/Eq.h`
+   *  (`Eq::bandDb`, `responseDb`): low shelf, two bells, the high cut, in series, so their dB add.
+   *  `p` maps the parameter ids (eq1_freq, eq1_gain, eq2_freq, eq2_gain, eq2_q, eq3_*, eq4_freq) to
+   *  values; an id it leaves out is read from WT.get, so `UI.eqDb(f)` is the EQ as set and
+   *  `UI.eqDb(f, { eq4_freq: tel.eqCutHz })` the EQ as it is now. `fs`: tel.sampleRate (48 kHz if
+   *  absent). Drive is not part of the curve. tests/unit/EqTests.cpp compares it with the engine. */
+  UI.eqDb = function (f, p, fs) {
+    p = p || {};
+    fs = fs > 0 ? fs : 48000;
+    const v = (id) => (id in p ? p[id] : WT.get(id));
+    const tanOf = (hz) => Math.tan(Math.PI * Math.min(hz, 0.4999 * fs) / fs);
+    const tf = tanOf(f);
+    let db = 0;
+    for (let b = 0; b < 4; b++) {
+      const f0 = v(`eq${b + 1}_freq`);
+      if (b === 3 && f0 >= 19980) continue;   // the cut is open (Eq::isOpen): flat
+      const w = tf / tanOf(Math.min(f0, (b === 3 ? 0.49 : 0.45) * fs)), w2 = w * w;
+      let num = 1, den = 1;
+      if (b === 3) den = 1 + w2 * w2;   // 12 dB per octave, Butterworth
+      else {
+        const A = Math.pow(10, clamp(v(`eq${b + 1}_gain`), -12, 12) / 40);
+        if (b === 0) {   // the shelf: Q = 1/√2, f0 at half the gain
+          num = A * A * ((A - w2) ** 2 + 2 * A * w2);
+          den = (1 - A * w2) ** 2 + 2 * A * w2;
+        } else {
+          const q = clamp(v(`eq${b + 1}_q`), 0.3, 6), a = w * A / q, c = w / (A * q);
+          num = (1 - w2) ** 2 + a * a;
+          den = (1 - w2) ** 2 + c * c;
+        }
+      }
+      db += 10 * Math.log10(num / den);
+    }
+    return db;
+  };
 
   // ---------- canvas ----------
   /** Sizes a canvas backing store for the stage zoom and the display; returns {ctx, w, h} in CSS px.
