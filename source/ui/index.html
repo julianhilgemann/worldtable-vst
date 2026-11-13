@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- The page follows the signal (spec/09 §2, §3; T6.8): the sky's day on top, the sound generators
+  <!-- The page follows the signal (spec/06 §2, §3; T6.8): the sky's day on top, the sound generators
        top left with the tone under them, the light in the middle, the chord on the right, the effects
        along the bottom in signal order, the macros under the dome. Rows 44 · 92 · 448 · 260 · 28.
        A module's title with a chevron opens its More popover: the parameters without a visible knob
@@ -109,7 +109,7 @@
         </div>
 
         <!-- the tone module: the EQ display (T6.14). The picture is the whole control; EqView puts a
-             focusable proxy for each of the 14 parameters on its handle (spec/09 §5) -->
+             focusable proxy for each of the 14 parameters on its handle (spec/06 §5) -->
         <div class="module frame" id="eq">
           <div class="head">
             <span class="cap">EQ</span>
@@ -354,7 +354,7 @@
     <!-- ============================================================ T4.2: the modulation grid (grid.js), over the dome and Harmony -->
     <div class="modgrid frame" id="modgrid" role="dialog" aria-label="Modulation" hidden>
       <div class="head"><span class="cap">Modulation</span><span class="note">rows move columns. Drag a dot up for more, down past zero to push the other way, double-click to clear.</span></div>
-      <canvas id="cv-grid" tabindex="0" role="application" aria-roledescription="modulation grid" aria-label="Modulation grid: rows are sources, columns are destinations"></canvas>
+      <canvas id="cv-grid" width="1" height="1" tabindex="0" role="application" aria-roledescription="modulation grid" aria-label="Modulation grid: rows are sources, columns are destinations"></canvas>
     </div>
 
     <!-- ============================================================ T6.13: About, the tour, the context menu (over everything) -->

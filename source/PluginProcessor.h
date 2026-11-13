@@ -19,7 +19,7 @@ namespace worldtable
     child (spec/03 §State). Not a parameter: hosts don't automate it. */
 struct JourneyState
 {
-    /** The transport's speeds, model seconds per real second (spec/09 §9: the owner may change the
+    /** The transport's speeds, model seconds per real second (spec/06 §6: the owner may change the
         set; this table is the only copy, the page gets it with the day). */
     static constexpr std::array<double, 5> kSpeeds { 1.0, 24.0, 60.0, 240.0, 1440.0 };
 

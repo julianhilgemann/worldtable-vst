@@ -1,4 +1,4 @@
-/* The modulation grid (T4.2, spec/09 §3, mockup `drawGrid`): every source against every
+/* The modulation grid (T4.2, spec/06 §3, mockup `drawGrid`): every source against every
  * destination, an overlay over the dome and Harmony (888 × 448) opened from the bottom bar.
  *
  * Rows are the sources in their three groups, each with a small live meter under its name; columns
@@ -194,7 +194,7 @@
       if (!open && panel.contains(document.activeElement)) btn.focus({ preventScroll: true });
       panel.hidden = !open;
       btn.setAttribute("aria-expanded", String(open));
-      if (open) { hot = null; draw(); } else lightRow(-1);
+      if (open) { hot = null; draw(); } else { lightRow(-1); cv.width = cv.height = 1; }   // closed: no backing store to keep
     },
     toggle() { grid.set(!grid.open); },
   };

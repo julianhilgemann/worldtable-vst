@@ -1,4 +1,4 @@
-/* Controls bound to parameters (spec/09 §4–5, T6.7): solid knobs, segmented rows, a 12-key row,
+/* Controls bound to parameters (spec/06 §4–5, T6.7): solid knobs, segmented rows, a 12-key row,
  * switches. Every control root carries data-param="<id>" (the UI check counts them), a role
  * (slider, radiogroup, switch), aria-valuetext and a data-hint sentence for the hint line, and
  * works from the keyboard alone. Pointer interaction is the POC's: vertical drag, shift = fine,
@@ -103,7 +103,7 @@
     return n;
   };
 
-  // ---------- hints (spec/09 §2 rule 5, §5): what each control does to the sound, ≤ 90 characters
+  // ---------- hints (spec/06 §2 rule 5, §5): what each control does to the sound, ≤ 90 characters
   UI.HINT = {
     key: "The key the sky's chords are in.",
     mood: "Which chords the sky draws from: bright, bittersweet or nocturnal.",
@@ -336,7 +336,7 @@
     const A = (n) => -135 + 270 * clamp(n, 0, 1);
     const pol = (r, deg) => polar(c, c, r, deg);
     const arc = (r, a0, a1) => arcPath(c, c, r, a0, a1);
-    // bipolar values draw the arc from the centre (spec/09 §4): the signed macros and ± ranges
+    // bipolar values draw the arc from the centre (spec/06 §4): the signed macros and ± ranges
     const bipolar = id.startsWith("macro_") ? id !== "macro_breath" : (m.type === "float" || m.type === "int") && m.min < 0 && m.max > 0;
     const from = bipolar ? A(id.startsWith("macro_") ? 0.5 : WT.toNorm(id, 0)) : -135;
 
@@ -406,7 +406,7 @@
       if (sliderKey(id, e)) e.preventDefault();
     });
 
-    // ---- the modulation ring (spec/09 §2 rule 3), fed by T4.2's grid (app.js, UI.mod)
+    // ---- the modulation ring (spec/06 §2 rule 3), fed by T4.2's grid (app.js, UI.mod)
     let mod = null, modSig = "";
     // above the top (a band level may be driven to 2, +6 dB, though its knob stops at 1): the ring
     // runs on past the track's end, at most 24° for a whole range more, so it never closes the gap
@@ -510,7 +510,7 @@
     return bindSwitch(b, id, label);
   }
 
-  // ---------- pictures as controls (T6.12, spec/09 §4–5) ----------
+  // ---------- pictures as controls (T6.12, spec/06 §4–5) ----------
   /** A drag inside a picture. `start(p, e)` gets the pointer in the canvas's CSS px and returns
    *  { ids, move(p, ev), end() } or null (nothing to drag there). Every parameter in `ids` is one host
    *  gesture for the whole drag; a pending key run on it ends first (JUCE asserts on a nested begin). */
@@ -544,7 +544,7 @@
   /** Sets a parameter from its normalised value (inside a drag's gesture). */
   const setNorm = (id, n) => WT.set(id, WT.fromNorm(id, clamp(n, 0, 1)));
 
-  /** The focusable proxy of a value set inside a picture (spec/09 §5): it carries the parameter's
+  /** The focusable proxy of a value set inside a picture (spec/06 §5): it carries the parameter's
    *  `data-param`, role, value text and hint, takes the keys a knob takes (arrows, Shift, Page,
    *  Home/End, Backspace, Enter to type), and sits on the handle, so the focus ring shows there. The
    *  picture's view moves it with `place(x, y)` (the handle's centre in the canvas's CSS px). It lets
@@ -671,7 +671,7 @@
     cutHz: cutHz || WT.get("eq4_freq"),
   });
 
-  // ---------- a picture's handles (spec/09 §5, T6.11) ----------
+  // ---------- a picture's handles (spec/06 §5, T6.11) ----------
   /** The binding of a handle in a picture: a small focusable element the picture places on its
    *  handle, so the focus ring shows there. It carries data-param, the role, the value text, the
    *  hint and the keyboard (arrows a step, Shift fine, PageUp/Down, Home/End, Enter to type,
@@ -783,7 +783,7 @@
     return { ctx, w, h, k };
   }
 
-  /** The palette (spec/09 §4): ink for everything a person sets, the three lines only for the bands. */
+  /** The palette (spec/06 §4): ink for everything a person sets, the three lines only for the bands. */
   const C = {
     night: "#05070d", well: "#070a12", ink: "#c9d3e6", inkHi: "#eef2fa", arc: "#dfe6f3", muted: "#8a96ad", faint: "#6e7991",
     green: "#5cf2a0", red: "#ff6b6b", violet: "#8f7bff",

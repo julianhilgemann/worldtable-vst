@@ -159,7 +159,7 @@
   }
   const POINTS = ["attack", "decay", "release"];
   const pts = (g) => [[g.xs[1], g.top], [g.xs[2], g.ys], [g.xs[4], g.bot]];
-  // the four times' proxies on the three points (spec/09 §5): decay and sustain share the middle one
+  // the four times' proxies on the three points (spec/06 §5): decay and sustain share the middle one
   const proxies = {};
   [["env_attack", 0, "Envelope attack"], ["env_decay", 1, "Envelope decay"], ["env_sustain", 1, "Envelope sustain"], ["env_release", 2, "Envelope release"]]
     .forEach(([id, k, label]) => { proxies[id] = { el: UI.Proxy(envWell, id, { cls: "env-pt", label }), k }; });

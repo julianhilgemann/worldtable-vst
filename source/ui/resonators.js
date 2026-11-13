@@ -1,9 +1,9 @@
-/* The resonator display (T6.11, spec/09 §2 rule 4): one picture for the resonators on a pitch axis
+/* The resonator display (T6.11, spec/06 §2 rule 4): one picture for the resonators on a pitch axis
  * (MIDI 20 … 99). The four bands side by side, each as high as its level; the floor, the three
  * crossovers and the ceiling as grips; the notes ringing as lines inside the bands. Drag a grip
  * sideways (Shift: all five together), drag a band up or down for its level, click a band to select
  * it: the band row under the picture belongs to the selection. Every grip and level has a focusable
- * proxy on its handle (spec/09 §5). The sound is the engine's: the picture only sets parameters. */
+ * proxy on its handle (spec/06 §5). The sound is the engine's: the picture only sets parameters. */
 (function () {
   "use strict";
   const WT = window.WT, UI = window.UI, C = UI.C, rgba = UI.rgba, MONO = UI.MONO, SANS = UI.SANS, clamp = UI.clamp;
@@ -75,7 +75,7 @@
     }
     blocks.forEach((n, i) => { n.hidden = i !== sel; });
 
-    // ---- the handles' proxies: five grips, four levels (spec/09 §5)
+    // ---- the handles' proxies: five grips, four levels (spec/06 §5)
     const grips = EDGES.map((id, i) => {
       const p = UI.Proxy(well, id, { cls: "grip", limits: () => limitsOf(i, edgesNow()) });
       p.addEventListener("focus", () => { focusEdge = i; });

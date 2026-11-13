@@ -1,6 +1,6 @@
 /* The instrument layer's live pictures (spec/06, T6.1). Each view redraws only when what it shows
  * has changed (or, for the moving ones, only while its tab is visible), and every change glides.
- * T6.7 (spec/09 §2 rule 2): red, green and violet only where a picture shows the bands (the resonator
+ * T6.7 (spec/06 §2 rule 2): red, green and violet only where a picture shows the bands (the resonator
  * display, resonators.js; the keyboard strip) or the sky's own light (the day strip's keogram); the
  * effect pictures are drawn in ink.
  * Axis numbers are at least 10 px, words in pictures 11 px. */
@@ -113,7 +113,7 @@
     return k;
   }
 
-  /** The day strip (spec/09 §2, T6.10; mockup `drawStrip`): the keogram over the magnetometer, hour
+  /** The day strip (spec/06 §2, T6.10; mockup `drawStrip`): the keogram over the magnetometer, hour
    *  marks, onsets as carets on the top edge, the part still to come dimmed, the playhead. It sizes
    *  itself from its canvas box: rows fixed at the bottom (field 27 px, hours), the keogram takes the
    *  rest. The static layer is drawn once per day and size; a frame blits it and adds the playhead. */
@@ -235,7 +235,7 @@
    *  sideways, gain up and down; scroll over a bell: its width), a drive bar under each (pull it up),
    *  on the top edge the reach of what moves the cut (T4.2: the grid's routes onto it, Activity → Cut
    *  by default) with the cut now as a white dot; white dots beside the handles where the grid moves
-   *  a gain or a drive. Each of the 13 parameters has one focusable proxy on its handle (spec/09 §5), placed here; the
+   *  a gain or a drive. Each of the 13 parameters has one focusable proxy on its handle (spec/06 §5), placed here; the
    *  pointer works on the canvas. The title row reads out the band pointed at or selected. Ink only. */
   function EqView(canvas, well, say) {
     const WT = window.WT;
@@ -267,7 +267,7 @@
     let sel = 1, hot = null, drag = null, field = null, sig = "", said = "", hinted = "";
     let tel = {}, live = {};
 
-    // ---- the proxies: one focusable element per parameter, on its handle (spec/09 §5)
+    // ---- the proxies: one focusable element per parameter, on its handle (spec/06 §5)
     const NAMES = ["Band 1, low shelf", "Band 2, bell", "Band 3, bell", "Band 4, high cut"];
     const proxies = [];
     function proxy(id, role, k, label, hint, tab, keys) {
@@ -549,7 +549,7 @@
       c.fillText("drive", 6, g.by - g.bh / 2);
       BANDS.forEach((b, k) => {
         const d = dotAt(g, k), on = k === sel, hh = hot && hot.k === k;
-        // what moves it: a white dot beside the handle, joined by a hairline (spec/09 rule 3)
+        // what moves it: a white dot beside the handle, joined by a hairline (spec/06 §2 rule 3)
         const xl = b.f in live ? clamp(g.X(live[b.f]), 8, w - 8) : d.x, yl = b.g && b.g in live ? g.Y(live[b.g]) : d.y;
         if (Math.abs(xl - d.x) + Math.abs(yl - d.y) > 1.5) {
           c.strokeStyle = "rgba(255,255,255,0.4)"; c.lineWidth = 1;
@@ -564,7 +564,7 @@
         c.fillStyle = hh && hot.role === "bar" ? "#283248" : "#182031";
         c.beginPath(); c.roundRect(d.x - 4.5, top, 9, g.bh, 3); c.fill();
         if (fill > 0.5) { c.fillStyle = on ? "#fff" : C.arc; c.beginPath(); c.roundRect(d.x - 4.5, g.by - fill, 9, fill, 3); c.fill(); }
-        // the drive now, where the grid moves it: a white dot beside the bar (spec/09 rule 3)
+        // the drive now, where the grid moves it: a white dot beside the bar (spec/06 §2 rule 3)
         if (b.d in live && Math.abs(live[b.d] - P(b.d)) > 0.004) {
           c.fillStyle = "#fff"; c.beginPath(); c.arc(d.x + 9, g.by - g.bh * clamp(live[b.d], 0, 1), 2.2, 0, 2 * Math.PI); c.fill();
         }
@@ -652,7 +652,7 @@
 
   // ================================================================ pictures as controls (T6.12)
   // Each effect's picture shows what the effect does to the sound now and is where its main values
-  // are set (spec/09 rule 4; the mockup's drawPha, drawCho, drawDly, drawRev, drawOut). A view sizes
+  // are set (spec/06 §2 rule 4; the mockup's drawPha, drawCho, drawDly, drawRev, drawOut). A view sizes
   // itself from its canvas, takes its parameters by ID (`ids`) and the focusable proxies of the
   // values it sets (`handles`, UI.Handle, placed on the handles every frame), and eases what it draws
   // (rule 4). All ink (rule 2).
