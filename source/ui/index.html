@@ -25,10 +25,15 @@
         </svg>
         <div class="word">Worldtable</div>
       </div>
-      <!-- T6.9 replaces the Journey pill with the transport (run/freeze, speed, day, loop) -->
-      <div class="mode" id="mode" data-hint="Journey: a recorded day, time-lapsed. Day and speed arrive with the transport."><i></i>Journey <b id="mode-speed">24×</b></div>
-      <div class="clock" id="clock" data-hint="Model time: the moment of the recorded day you are hearing.">
-        <span id="ro-date">—</span><span id="ro-ut"><b>--:--</b> UT</span>
+      <!-- T6.9: the Journey transport (transport.js): run or freeze, the clock, the speed, the day, loop -->
+      <div class="transport" id="transport" aria-label="Journey">
+        <button type="button" class="ibtn" id="tp-run" aria-label="Freeze the journey" data-hint="Freeze the journey. Frozen, the curtain keeps breathing in place."></button>
+        <div class="clock" id="clock" data-hint="Model time: the moment of the recorded day you are hearing.">
+          <span id="ro-date">—</span><span id="ro-ut"><b>--:--</b> UT</span>
+        </div>
+        <div class="seg tp-speed" id="tp-speed" role="radiogroup" aria-label="Journey speed" data-hint="How fast the day passes. 24× plays a whole day in one hour."></div>
+        <button type="button" class="drop" id="tp-day" aria-haspopup="menu" aria-expanded="false" aria-controls="tp-days" data-hint="Which recorded day to travel through. A new day starts where its story does."></button>
+        <button type="button" class="chip" id="tp-loop" role="switch" aria-checked="false" data-hint="At the end of the recording, start again from the beginning.">Loop</button>
       </div>
       <span class="spacer"></span>
       <canvas id="cv-hmeter" data-hint="Output level, left and right. The white line is the limiter's ceiling."></canvas>
@@ -290,6 +295,8 @@
     </footer>
 
     <!-- ============================================================ details popover -->
+    <div class="tp-menu" id="tp-days" role="menu" aria-label="Recorded day" hidden></div>
+
     <div class="details frame" id="details" hidden>
       <div class="module" style="width: 300px">
         <div class="head"><span class="cap">Observer</span><span class="note">the station is the point of view</span></div>
@@ -324,6 +331,7 @@
   <script src="widgets.js"></script>
   <script src="views.js"></script>
   <script src="app.js"></script>
+  <script src="transport.js"></script>
   <script src="mock.js"></script>
 </body>
 </html>

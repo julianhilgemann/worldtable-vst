@@ -5,14 +5,20 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 #include <functional>
+#include <optional>
 #include <string>
+#include <vector>
 
 using worldtable::PluginProcessor;
+using worldtable::JourneyChange;
+namespace sky = worldtable::sky;
 
 namespace
 {
@@ -398,6 +404,249 @@ TEST_CASE ("migrateState accepts only known versions", "[state]")
     CHECK_FALSE (PluginProcessor::migrateState ({}).isValid());
     CHECK_FALSE (PluginProcessor::migrateState (juce::ValueTree (PluginProcessor::kStateType)).isValid()); // no version
     CHECK_FALSE (PluginProcessor::migrateState (juce::ValueTree ("Other")).isValid());
+}
+
+//==================================================================================================
+// T6.9: the Journey transport — saved with the session, run/freeze, speeds, day, loop
+namespace
+{
+constexpr double kStormStartUtc = 1715299200.0;   // 2024-05-10T00:00:00Z
+
+JourneyChange change (std::optional<bool> frozen, std::optional<double> speed, std::optional<bool> loop,
+                      std::optional<juce::String> day)
+{
+    return { frozen, speed, loop, day };
+}
+
+juce::ValueTree savedJourney (PluginProcessor& p)
+{
+    juce::MemoryBlock blob;
+    p.getStateInformation (blob);
+    auto xml = juce::AudioProcessor::getXmlFromBinary (blob.getData(), static_cast<int> (blob.getSize()));
+    REQUIRE (xml != nullptr);
+    return juce::ValueTree::fromXml (*xml).getChildWithName (PluginProcessor::kJourneyType);
+}
+} // namespace
+
+TEST_CASE ("The transport runs, freezes, snaps speeds, and runs again after the end", "[processor][journey]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+    PluginProcessor p (false);
+    Renderer r (p, 48000.0, 512);
+    r.run (0.5);
+
+    CHECK (p.getJourney().speed == 24.0);
+    CHECK (p.setJourney (change ({}, 50.0, {}, {})).speed == 60.0);        // off the table: the nearest
+    CHECK (p.setJourney (change ({}, 1e9, {}, {})).speed == 1440.0);
+    p.setJourney (change ({}, 240.0, {}, {}));
+    r.run (0.2);
+    CHECK (p.getSky().model().speed() == 240.0);
+
+    p.setJourney (change (true, {}, {}, {}));
+    r.run (0.2);
+    const double held = p.getSky().model().modelTimeUtc();
+    r.run (0.5);
+    CHECK (p.getSky().model().speed() == 0.0);
+    CHECK_THAT (p.getSky().model().modelTimeUtc(), Catch::Matchers::WithinULP (held, 0));   // Freeze: model time stops
+    CHECK (p.getJourney().speed == 240.0);                               // the running speed is kept
+    p.setJourney (change (false, {}, {}, {}));
+    r.run (0.2);
+    CHECK (p.getSky().model().speed() == 240.0);
+
+    // to the end of the recording: it holds and says so; Run starts it again from the beginning
+    p.getSky().seek (p.getSkyFeed().dayEndUtc() - 30.0);
+    p.setJourney (change ({}, 1440.0, false, {}));
+    r.run (1.0);
+    CHECK (p.journeyEnded());
+    CHECK (p.getSky().model().modelTimeUtc() >= p.getSkyFeed().dayEndUtc() - 1.0);
+    p.setJourney (change (false, {}, {}, {}));
+    r.run (0.1);
+    CHECK_FALSE (p.journeyEnded());
+    CHECK (p.getSky().model().modelTimeUtc() < p.getSkyFeed().dayStartUtc() + 3600.0);
+
+    // an unknown day changes nothing
+    CHECK (p.setJourney (change ({}, {}, {}, juce::String ("1999-01-01"))).day == "2024-05-10");
+}
+
+TEST_CASE ("The Journey round-trips with the session: day, speed, frozen, loop, model time", "[state][journey]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+    PluginProcessor a (false);
+    {
+        Renderer r (a, 48000.0, 512);
+        r.run (0.5);
+        a.setJourney (change ({}, 240.0, true, juce::String ("2025-01-25")));
+        r.run (2.0);
+        a.setJourney (change (true, {}, {}, {}));
+        r.run (0.5);
+    }
+    const double utc = a.getSky().model().modelTimeUtc();
+    CHECK (utc > a.getSkyFeed().dayStartUtc() + sky::SkyFeed::journeyStart ("2025-01-25"));   // it moved on
+
+    juce::MemoryBlock blob;
+    a.getStateInformation (blob);
+
+    PluginProcessor b (false);
+    loadState (b, blob);
+    const auto j = b.getJourney();   // before any audio: the restored state
+    CHECK (j.day == "2025-01-25");
+    CHECK (j.speed == 240.0);
+    CHECK (j.frozen);
+    CHECK (j.loop);
+    CHECK (std::abs (j.utc - utc) <= 1.0);
+    CHECK (b.getSkyFeed().dayId() == "2025-01-25");
+
+    Renderer r (b, 48000.0, 512);
+    r.run (1.0);
+    CHECK (std::abs (b.getSky().model().modelTimeUtc() - utc) <= 1.0);   // frozen there
+    CHECK (b.getSky().model().speed() == 0.0);
+
+    const auto saved = savedJourney (b);
+    CHECK (saved.getProperty ("day").toString() == "2025-01-25");
+    CHECK (static_cast<double> (saved.getProperty ("speed")) == 240.0);
+    CHECK (static_cast<bool> (saved.getProperty ("frozen")));
+    CHECK (static_cast<bool> (saved.getProperty ("loop")));
+}
+
+TEST_CASE ("An older state (no journey child) loads with the Journey defaults", "[state][migration][journey]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+    const int version = GENERATE (3, 4);
+    PluginProcessor p (false);
+    p.setJourney (change (true, 1.0, true, juce::String ("2025-01-19")));
+
+    auto old = p.getValueTreeState().copyState();
+    old.setProperty (PluginProcessor::kStateVersionId, version, nullptr);
+    REQUIRE_FALSE (old.getChildWithName (PluginProcessor::kJourneyType).isValid());
+    loadState (p, toBinary (old));
+
+    const auto j = p.getJourney();
+    CHECK (j.day == "2024-05-10");
+    CHECK (j.speed == 24.0);
+    CHECK_FALSE (j.frozen);
+    CHECK_FALSE (j.loop);
+    CHECK_THAT (j.utc, Catch::Matchers::WithinULP (kStormStartUtc + sky::SkyFeed::kDefaultJourneyStart, 0));
+    CHECK (p.getSkyFeed().dayId() == "2024-05-10");
+}
+
+TEST_CASE ("A day change and a loop wrap mid-play: no click, no swell, no allocation, the same at two block sizes", "[processor][journey][render]")
+{
+    juce::ScopedJuceInitialiser_GUI juceEnv;
+    constexpr double kRate = 48000.0, kSeconds = 15.0;
+    constexpr int kGrid = 4800;   // changes land on a 0.1 s grid, so both block sizes see them on the same sample
+    constexpr int kDaySwitch = 30 * kGrid, kToEnd = 70 * kGrid;   // 3 s, 7 s
+
+    struct Out { std::vector<float> audio; int wrapAt = -1; int64_t allocations = 0; };
+    const auto run = [&] (int block, bool journey)
+    {
+        PluginProcessor p (false);
+        p.setPlayConfigDetails (0, 2, kRate, block);
+        p.prepareToPlay (kRate, block);
+        const int total = static_cast<int> (kSeconds * kRate);
+        Out out;
+        out.audio.resize (static_cast<size_t> (2 * total));
+        juce::AudioBuffer<float> buffer (2, block);
+        double lastUtc = 0.0;
+        for (int done = 0; done < total;)
+        {
+            if (journey && done == kDaySwitch)
+                p.setJourney (change ({}, {}, {}, juce::String ("2025-01-19")));   // lands at 09:30 UT
+            if (journey && done == kToEnd)
+            {
+                p.getSky().seek (p.getSkyFeed().dayEndUtc() - 7200.0);   // 2 h before the end at 1440×: wraps 5 s later
+                p.setJourney (change ({}, 1440.0, true, {}));
+            }
+            const int n = std::min ({ block, total - done, kGrid - done % kGrid });
+            buffer.setSize (2, n, false, false, true);
+            buffer.clear();
+            juce::MidiBuffer midi;
+            const auto before = testing::allocationsOnThisThread();
+            p.processBlock (buffer, midi);
+            out.allocations += testing::allocationsOnThisThread() - before;
+            for (int ch = 0; ch < 2; ++ch)
+                std::copy (buffer.getReadPointer (ch), buffer.getReadPointer (ch) + n, out.audio.begin() + ch * total + done);
+            const double utc = p.getSky().model().modelTimeUtc();
+            if (done > kToEnd && utc < lastUtc - 3600.0 && out.wrapAt < 0)
+                out.wrapAt = done;
+            lastUtc = utc;
+            done += n;
+        }
+        return out;
+    };
+
+    const auto a = run (512, true);
+    const auto b = run (333, true);
+    const auto still = run (512, false);   // the default Journey, untouched
+    REQUIRE (a.wrapAt > kToEnd);
+    CHECK (std::abs (a.wrapAt - b.wrapAt) < 512);   // found after the block it happened in
+    CHECK (a.allocations == 0);
+    CHECK (b.allocations == 0);
+
+    int nonFinite = 0;
+    float peak = 0.0f;
+    for (const float x : a.audio)
+    {
+        nonFinite += std::isfinite (x) ? 0 : 1;
+        peak = std::max (peak, std::abs (x));
+    }
+    CHECK (nonFinite == 0);
+    CHECK (peak <= kCeiling);
+
+    double maxDiff = 0.0;
+    for (size_t i = 0; i < a.audio.size(); ++i)
+        maxDiff = std::max (maxDiff, static_cast<double> (std::abs (a.audio[i] - b.audio[i])));
+    CHECK (maxDiff == 0.0);
+
+    const size_t total = a.audio.size() / 2;
+    const auto maxStepIn = [] (const std::vector<float>& z, size_t from, size_t to)
+    {
+        float m = 0.0f;
+        for (size_t i = std::max<size_t> (from, 1); i < std::min (to, z.size()); ++i)
+            m = std::max (m, std::abs (z[i] - z[i - 1]));
+        return m;
+    };
+    const auto rmsIn = [] (const std::vector<float>& z, size_t from, size_t to)
+    {
+        double s = 0.0;
+        for (size_t i = from; i < to; ++i)
+            s += static_cast<double> (z[i]) * z[i];
+        return std::sqrt (s / static_cast<double> (to - from));
+    };
+    const auto outlier = [&] (const std::vector<float>& z)   // the worst 10 ms window against the median of ±0.5 s
+    {
+        std::vector<float> windows;
+        for (size_t w = 0; w + 480 <= total; w += 480)
+            windows.push_back (maxStepIn (z, w, w + 481));
+        float worst = 0.0f;
+        for (size_t w = 50; w + 50 < windows.size(); ++w)
+        {
+            std::vector<float> around (windows.begin() + static_cast<long> (w - 50), windows.begin() + static_cast<long> (w + 50));
+            std::nth_element (around.begin(), around.begin() + 50, around.end());
+            worst = std::max (worst, windows[w] / std::max (around[50], 1.0e-6f));
+        }
+        return worst;
+    };
+    for (size_t ch = 0; ch < 2; ++ch)
+    {
+        const std::vector<float> x (a.audio.begin() + static_cast<long> (ch * total), a.audio.begin() + static_cast<long> ((ch + 1) * total));
+        const std::vector<float> y (still.audio.begin() + static_cast<long> (ch * total), still.audio.begin() + static_cast<long> ((ch + 1) * total));
+        const float stepped = maxStepIn (x, 0, total), reference = maxStepIn (y, 0, total);
+        const float worstRatio = outlier (x), referenceRatio = outlier (y);
+        // a swell: the half second after each jump against the half second before it
+        const auto half = static_cast<size_t> (kRate / 2);
+        const double daySwell = rmsIn (x, kDaySwitch, kDaySwitch + half) / rmsIn (x, kDaySwitch - half, kDaySwitch);
+        const auto wrap = static_cast<size_t> (a.wrapAt);
+        const double wrapSwell = rmsIn (x, wrap, wrap + half) / rmsIn (x, wrap - half, wrap);
+        std::printf ("Journey day switch + loop wrap, channel %d: max step %.4f (untouched %.4f), worst 10 ms window %.2fx "
+                     "its neighbourhood (untouched %.2fx), rms after/before: day %.2f, wrap %.2f (at %.2f s), peak %.2f dBFS\n",
+                     static_cast<int> (ch), static_cast<double> (stepped), static_cast<double> (reference),
+                     static_cast<double> (worstRatio), static_cast<double> (referenceRatio), daySwell, wrapSwell,
+                     a.wrapAt / kRate, 20.0 * std::log10 (static_cast<double> (peak)));
+        CHECK (stepped < 2.0f * reference);
+        CHECK (worstRatio < std::max (3.0f, 1.25f * referenceRatio));   // a click would stand far out
+        CHECK (daySwell < 1.5);
+        CHECK (wrapSwell < 1.5);
+    }
 }
 
 TEST_CASE ("The editor's taps read the sound without changing it", "[processor][telemetry][T6.12]")
