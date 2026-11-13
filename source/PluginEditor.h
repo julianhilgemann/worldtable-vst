@@ -77,6 +77,8 @@ private:
     juce::var makeDomeTelemetry() const;
     juce::var makeDayEvent() const;
     juce::var makeJourneyTelemetry() const;
+    juce::var makeModTelemetry();
+    juce::var makeModulationEvent() const;
     void updateAnalyzer();
 
     PluginProcessor& wtProcessor;
@@ -119,6 +121,12 @@ private:
     // the chord readout hand-off (single reader: this thread)
     dsp::ChordState chordFrame {};
     bool haveChord = false;
+
+    // the modulation grid (T4.2, single reader: this thread)
+    dsp::mod::ModTelemetry modFrame {};
+    bool haveMod = false;
+    uint32_t modRevisionSent = 0;
+    bool modSent = false;   ///< the page has the current grid (cleared when it loads)
 
     // the played notes (T3.7, single reader: this thread)
     dsp::PlayState playFrame {};

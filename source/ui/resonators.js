@@ -51,7 +51,8 @@
     return [lo, Math.max(lo, hi)];
   }
   /** The live level of a band: the value set, moved by whatever modulates it (the knob's ring). */
-  const liveLevel = (b) => { const k = UI.knobs && UI.knobs[b.level]; return k && k.mod ? clamp(k.mod.now, 0, 1) : P(b.level); };
+  // (T4.2: the grid may drive a level up to 2, +6 dB, past the knob's top; unclamped here)
+  const liveLevel = (b) => { const m = UI.modLive && UI.modLive(b.level); return m ? Math.max(0, m.now) : P(b.level); };
 
   function ResonatorDisplay(root) {
     const canvas = root.querySelector("canvas.res-view"), well = canvas.parentNode;
@@ -182,7 +183,7 @@
         // what moves the level (a macro, later the grid) is a white dot beside the handle (rule 3)
         const lvNow = liveLevel(b);
         if (Math.abs(lvNow - lv) > 0.004) {
-          const yl = base - HH * lvNow;
+          const yl = Math.max(top + 3, base - HH * lvNow);   // above the top it waits at the edge
           c.strokeStyle = "rgba(255,255,255,0.4)"; c.lineWidth = 1;
           c.beginPath(); c.moveTo(xm + 15, y); c.lineTo(xm + 15, yl); c.stroke();
           c.fillStyle = "#fff"; c.beginPath(); c.arc(xm + 15, yl, 2.5, 0, 2 * Math.PI); c.fill();
@@ -199,7 +200,7 @@
 
       // the notes ringing: a line per note, as high as the band's level × the note's excitation
       const k1 = 1 - Math.exp(-dt / EASE), kf = 1 - Math.exp(-dt / FADE);
-      const lvl = BANDS.map(liveLevel);
+      const lvl = BANDS.map((b) => Math.min(1, liveLevel(b)));
       const line = (x, a, col) => {
         const y = base - HH * a;
         c.strokeStyle = rgba(col, 0.95); c.lineWidth = 2;

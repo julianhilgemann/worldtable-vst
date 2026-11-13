@@ -56,11 +56,15 @@
     lim_ceiling: (v) => v.toFixed(1) + " dB",
     master: (v) => (v <= -59.9 ? "−∞" : v.toFixed(1) + " dB"),
     eq4_freq: (v) => (v >= 19980 ? "open" : WT.fmt("eq4_freq", v)),   // the engine opens the cut from 19.98 kHz (Eq::isOpen)
-    eq_sky: (v) => (v < 0.005 ? "still" : "+" + (3 * v).toFixed(1) + " oct"),
     play_velocity: (v) => (v < 0.005 ? "fixed" : Math.round(v * 30) + " dB"),
     play_drone: (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " %"),
   };
   for (const id of ["eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive"]) FORMAT[id] = (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " %");
+  // T4.2: the LFOs' rates as the mockup reads them; the envelope's times in ms below a second
+  for (const id of ["lfo1_rate", "lfo2_rate"]) FORMAT[id] = (v) => (v < 0.1 ? v.toFixed(3) : v.toFixed(2)) + " Hz";
+  for (const id of ["env_attack", "env_decay", "env_release"]) FORMAT[id] = (v) => (v < 1 ? Math.round(v * 1000) + " ms" : v.toFixed(1) + " s");
+  FORMAT.env_sustain = (v) => Math.round(v * 100) + " %";
+  FORMAT.env_trigger = (v) => ["onset", "note", "Fire only"][Math.round(v)] || "";
   const NOTE_NAMES = ["C", "D♭", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
   const noteName = (n) => NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
   for (const id of ["band_floor", "band_x1", "band_x2", "band_x3", "band_ceiling"]) FORMAT[id] = (v) => noteName(Math.round(v));
@@ -73,13 +77,13 @@
   const WORDS = {
     macro_storm: NEUTRAL, macro_glow: NEUTRAL, macro_space: NEUTRAL, macro_drift: NEUTRAL, macro_breath: { off: 0 },
     progression: { hold: 0, "follow sky": 1, follow: 1 }, play_velocity: { fixed: 0 }, play_drone: { off: 0 },
-    eq4_freq: { open: 20000 }, eq_sky: { still: 0 }, master: { "-∞": -60, "∞": -60, "-inf": -60, inf: -60 },
+    eq4_freq: { open: 20000 }, master: { "-∞": -60, "∞": -60, "-inf": -60, inf: -60 },
   };
   for (const id of ["eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive"]) WORDS[id] = { off: 0 };
   const signedFrom = (n) => 0.5 + n / 200;
   const PARSE = {
     macro_storm: signedFrom, macro_glow: signedFrom, macro_space: signedFrom, macro_drift: signedFrom,
-    play_velocity: (n) => n / 30, eq_sky: (n) => n / 3,
+    play_velocity: (n) => n / 30,
   };
   UI.parse = function (id, text) {
     const m = WT.META[id];
@@ -153,7 +157,6 @@
     eq3_drive: "Saturates only what the upper bell holds.",
     eq4_freq: "Cuts the highs above this, 12 dB per octave. At the top it is open.",
     eq4_drive: "Saturates only the octave just under the cut.",
-    eq_sky: "How far the sky's activity opens the cut, up to three octaves.",
     ph_rate: "How fast the phaser's notches travel.",
     ph_depth: "How far the notches sweep: the bar under the picture. Drag sideways in it.",
     ph_feedback: "Feedback: sharper, more resonant notches.",
@@ -177,6 +180,15 @@
     lim_ceiling: "The limiter's ceiling, the white line: the output never goes above it.",
     lim_release: "How fast the limiter lets go after a peak.",
     master: "Output level, after the limiter.",
+    lfo1_rate: "How fast LFO 1 runs: from one cycle in a hundred seconds to two a second.",
+    lfo2_rate: "How fast LFO 2 runs: from one cycle in a hundred seconds to two a second.",
+    lfo1_shape: "LFO 1's shape: sine, triangle, smooth random, stepped random.",
+    lfo2_shape: "LFO 2's shape: sine, triangle, smooth random, stepped random.",
+    env_attack: "Attack: how fast the envelope rises. Drag the first point sideways.",
+    env_decay: "Decay: how fast it falls to the sustain. Drag the second point sideways.",
+    env_sustain: "Sustain: the level it holds. Drag the second point up and down.",
+    env_release: "Release: how long it takes to fade. Drag the last point sideways.",
+    env_trigger: "What fires the envelope: a substorm onset, a MIDI note, or only the Fire button.",
   };
   UI.hintOf = (id) => UI.HINT[id] || WT.META[id].name;
 
@@ -291,7 +303,7 @@
   }
 
   // ---------- Knob v2: a solid disc, a value arc outside it, a modulation ring outside that ----------
-  const SIZES = { sm: 28, macro: 50 };   // macros at 50 px while they fill the centre block (T6.8; T4.2: 40)
+  const SIZES = { sm: 28, macro: 40 };   // macros 40 px in their one row (T4.2)
   /** The disc's fill, shared by every knob. */
   function ensureDefs() {
     if (document.getElementById("kg")) return;
@@ -394,21 +406,25 @@
       if (sliderKey(id, e)) e.preventDefault();
     });
 
-    // ---- the modulation ring (spec/09 §2 rule 3): fed by the macros now, by T4.2's grid later
+    // ---- the modulation ring (spec/09 §2 rule 3), fed by T4.2's grid (app.js, UI.mod)
     let mod = null, modSig = "";
+    // above the top (a band level may be driven to 2, +6 dB, though its knob stops at 1): the ring
+    // runs on past the track's end, at most 24° for a whole range more, so it never closes the gap
+    const normMod = (x) => (x > hi && hi > lo ? 1 + Math.min(1, (x - hi) / (hi - lo)) : WT.toNorm(id, clamp(x, lo, hi)));
+    const angMod = (n) => (n > 1 ? 135 + 24 * (n - 1) : A(n));
     const knob = {
       root,
       /** The ring: lo and hi are the range the sources can push this parameter, now is where they
        *  have it; all three in the parameter's own units (as WT.get returns). */
       setMod(loV, hiV, nowV) {
-        const n = [loV, hiV, nowV].map((x) => WT.toNorm(id, clamp(x, lo, hi)));
+        const n = [loV, hiV, nowV].map(normMod);
         const sig = n.map((x) => x.toFixed(4)).join();
         mod = { lo: loV, hi: hiV, now: nowV };
         if (sig === modSig) return;
         modSig = sig;
         ring.removeAttribute("display");
-        ringArc.setAttribute("d", arc(R + 8, A(n[0]), A(n[1])));
-        const [x, y] = pol(R + 8, A(n[2]));
+        ringArc.setAttribute("d", arc(R + 8, angMod(n[0]), angMod(n[1])));
+        const [x, y] = pol(R + 8, angMod(n[2]));
         ringDot.setAttribute("cx", x.toFixed(2));
         ringDot.setAttribute("cy", y.toFixed(2));
       },

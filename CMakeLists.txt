@@ -80,7 +80,10 @@ target_sources(WorldtableShared INTERFACE
     source/dsp/PlayVoices.cpp
     source/dsp/LowResonator.cpp
     source/dsp/Sources.cpp
-    source/dsp/fx/ShimmerReverb.cpp)
+    source/dsp/fx/ShimmerReverb.cpp
+    source/dsp/mod/ModMatrix.cpp
+    source/dsp/mod/SlowLfo.cpp
+    source/dsp/mod/Envelope.cpp)
 
 target_include_directories(WorldtableShared INTERFACE source)
 

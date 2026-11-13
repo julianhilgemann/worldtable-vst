@@ -22,7 +22,6 @@
 
   const GR = { gx: 112, top: 96, rh: 26, gap: 12, meter: 72 };
   const BAND = { red_level: "red", green_level: "green", violet_level: "violet" };   // the band levels carry their line's colour
-  const OWN_NAME = new Set(["Resonators", "Harmony"]);   // their columns are named on their own in sentences
   const HINT0 = "Rows are what moves things, columns are what can be moved. The small bar under a name is that source right now.";
   const HOW = "Drag up for more, down past zero to push the other way, double-click to clear.";
   const KEYS = "Arrows move, + and − set the depth, Backspace clears.";
@@ -37,18 +36,9 @@
     const rows = I.sources.map((s) => { if (prev !== null && s.group !== prev) y += GR.gap; prev = s.group; const r = y; y += GR.rh; return r; });
     return { w, cw, rows, X: (j) => GR.gx + (j + 0.5) * cw };
   }
-  /** A destination as a sentence names it: "Delay mix", "Phaser mix", "Detune". */
-  function destName(d) {
-    const I = info(), alone = I.destinations.filter((q) => q.module === d.module).length < 2;
-    return alone || OWN_NAME.has(d.module) || d.label.startsWith(d.module) ? d.label : d.module + " " + d.label.toLowerCase();
-  }
-  function amount(d, a) {
-    const sign = a < 0 ? "−" : "+";
-    return d.law === "oct" ? `${sign}${Math.abs(3 * a).toFixed(1)} oct` : `${sign}${Math.round(Math.abs(a) * 100)} %`;
-  }
   function routeText(k, keys) {
     const I = info(), s = I.sources[k[0]], d = I.destinations[k[1]], a = depth(k[0], k[1]);
-    return `${s.label} ${a ? "moves" : "could move"} ${destName(d)}${a ? " by " + amount(d, a) : ""}. ${keys ? KEYS : HOW}`;
+    return `${s.label} ${a ? "moves" : "could move"} ${UI.mod.destName(d.key)}${a ? " by " + UI.mod.amountText(d.key, a) : ""}. ${keys ? KEYS : HOW}`;
   }
 
   // ---------------------------------------------------------------- drawing
@@ -122,9 +112,20 @@
   }
   const keyOf = (k) => [info().sources[k[0]].key, info().destinations[k[1]].key];
   function say(text) { if (cv.dataset.hint !== text) { cv.dataset.hint = text; UI.showHint(cv); } }
+  /** The knobs the source of row `i` moves are lit while its row is (app.js `setLit`); -1: none. */
+  let litRow = -1;
+  function lightRow(i) {
+    if (i === litRow) return;
+    const knobs = UI.knobs || {}, set = (row, on) => {
+      if (row < 0 || !info().sources[row]) return;
+      for (const r of UI.mod.movedBy(info().sources[row].key)) for (const p of r.destination.params || []) if (knobs[p] && knobs[p].setLit) knobs[p].setLit(on);
+    };
+    set(litRow, false); set(i, true); litRow = i;
+  }
   function point(k) {
     const same = (hot && k && hot[0] === k[0] && hot[1] === k[1]) || (!hot && !k);
     hot = k;
+    lightRow(k ? k[0] : -1);
     cv.style.cursor = k ? "ns-resize" : "default";
     say(k ? routeText(k) : HINT0);
     if (!same) redraw();
@@ -149,7 +150,7 @@
     drag = { k, y0: p.y, a0: depth(k[0], k[1]) };
     try { cv.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events: no capture */ }
   });
-  const stop = (e) => { if (!drag) return; drag = null; point(cell(local(e))); };
+  const stop = (e) => { if (!drag) return; drag = null; lightRow(-1); point(cell(local(e))); };   // the row's routes may have changed
   cv.addEventListener("pointerup", stop);
   cv.addEventListener("pointercancel", stop);
   cv.addEventListener("dblclick", (e) => {
@@ -177,11 +178,13 @@
     e.preventDefault();
     cur = [i, j]; keyed = true;
     if (set !== null) UI.mod.set(...keyOf(cur), Math.abs(set) < 0.005 ? 0 : set);
+    if (set !== null) lightRow(-1);
+    lightRow(cur[0]);
     say(routeText(cur, true));
     redraw();
   });
   cv.addEventListener("focus", () => { if (cv.matches(":focus-visible")) keyed = true; if (info()) say(routeText(cur, true)); redraw(); });
-  cv.addEventListener("blur", () => { keyed = false; say(HINT0); redraw(); });
+  cv.addEventListener("blur", () => { keyed = false; lightRow(hot ? hot[0] : -1); say(HINT0); redraw(); });
 
   // ---------------------------------------------------------------- open and close
   const grid = {
@@ -191,7 +194,7 @@
       if (!open && panel.contains(document.activeElement)) btn.focus({ preventScroll: true });
       panel.hidden = !open;
       btn.setAttribute("aria-expanded", String(open));
-      if (open) { hot = null; draw(); }
+      if (open) { hot = null; draw(); } else lightRow(-1);
     },
     toggle() { grid.set(!grid.open); },
   };

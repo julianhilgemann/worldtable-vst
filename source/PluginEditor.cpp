@@ -50,6 +50,24 @@ juce::var floats (const std::vector<float>& values, double scale)
 }
 
 constexpr std::array<const char*, 4> kPhaseNames { "quiet", "growth", "onset", "recovery" };
+constexpr std::array<const char*, 3> kGroupNames { "macros", "sky", "motion" };
+constexpr std::array<const char*, 3> kLawNames { "mul", "add", "oct" };
+
+int modSourceIndex (const juce::String& key) noexcept
+{
+    for (size_t i = 0; i < dsp::mod::kSources.size(); ++i)
+        if (key == dsp::mod::kSources[i].key)
+            return static_cast<int> (i);
+    return -1;
+}
+
+int modDestinationIndex (const juce::String& key) noexcept
+{
+    for (size_t i = 0; i < dsp::mod::kDestinations.size(); ++i)
+        if (key == dsp::mod::kDestinations[i].key)
+            return static_cast<int> (i);
+    return -1;
+}
 constexpr std::array<const char*, 3> kOnsetKindNames { "loaded", "forced", "pseudo" };
 
 juce::PropertiesFile::Options settingsOptions()
@@ -204,6 +222,33 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                  }
                                  wtProcessor.setJourney (change);
                                  complete (makeJourneyTelemetry());
+                             })
+        // T4.2: the modulation grid. modSet (sourceKey, destinationKey, depth): 0 clears; answers
+        // with the grid as it now is (the `modulation` event's payload), false for an unknown key.
+        .withNativeFunction ("modGet", [this] (const juce::Array<juce::var>&, auto complete)
+                             {
+                                 complete (makeModulationEvent());
+                             })
+        .withNativeFunction ("modSet", [this] (const juce::Array<juce::var>& args, auto complete)
+                             {
+                                 const int source = args.size() > 0 ? modSourceIndex (args[0].toString()) : -1;
+                                 const int destination = args.size() > 1 ? modDestinationIndex (args[1].toString()) : -1;
+                                 const double depth = args.size() > 2 ? static_cast<double> (args[2]) : 0.0;
+                                 if (source < 0 || destination < 0 || ! std::isfinite (depth))
+                                 {
+                                     complete (false);
+                                     return;
+                                 }
+                                 wtProcessor.setRoute (static_cast<dsp::mod::Source> (source),
+                                                       static_cast<dsp::mod::Destination> (destination), static_cast<float> (depth));
+                                 const auto grid = makeModulationEvent();
+                                 complete (grid);
+                                 // every page view hears the change (the timer sends it once per revision)
+                             })
+        .withNativeFunction ("envFire", [this] (const juce::Array<juce::var>&, auto complete)
+                             {
+                                 wtProcessor.getInstrument().fireEnvelope();
+                                 complete (true);
                              });
 
     for (auto* param : wtProcessor.getParameters())
@@ -265,6 +310,7 @@ void PluginEditor::onPageReady()
     }
 
     daySent = 0;   // the page needs the day chart again
+    modSent = false;   // and the grid
 
     pageReady = true;
 }
@@ -575,6 +621,91 @@ juce::var PluginEditor::makeJourneyTelemetry() const
     return juce::var (o);
 }
 
+juce::var PluginEditor::makeModulationEvent() const
+{
+    // T4.2: what the grid is made of and its depths, by stable keys (dsp/mod/ModMatrix.h)
+    using namespace dsp::mod;
+    juce::Array<juce::var> sources, destinations, targets, depths;
+    for (const auto& src : kSources)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("key", juce::String (src.key));
+        o->setProperty ("label", juce::String (src.label));
+        o->setProperty ("group", juce::String (kGroupNames[static_cast<size_t> (src.group)]));
+        o->setProperty ("lo", static_cast<double> (src.lo));
+        o->setProperty ("hi", static_cast<double> (src.hi));
+        sources.add (juce::var (o));
+    }
+    for (size_t d = 0; d < kDestinations.size(); ++d)
+    {
+        const auto& dst = kDestinations[d];
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("key", juce::String (dst.key));
+        o->setProperty ("label", juce::String (dst.label));
+        o->setProperty ("module", juce::String (dst.module));
+        o->setProperty ("law", juce::String (kLawNames[static_cast<size_t> (dst.law)]));
+        juce::Array<juce::var> params;
+        for (const auto& t : kTargets)
+            if (indexOf (t.column) == d && t.paramId[0] != '\0')
+                params.add (juce::String (t.paramId));
+        o->setProperty ("params", params);
+        destinations.add (juce::var (o));
+    }
+    for (const auto& t : kTargets)
+        targets.add (juce::String (t.paramId));
+    const auto grid = wtProcessor.getModulation();
+    for (const auto& row : grid.cells)
+    {
+        juce::Array<juce::var> cells;
+        for (const float depth : row)
+            cells.add (std::round (static_cast<double> (depth) * 1.0e4) / 1.0e4);
+        depths.add (cells);
+    }
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("sources", sources);
+    o->setProperty ("destinations", destinations);
+    o->setProperty ("targets", targets);
+    o->setProperty ("depths", depths);
+    return juce::var (o);
+}
+
+juce::var PluginEditor::makeModTelemetry()
+{
+    // T4.2: every source's value, every target's modulated value and reachable range (parameter
+    // units, in kTargets' order), the LFOs' cycle positions with the random shapes' knots around
+    // now, the envelope's stage (0 idle … 4 release), progress and value
+    haveMod = wtProcessor.getInstrument().readModulation (modFrame) || haveMod;
+    if (! haveMod)
+        return {};
+
+    const auto& f = modFrame.frame;
+    const auto list = [] (const auto& values)
+    {
+        juce::Array<juce::var> a;
+        a.ensureStorageAllocated (static_cast<int> (values.size()));
+        for (const float v : values)
+            a.add (std::round (static_cast<double> (v) * 1000.0) / 1000.0);
+        return a;
+    };
+    juce::Array<juce::var> lfo;
+    for (const auto& l : modFrame.lfo)
+    {
+        juce::Array<juce::var> e { std::round (l.phase * 1.0e4) / 1.0e4, round3 (l.value) };
+        for (size_t k = 0; k < 5; ++k)   // k−2 … k+2 (View::knots starts at the cycle − 2)
+            e.add (round3 (l.knots[k]));
+        lfo.add (e);
+    }
+    const auto& e = modFrame.envelope;
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("src", list (f.source));
+    o->setProperty ("val", list (f.value));
+    o->setProperty ("lo", list (f.lo));
+    o->setProperty ("hi", list (f.hi));
+    o->setProperty ("lfo", lfo);
+    o->setProperty ("env", juce::Array<juce::var> { static_cast<int> (e.stage), round3 (e.progress), round3 (e.value) });
+    return juce::var (o);
+}
+
 juce::var PluginEditor::makeChordTelemetry()
 {
     haveChord = wtProcessor.getInstrument().readChord (chordFrame) || haveChord;
@@ -669,6 +800,7 @@ juce::var PluginEditor::makeTelemetry()
     // for the phaser picture (which also reads sampleRate, for its exact response)
     o->setProperty ("spectrumIn", inAnalyzer.toVar());
     o->setProperty ("phaser", round3 (t.phaserPhase.load()));
+    o->setProperty ("mod", makeModTelemetry());   // T4.2
 
     return juce::var (o);
 }
@@ -679,6 +811,15 @@ void PluginEditor::timerCallback()
         return;   // nothing listens yet (the WebView may still show about:blank)
 
     updateAnalyzer();
+
+    // T4.2: the grid when the page loads and whenever it changes (a session load included)
+    if (const auto revision = wtProcessor.modulationRevision(); ! modSent || revision != modRevisionSent)
+    {
+        browser->emitEventIfBrowserIsVisible ("modulation", makeModulationEvent());
+        modRevisionSent = revision;
+        modSent = true;
+    }
+
     browser->emitEventIfBrowserIsVisible ("telemetry", makeTelemetry());
 
     // The day chart once per page load and per loaded day, after the first sky frame (it carries

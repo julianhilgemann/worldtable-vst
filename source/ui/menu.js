@@ -10,7 +10,8 @@
  * opens a value field, Enter value…: the keyboard's own paths (Backspace, Enter). Anywhere else: the sizes, the welcome
  * tour, About. It is clamped to the stage; Escape, a click outside or a choice closes it. Everything
  * in it is reachable without a right-click too (the bottom bar, double-click, Enter).
- * T4.2 adds "Modulate with ▸" to the control menu (`controlMenu`).
+ * T4.2: on a control the grid can move, "Modulate with ▸" opens the sources beside the menu (one
+ * makes a route at +50 %), and the control's routes follow, each a row that clears it.
  *
  * WebKit: the menu and About open over the dome's WebGL canvas, so each has its own compositing
  * layer (style.css, translateZ(0)); Chrome paints them either way. */
@@ -104,6 +105,7 @@
 
   /** A menu row: a label, a small grey note (beside the label, or at the right with `right`). */
   function item(label, note, pick, opts = {}) {
+    const parent = opts.parent || menu;
     const b = document.createElement("button");
     b.type = "button";
     b.tabIndex = -1;
@@ -119,12 +121,15 @@
       n.textContent = note;
       (opts.right ? b : s).appendChild(n);
     }
+    if (opts.disabled) b.setAttribute("aria-disabled", "true");
     b.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (opts.disabled) return;
+      if (opts.keep) { pick(); return; }
       closeMenu();
       pick();
     });
-    menu.appendChild(b);
+    parent.appendChild(b);
     return b;
   }
   const rule = () => { const hr = document.createElement("hr"); hr.setAttribute("role", "separator"); menu.appendChild(hr); };
@@ -166,11 +171,81 @@
     item("Reset to default", defaultText(ctl, id, UI.defaultValue(id)), () => press(ctl, "Backspace"), { right: true, action: "reset" });
     if (ctl.getAttribute("role") === "slider" && ctl.tagName !== "BUTTON")
       item("Enter value…", "", () => { ctl.focus({ preventScroll: true }); press(ctl, "Enter"); }, { action: "enter" });
+    modulationItems(id);
+  }
+
+  // ---------------------------------------------------------------- T4.2: Modulate with ▸, the routes
+  const pct = (d) => (d > 0 ? "+" : "−") + Math.round(Math.abs(d) * 100) + " %";
+  let sub = null, subFrom = null;
+  function closeSub(focusBack) {
+    if (!sub) return;
+    sub.remove();
+    sub = null;
+    if (subFrom) { subFrom.classList.remove("sub-open"); subFrom.setAttribute("aria-expanded", "false"); if (focusBack) subFrom.focus({ preventScroll: true }); }
+    subFrom = null;
+  }
+  /** The sources in their groups beside the menu; a source already routed here says by how much. */
+  function openSub(from, dst, focusFirst) {
+    if (sub && subFrom === from) { if (focusFirst) { const f = sub.querySelector("button:not([aria-disabled])"); if (f) f.focus({ preventScroll: true }); } return; }
+    closeSub(false);
+    const info = UI.mod.info;
+    sub = document.createElement("div");
+    sub.className = "ctx-menu ctx-sub";
+    sub.setAttribute("role", "menu");
+    sub.setAttribute("aria-label", "Modulate with");
+    const GROUP = { macros: "Macros", sky: "Sky", motion: "Motion" };
+    let group = null;
+    const j = info.destinations.findIndex((d) => d.key === dst.key);
+    info.sources.forEach((src, i) => {
+      if (src.group !== group) {
+        group = src.group;
+        const h = document.createElement("div");
+        h.className = "ctx-group";
+        h.setAttribute("role", "none");
+        h.textContent = GROUP[group] || group;
+        sub.appendChild(h);
+      }
+      const depth = info.depths[i][j];
+      item(src.label, depth ? pct(depth) : "", () => UI.mod.set(src.key, dst.key, 0.5), { parent: sub, right: true, disabled: !!depth, action: "mod-" + src.key });
+    });
+    sub.addEventListener("keydown", (e) => {
+      const items = [...sub.querySelectorAll("button:not([aria-disabled])")], i = items.indexOf(document.activeElement), k = e.key;
+      e.stopPropagation();
+      if (k === "ArrowLeft" || k === "Escape") { e.preventDefault(); closeSub(true); return; }
+      if (k === "Tab") { e.preventDefault(); closeMenu(); return; }
+      const to = k === "ArrowDown" ? (i + 1) % items.length : k === "ArrowUp" ? (i + items.length - 1) % items.length : k === "Home" ? 0 : k === "End" ? items.length - 1 : null;
+      if (to === null || !items.length) return;
+      e.preventDefault();
+      items[to].focus({ preventScroll: true });
+    });
+    menu.appendChild(sub);
+    subFrom = from;
+    from.classList.add("sub-open");
+    from.setAttribute("aria-expanded", "true");
+    // beside the row, on the right unless that leaves the stage; kept inside it
+    sub.style.top = Math.min(from.offsetTop - 5, BASE_H - EDGE - menu.offsetTop - sub.offsetHeight) + "px";
+    sub.classList.toggle("left", menu.offsetLeft + menu.offsetWidth + 4 + sub.offsetWidth > BASE_W - EDGE);
+    if (focusFirst) { const f = sub.querySelector("button:not([aria-disabled])"); if (f) f.focus({ preventScroll: true }); }
+  }
+  /** On a control the grid moves: Modulate with ▸, then its routes, each a row that clears it. */
+  function modulationItems(id) {
+    if (!UI.mod || !UI.mod.info) return;
+    const dst = UI.mod.info.destinations.find((d) => d.key === id || (d.params || []).includes(id));
+    if (!dst) return;
+    rule();
+    const open = item("Modulate with ▸", "", () => openSub(open, dst, true), { keep: true, action: "modulate" });
+    open.setAttribute("aria-haspopup", "menu");
+    open.setAttribute("aria-expanded", "false");
+    open.addEventListener("pointerenter", () => openSub(open, dst, false));
+    open.addEventListener("keydown", (e) => { if (e.key === "ArrowRight") { e.preventDefault(); e.stopPropagation(); openSub(open, dst, true); } });
+    for (const r of UI.mod.routesOf(id))
+      item(`Clear ${r.source.label}`, pct(r.depth), () => UI.mod.set(r.source.key, r.destination.key, 0), { right: true, action: "clear-" + r.source.key });
   }
 
   /** Opens the menu at (x, y) in stage pixels, kept inside the stage. */
   function openMenu(x, y, build, focusFirst) {
     menuFrom = menu.contains(document.activeElement) ? menuFrom : document.activeElement;
+    closeSub(false);
     menu.innerHTML = "";
     delete menu.dataset.param;
     build();
@@ -178,13 +253,14 @@
     const w = menu.offsetWidth, h = menu.offsetHeight;
     menu.style.left = clamp(x, EDGE, BASE_W - w - EDGE) + "px";
     menu.style.top = clamp(y, EDGE, BASE_H - h - EDGE) + "px";
-    const first = menu.querySelector("button");
+    const first = menu.querySelector(":scope > button");
     (focusFirst && first ? first : menu).focus({ preventScroll: true });
   }
   function closeMenu() {
     if (menu.hidden) return;
     const hadFocus = menu.contains(document.activeElement);
     menu.hidden = true;
+    closeSub(false);
     menu.innerHTML = "";
     if (hadFocus && menuFrom && menuFrom.isConnected && menuFrom !== document.body) menuFrom.focus({ preventScroll: true });
     else if (hadFocus) menu.blur();
@@ -223,8 +299,12 @@
     menuFor(t, x, y, true);
   });
 
+  menu.addEventListener("pointerover", (e) => {
+    const b = e.target.closest && e.target.closest("button");
+    if (sub && b && b.parentNode === menu && b !== subFrom) closeSub(false);
+  });
   menu.addEventListener("keydown", (e) => {
-    const items = [...menu.querySelectorAll("button:not([disabled])")];
+    const items = [...menu.querySelectorAll(":scope > button:not([disabled])")];
     const i = items.indexOf(document.activeElement), k = e.key;
     let to = null;
     if (k === "ArrowDown") to = i < 0 ? 0 : (i + 1) % items.length;

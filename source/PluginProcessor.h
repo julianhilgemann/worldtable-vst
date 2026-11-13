@@ -54,11 +54,19 @@ class PluginProcessor final : public juce::AudioProcessor,
 {
 public:
     /** Bump when the saved-state layout changes; add a step to migrateState(). */
-    static constexpr int kStateVersion = 5;
+    static constexpr int kStateVersion = 6;
 
     static inline const juce::Identifier kStateType      { "Worldtable" };
     static inline const juce::Identifier kStateVersionId { "stateVersion" };
     static inline const juce::Identifier kJourneyType    { "journey" };
+    static inline const juce::Identifier kModulationType { "modulation" };   ///< T4.2: the grid's routes
+    static inline const juce::Identifier kRouteType      { "route" };
+
+    /** The grid as the `modulation` child (dsp/mod/ModMatrix.h "Where things live"): one `route`
+        per non-zero cell, by stable keys (`source`, `destination`) with its `depth`. */
+    static juce::ValueTree modulationToTree (const dsp::mod::Depths&);
+    /** Unknown keys are skipped, missing cells are 0, depths are clamped to −1 … +1. */
+    static dsp::mod::Depths modulationFromTree (const juce::ValueTree&);
 
     /** Upgrades a saved state tree to kStateVersion.
         Returns an invalid tree if the state is unusable (wrong type, missing,
@@ -113,9 +121,24 @@ public:
     /** The recording has ended: model time holds at the track's end and Loop is off. */
     bool journeyEnded() const;
 
+    //== The modulation grid (T4.2) ============================================
+    /** Any thread but the audio thread: the grid as saved (the audio thread glides to it). */
+    dsp::mod::Depths getModulation() const;
+
+    /** Any thread but the audio thread: a new grid. Publishes it to the audio thread, tells the host
+        the state changed and bumps modulationRevision() (the editor re-sends it to the page). */
+    void setModulation (const dsp::mod::Depths&);
+
+    /** One cell (0 clears it); the same as setModulation with that cell changed. */
+    void setRoute (dsp::mod::Source, dsp::mod::Destination, float depth);
+
+    /** Counts every change of the grid, a session load included. */
+    uint32_t modulationRevision() const noexcept { return modRevision.load (std::memory_order_acquire); }
+
 private:
     void applyJourney (const JourneyState&);
     void handleAsyncUpdate() override;
+    void storeModulation (const dsp::mod::Depths&, bool notifyHost);
 
     juce::AudioProcessorValueTreeState apvts;
     params::ParamPointers paramPointers;
@@ -128,6 +151,12 @@ private:
     juce::CriticalSection journeyLock;
     JourneyState journey;
     bool restorePending = false;   ///< a restore from another thread waits for the message thread
+
+    // T4.2: the grid. The lock makes the setter the DepthsExchange's single producer, whichever
+    // thread calls it (the editor, a host restoring a session). Never touched by the audio thread.
+    juce::CriticalSection modLock;
+    dsp::mod::Depths modDepths = dsp::mod::defaultDepths();
+    std::atomic<uint32_t> modRevision { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };
