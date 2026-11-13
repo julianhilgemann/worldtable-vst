@@ -432,6 +432,16 @@ header {
   border-color: var(--line-hi);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
+/* the modulation grid (T4.2): over the dome and Harmony, 888 × 448; its own compositing layer, it
+   sits over the dome's WebGL canvas. Under the details popover, the tour, the menu and About */
+.modgrid {
+  position: absolute; left: 452px; top: 150px; width: 888px; height: 448px; z-index: 5; transform: translateZ(0);
+  padding: 10px 12px; background: #0b1019; border-color: var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+.modgrid .note { font-size: 11.5px; }
+#cv-grid { position: absolute; left: 0; top: 34px; width: 886px; height: 404px; display: block; touch-action: none; border-radius: 0 0 10px 10px; }
+#cv-grid:focus-visible { outline: none; }
 /* widths, not flex bases: WebKit sizes the absolutely placed popover from its items' widths */
 .details .module { flex: none; padding: 6px 10px 8px; }
 .info-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; row-gap: 5px; margin-top: 6px; font-size: 12px; color: var(--muted); }

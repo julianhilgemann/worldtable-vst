@@ -134,6 +134,7 @@
     menu.dataset.kind = "window";
     SIZES.forEach((s, i) => item(s.name, s.px, () => settings.setSize(i), { radio: true, on: i === S.size, action: "size-" + i }));
     rule();
+    if (UI.grid) item("Modulation grid", "", () => UI.grid.toggle(), { action: "grid" });
     item("Welcome tour", "", () => UI.tour && UI.tour.start(0), { action: "tour" });
     item("About Worldtable", "", () => about.set(true), { action: "about" });
   }

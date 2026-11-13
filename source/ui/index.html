@@ -279,6 +279,8 @@
     <!-- ============================================================ bottom bar: details, the tour, the size, the hint line, auto-gain -->
     <footer id="hintbar">
       <button type="button" class="chip info-btn" id="details-btn" aria-label="Details" aria-expanded="false" aria-controls="details" data-hint="Details: the station, the journey so far, the sky's numbers, where the data comes from.">i</button>
+      <!-- T4.2 (grid.js): the modulation grid, an overlay over the dome and Harmony -->
+      <button type="button" class="chip" id="mod-btn" aria-expanded="false" aria-controls="modgrid" data-hint="Open the modulation grid: which source moves which control, and how far.">Modulation</button>
       <!-- T6.13 (menu.js, tour.js): the welcome tour and the window's size, both also on right-click -->
       <button type="button" class="chip" id="tour-btn" data-hint="The welcome tour: five steps through the window, what each part does.">Tour</button>
       <div class="seg size-seg" id="size-seg" role="radiogroup" aria-label="Window size" data-hint="Window size: small, medium or large. Also on right-click.">
@@ -317,6 +319,12 @@
       </div>
     </div>
 
+    <!-- ============================================================ T4.2: the modulation grid (grid.js), over the dome and Harmony -->
+    <div class="modgrid frame" id="modgrid" role="dialog" aria-label="Modulation" hidden>
+      <div class="head"><span class="cap">Modulation</span><span class="note">rows move columns. Drag a dot up for more, down past zero to push the other way, double-click to clear.</span></div>
+      <canvas id="cv-grid" tabindex="0" role="application" aria-roledescription="modulation grid" aria-label="Modulation grid: rows are sources, columns are destinations"></canvas>
+    </div>
+
     <!-- ============================================================ T6.13: About, the tour, the context menu (over everything) -->
     <div class="about frame" id="about" role="dialog" aria-labelledby="about-title" hidden>
       <div class="about-head"><span id="about-title">Worldtable</span><span class="about-ver" id="about-ver"></span><span class="spacer"></span><button type="button" class="chip" id="about-close" data-hint="Close About.">Close</button></div>
@@ -353,5 +361,7 @@
   <script src="menu.js"></script>
   <script src="tour.js"></script>
   <script src="mock.js"></script>
+  <script src="mod.js"></script>
+  <script src="grid.js"></script>
 </body>
 </html>
