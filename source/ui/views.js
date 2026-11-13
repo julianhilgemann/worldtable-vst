@@ -396,139 +396,327 @@
     return { draw };
   }
 
-  function PhaserView(canvas) {
+  // ================================================================ pictures as controls (T6.12)
+  // Each effect's picture shows what the effect does to the sound now and is where its main values
+  // are set (spec/09 rule 4; the mockup's drawPha, drawCho, drawDly, drawRev, drawOut). A view sizes
+  // itself from its canvas, takes its parameters by ID (`ids`) and the focusable proxies of the
+  // values it sets (`handles`, UI.Handle, placed on the handles every frame), and eases what it draws
+  // (rule 4). All ink (rule 2).
+  const DEFAULT_FS = 48000;
+  const reducedMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const norm = (id) => WT.toNorm(id, WT.get(id));
+  /** The value a parameter has now with what moves it (the macro rings' dot), else the value set. */
+  const liveOf = (id) => { const k = UI.knobs && UI.knobs[id]; return k && k.mod ? k.mod.now : WT.get(id); };
+  /** Eases named values toward their targets once per frame (τ in seconds); snaps when there. */
+  function Easer(tau) {
+    const v = {};
+    let at = 0, k = 1;
     return {
-      draw(t, p, spectrum) {
+      tick() { const t = now(), dt = at ? Math.min(0.25, t - at) : 1e3; at = t; k = 1 - Math.exp(-dt / tau); return dt > 100 ? 0 : dt; },
+      get(name, target) {
+        if (!(name in v) || !isFinite(v[name])) v[name] = target;
+        v[name] += (target - v[name]) * k;
+        if (Math.abs(target - v[name]) < 1e-5 * (1 + Math.abs(target))) v[name] = target;
+        return v[name];
+      },
+    };
+  }
+  const handleRing = (ctx, x, y, r = 5.5) => {
+    ctx.fillStyle = C.night; ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill();
+    ctx.strokeStyle = C.inkHi; ctx.lineWidth = 1.8; ctx.stroke();
+  };
+  const tag = (ctx, text, x, y, align = "right") => {
+    ctx.font = MONO(10.5); ctx.textAlign = align; ctx.textBaseline = "alphabetic"; ctx.fillStyle = C.ink; ctx.fillText(text, x, y); ctx.textAlign = "left";
+  };
+
+  /** The phaser's gain at `hz` with its break frequency at `fc`: dsp::Phaser::magnitude (fx/Phaser.h)
+   *  line for line, the filter's exact response (bilinear all-passes, the feedback one sample late,
+   *  dry/wet and the make-up gain). A unit test holds it to the Phaser on a sine sweep. */
+  function phaserResponse(hz, fc, fs, stages, feedback, mix) {
+    const n = clamp(Math.round(stages), 2, 8), fb = clamp(feedback, 0, 0.8), m = clamp(mix, 0, 1);
+    const w = 2 * Math.PI * clamp(hz, 0, 0.4999 * fs) / fs;
+    const th = -2 * n * Math.atan(Math.tan(0.5 * w) / Math.tan(Math.PI * fc / fs));
+    const ar = Math.cos(th), ai = Math.sin(th);
+    const dr = 1 - fb * Math.cos(th - w), di = -fb * Math.sin(th - w), dd = dr * dr + di * di;
+    const wr = (ar * dr + ai * di) / dd, wi = (ai * dr - ar * di) / dd;
+    const or = (1 - m) + m * wr, oi = m * wi;
+    return Math.sqrt(or * or + oi * oi) / Math.sqrt(Math.max(1e-6, (1 - m) * (1 - m) + m * m));
+  }
+  /** The break frequency for an LFO phase (dsp::Phaser::breakHz): 200 Hz … 2 kHz at depth 1. */
+  const phaserBreak = (depth, phase) => 200 * Math.pow(10, 0.5 + 0.5 * clamp(depth, 0, 1) * Math.sin(2 * Math.PI * phase));
+
+  /** Phaser: the sources' spectrum shaped by the tone stage (outline: what goes in) and the same ×
+   *  the phaser's response (bright: what comes out), so the notches are seen eating the sound; dotted
+   *  lines at the notches; the sweep range on the bottom edge with a dot at the break frequency now.
+   *  The LFO phase is the engine's (telemetry `phaser`), run on between frames. Drag: sideways the
+   *  depth, up and down the feedback. `tone(f, tel)` is the tone stage's response in dB. */
+  function PhaserView(canvas, { ids = {}, handles = {}, tone = () => 0 } = {}) {
+    const id = Object.assign({ rate: "ph_rate", depth: "ph_depth", feedback: "ph_feedback", mix: "ph_mix", stages: "ph_stages" }, ids);
+    const E = Easer(0.1);
+    // heights are amplitude^½ against an eased reference (the loudest band): the spectrum's shape
+    // reads, and a notch of −10 dB takes half the height away, as the ear hears it eat the sound
+    const LIFT = 40;
+    let phase = 0, primed = false, ref = -30, drag = false;
+    const spec = new Float32Array(120).fill(-100);
+    const X = (f, w) => (Math.log(f / 20) / Math.log(1000)) * w;
+    UI.dragPicture(canvas, (p) => {
+      const d0 = norm(id.depth), f0 = norm(id.feedback);
+      drag = true;
+      return {
+        ids: [id.depth, id.feedback],
+        move(q, ev) { const k = ev.shiftKey ? 0.15 : 1; UI.setNorm(id.depth, d0 + (q.x - p.x) / 80 * k); UI.setNorm(id.feedback, f0 + (p.y - q.y) / 80 * k); },
+        end() { drag = false; },
+      };
+    });
+    /** The source's level (dB) at f, interpolated between the analyser's 120 log bands. */
+    const specAt = (f) => {
+      const x = clamp(Math.log(f / 20) / Math.log(1000) * 120 - 0.5, 0, 119), i = Math.floor(x), j = Math.min(119, i + 1);
+      return spec[i] + (spec[j] - spec[i]) * (x - i);
+    };
+    return {
+      draw(tel) {
+        const dt = E.tick(), fs = tel.sampleRate || DEFAULT_FS;
+        const mixSet = WT.get(id.mix);
+        // the engine's LFO: it advances only while the phaser is on (fx/Phaser.h)
+        if (mixSet > 0) phase += WT.get(id.rate) * dt;
+        if (typeof tel.phaser === "number") {
+          if (!primed) phase = tel.phaser;
+          else { let e = tel.phaser - phase; e -= Math.round(e); phase += e * 0.15; }
+          primed = true;
+        }
+        phase -= Math.floor(phase);
+        const depth = E.get("depth", WT.get(id.depth)), fb = E.get("fb", WT.get(id.feedback)), mix = E.get("mix", liveOf(id.mix));
+        const N = Math.round(WT.get(id.stages));
+        const fc = phaserBreak(depth, phase), fLo = phaserBreak(depth, 0.75), fHi = phaserBreak(depth, 0.25);
+        const src = tel.spectrumIn || tel.spectrum;
+        if (src && src.length === 120) for (let i = 0; i < 120; i++) spec[i] += (src[i] - spec[i]) * 0.4;
+
         const { ctx, w, h } = UI.fit(canvas);
         ctx.clearRect(0, 0, w, h);
-        const top = 3, bot = h - 3;
-        if (spectrum && spectrum.length) {
-          ctx.beginPath(); ctx.moveTo(0, bot);
-          spectrum.forEach((db, i) => ctx.lineTo((i / (spectrum.length - 1)) * w, bot - clamp((db + 90) / 80, 0, 1) * (bot - top)));
-          ctx.lineTo(w, bot); ctx.closePath(); ctx.fillStyle = "rgba(201,211,230,0.07)"; ctx.fill();
+        const base = h - 18, H = base - 8, yBar = h - 8;
+        // what goes in (the source through the tone stage) and what comes out
+        const n = Math.max(40, Math.round(w / 1.5));
+        const fin = new Float32Array(n + 1), fout = new Float32Array(n + 1);
+        let peak = -100;
+        for (let i = 0; i <= n; i++) {
+          const f = 20 * Math.pow(1000, i / n);
+          fin[i] = specAt(f) + tone(f, tel);
+          fout[i] = fin[i] + 20 * Math.log10(Math.max(1e-6, phaserResponse(f, fc, fs, N, fb, mix)));
+          peak = Math.max(peak, fin[i]);
         }
-        for (const f of [100, 1000, 10000]) { const xx = Math.round(LOGF(f, w)) + 0.5; ctx.strokeStyle = C.hairSoft; ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke(); }
-        const notches = Math.max(1, Math.round(p.stages / 2));
-        const sweep = 0.5 + 0.5 * p.depth * Math.sin(2 * Math.PI * p.rate * t);
-        const c0 = Math.log2(120) + sweep * Math.log2(30), width = 0.55 - 0.4 * p.fb;
+        ref += (Math.max(-60, peak) - ref) * (primed ? 0.05 : 1);
+        const Y = (db) => base - H * 0.8 * Math.min(1.25, Math.pow(10, (db - ref) / LIFT));
+        const path = (arr) => { ctx.beginPath(); ctx.moveTo(0, base); for (let i = 0; i <= n; i++) ctx.lineTo((i / n) * w, Y(arr[i])); ctx.lineTo(w, base); ctx.closePath(); };
+        path(fin); ctx.fillStyle = "rgba(201,211,230,0.06)"; ctx.fill(); ctx.strokeStyle = "rgba(201,211,230,0.3)"; ctx.lineWidth = 1; ctx.stroke();
+        path(fout);
+        const g = ctx.createLinearGradient(0, 8, 0, base);
+        g.addColorStop(0, "rgba(238,242,250,0.75)"); g.addColorStop(1, "rgba(201,211,230,0.14)");
+        ctx.fillStyle = g; ctx.fill();
+        // the notches: where the stages turn the sound half a cycle (refined on the exact response)
+        ctx.strokeStyle = "rgba(238,242,250,0.5)"; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+        const tc = Math.tan(Math.PI * fc / fs);
+        for (let k = 0; 2 * k + 1 < N; k++) {
+          let f = (fs / Math.PI) * Math.atan(tc * Math.tan((2 * k + 1) * Math.PI / (2 * N))), best = Infinity, at = f;
+          for (let s = -12; s <= 12; s++) { const ff = f * Math.pow(2, s / 40), r = phaserResponse(ff, fc, fs, N, fb, 0.5); if (r < best) { best = r; at = ff; } }
+          f = at;
+          if (f < 20 || f > 20000) continue;
+          const x = Math.round(X(f, w)) + 0.5;
+          ctx.beginPath(); ctx.moveTo(x, 6); ctx.lineTo(x, base); ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        // the sweep: its range as a bar with end caps, the break frequency now as a dot
+        const xl = X(fLo, w), xh = X(fHi, w);
+        ctx.fillStyle = "rgba(201,211,230,0.3)"; ctx.fillRect(xl, yBar - 1, xh - xl, 2);
+        ctx.fillStyle = C.ink;
+        for (const x of [xl, xh]) { ctx.beginPath(); ctx.roundRect(x - 2, yBar - 5, 4, 10, 2); ctx.fill(); }
+        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(X(fc, w), yBar, 3, 0, 2 * Math.PI); ctx.fill();
+        const hd = handles[id.depth];
+        if (hd) hd.place(canvas, (xl + xh) / 2, yBar, xh - xl + 14, 16);
+        if (drag || (hd && hd.focused)) tag(ctx, `depth ${Math.round(WT.get(id.depth) * 100)} %  feed ${WT.get(id.feedback).toFixed(2)}`, w - 6, 15);
+      },
+    };
+  }
+
+  /** Chorus: the dry sound as a centre line, the band the voices swing in (± the depth, dotted edges,
+   *  the value in the corner), the three voices (1.0, 1.22, 1.44 × the rate, a third of a cycle apart,
+   *  as fx/Chorus.h runs them) scrolling towards "now", where each has a dot; their strength by the
+   *  mix. Drag sideways: the rate. */
+  function ChorusView(canvas, { ids = {} } = {}) {
+    const id = Object.assign({ rate: "ch_rate", depth: "ch_depth", mix: "ch_mix" }, ids);
+    const E = Easer(0.1), SCALE = [1, 1.22, 1.44];
+    let phase = 0, drag = false;
+    UI.dragPicture(canvas, (p) => {
+      const r0 = norm(id.rate);
+      drag = true;
+      return { ids: [id.rate], move(q, ev) { UI.setNorm(id.rate, r0 + (q.x - p.x) / 90 * (ev.shiftKey ? 0.15 : 1)); }, end() { drag = false; } };
+    });
+    return {
+      draw() {
+        const dt = E.tick();
+        const rate = WT.get(id.rate), depth = E.get("depth", WT.get(id.depth)), mix = E.get("mix", liveOf(id.mix));
+        if (!reducedMotion) phase = (phase + rate * dt) % 1000;
+        const { ctx, w, h } = UI.fit(canvas);
+        ctx.clearRect(0, 0, w, h);
+        const mid = h / 2 + 5, amp = 7 + Math.max(0, h / 2 - 26) * clamp(depth / 10, 0, 1), xn = w - 20;
+        const band = ctx.createLinearGradient(0, 0, xn, 0);
+        band.addColorStop(0, "rgba(201,211,230,0)"); band.addColorStop(1, "rgba(201,211,230,0.07)");
+        ctx.fillStyle = band; ctx.fillRect(0, mid - amp, xn, 2 * amp);
+        ctx.strokeStyle = "rgba(201,211,230,0.2)"; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
         ctx.beginPath();
-        for (let i = 0; i <= 120; i++) {
-          const x = (i / 120) * w, lf = Math.log2(20) + (i / 120) * Math.log2(1000);
-          let r = 1;
-          for (let k = 0; k < notches; k++) {
-            const c = c0 + k * 1.3;
-            r *= 1 - 0.92 * p.mix * Math.exp(-(((lf - c) / width) ** 2));
-            r += 0.35 * p.fb * p.mix * Math.exp(-(((lf - c - 0.65) / width) ** 2));
-          }
-          const y = top + (bot - top) * (1 - clamp(r, 0, 1.3) / 1.3);
-          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        ctx.moveTo(0, Math.round(mid - amp) + 0.5); ctx.lineTo(xn, Math.round(mid - amp) + 0.5);
+        ctx.moveTo(0, Math.round(mid + amp) + 0.5); ctx.lineTo(xn, Math.round(mid + amp) + 0.5);
+        ctx.stroke(); ctx.setLineDash([]);
+        ctx.strokeStyle = "rgba(201,211,230,0.3)"; ctx.beginPath(); ctx.moveTo(0, Math.round(mid) + 0.5); ctx.lineTo(w, Math.round(mid) + 0.5); ctx.stroke();
+        ctx.fillStyle = "rgba(255,255,255,0.25)"; ctx.fillRect(xn, mid - amp - 6, 1, 2 * amp + 12);
+        // x is time: "now" at xn, 1.25 cycles of the first voice across the picture
+        const strong = (0.35 + 0.65 * clamp(mix, 0, 1)).toFixed(3);
+        for (let v = 0; v < 3; v++) {
+          const y = (x) => mid + amp * Math.sin(2 * Math.PI * (SCALE[v] * (phase - 1.25 * (xn - x) / xn) + v / 3));
+          const g = ctx.createLinearGradient(0, 0, xn, 0);
+          g.addColorStop(0, "rgba(223,230,243,0)"); g.addColorStop(1, `rgba(238,242,250,${strong})`);
+          ctx.beginPath();
+          for (let x = 0; x <= xn; x += 2) (x ? ctx.lineTo(x, y(x)) : ctx.moveTo(x, y(x)));
+          ctx.strokeStyle = g; ctx.lineWidth = 1.7; ctx.stroke();
+          ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(xn + 0.5, y(xn), 3, 0, 2 * Math.PI); ctx.fill();
         }
-        ctx.strokeStyle = C.inkHi; ctx.lineWidth = 1.4; ctx.stroke();
+        ctx.textBaseline = "alphabetic";
+        if (drag) tag(ctx, `rate ${UI.format(id.rate, rate)}`, 7, 14, "left");
+        else { ctx.font = UI.SANS(11); ctx.fillStyle = C.muted; ctx.fillText("three voices around the dry sound", 7, 14); }
+        ctx.font = MONO(10); ctx.textAlign = "right"; ctx.fillStyle = C.ink; ctx.fillText("± " + WT.get(id.depth).toFixed(1) + " ms", w - 6, h - 6);
+        ctx.textAlign = "left";
       },
     };
   }
 
-  function ChorusView(canvas) {
+  /** Delay: time 0 … 4 s left to right; the dry hit, then each echo as a bar (left above the line,
+   *  right below; ping-pong alternates), heights from the feedback, darker with the tone. A handle on
+   *  the first echo: sideways the time, up and down the feedback; the time in the corner. */
+  function DelayView(canvas, { ids = {}, handles = {} } = {}) {
+    const id = Object.assign({ time: "dly_time", feedback: "dly_fb", tone: "dly_tone", mix: "dly_mix", ping: "dly_pingpong" }, ids);
+    const E = Easer(0.1), SPAN = 4;
+    let drag = false, shown = "";
+    const X = (s, w) => 8 + (s / SPAN) * (w - 14);
+    UI.dragPicture(canvas, (p) => {
+      const f0 = norm(id.feedback), w = canvas.clientWidth;
+      drag = true;
+      return {
+        ids: [id.time, id.feedback],
+        move(q, ev) {
+          WT.set(id.time, clamp(((q.x - 8) / (w - 14)) * SPAN, 0.05, SPAN));
+          UI.setNorm(id.feedback, f0 + (p.y - q.y) / 80 * (ev.shiftKey ? 0.15 : 1));
+        },
+        end() { drag = false; },
+      };
+    });
     return {
-      draw(t, p) {
+      draw() {
+        E.tick();
+        const T = E.get("time", WT.get(id.time)), fb = E.get("fb", WT.get(id.feedback)), tone = E.get("tone", WT.get(id.tone));
+        const mix = E.get("mix", clamp(liveOf(id.mix), 0, 1)), ping = WT.get(id.ping) > 0.5;
+        const ht = handles[id.time], hf = handles[id.feedback];
+        const hot = drag || (ht && ht.focused) || (hf && hf.focused);
+        const sig = [T, fb, tone, mix].map((v) => v.toFixed(4)).join() + ping + hot + canvas.clientWidth + UI.scale;
+        if (sig === shown) return;
+        shown = sig;
         const { ctx, w, h } = UI.fit(canvas);
         ctx.clearRect(0, 0, w, h);
-        const mid = h / 2, amp = (p.depth / 10) * (h / 2 - 5) + 1;
-        ctx.strokeStyle = C.hair; ctx.beginPath(); ctx.moveTo(0, mid + 0.5); ctx.lineTo(w, mid + 0.5); ctx.stroke();
-        for (let v = 0; v < 3; v++) {
-          ctx.beginPath();
-          for (let i = 0; i <= 48; i++) {
-            const x = (i / 48) * w;
-            const y = mid + amp * Math.sin(2 * Math.PI * (p.rate * t + (i / 48) * 0.9 + v / 3));
-            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-          }
-          ctx.strokeStyle = rgba("hi", 0.25 + 0.65 * p.mix * (1 - v * 0.22));
-          ctx.lineWidth = 1.3; ctx.stroke();
+        const mid = h / 2;
+        ctx.fillStyle = C.hair; ctx.fillRect(0, Math.round(mid), w, 1);
+        ctx.font = MONO(10); ctx.fillStyle = C.faint; ctx.textBaseline = "alphabetic";
+        ctx.fillText("L", 5, 14); ctx.fillText("R", 5, h - 6);
+        ctx.fillStyle = C.inkHi; ctx.fillRect(X(0, w) - 1, mid - h * 0.36, 2.5, h * 0.72);
+        for (let k = 1; k < 64; k++) {
+          const s = k * T, a = Math.pow(fb, k - 1) * (0.25 + 0.75 * mix);
+          if (s > SPAN || a < 0.03) break;
+          const hh = h * 0.36 * a, x = X(s, w) - 1;
+          ctx.fillStyle = rgba("ink", 0.35 + 0.6 * (1 - (1 - tone) * Math.min(1, k / 5)));
+          if (!ping || k % 2 === 1) ctx.fillRect(x, mid - hh, 2.5, hh);
+          if (!ping || k % 2 === 0) ctx.fillRect(x, mid, 2.5, hh);
         }
+        handleRing(ctx, X(T, w), mid);
+        tag(ctx, WT.get(id.time).toFixed(2) + " s", w - 6, 14);
+        if (hot) tag(ctx, `feed ${Math.round(WT.get(id.feedback) * 100)} %`, w - 6, h - 6);
+        for (const hd of [ht, hf]) if (hd) hd.place(canvas, X(T, w), mid);
       },
     };
   }
 
-  function DelayView(canvas) {
-    const paint = cache(canvas);
+  /** Reverb: the tail's level over time (log time, marks at 1, 5, 20, 60 s) from the decay and the
+   *  mix, the shimmer as a brighter layer inside it, the reverb's live level as a dot riding the
+   *  curve. A handle on the tail: sideways the decay (written in the title row). */
+  function ReverbView(canvas, { ids = {}, handles = {} } = {}) {
+    const id = Object.assign({ decay: "rev_decay", mix: "rev_mix", shimmer: "rev_shimmer" }, ids);
+    const E = Easer(0.1);
+    let drag = false, shown = "";
+    UI.dragPicture(canvas, (p) => {
+      const d0 = norm(id.decay);
+      drag = true;
+      return { ids: [id.decay], move(q, ev) { UI.setNorm(id.decay, d0 + (q.x - p.x) / 110 * (ev.shiftKey ? 0.15 : 1)); }, end() { drag = false; } };
+    });
     return {
-      draw(p) {
-        paint([p.time, p.fb, p.tone, p.mix, p.ping].map((v) => (+v).toFixed(3)).join(), (ctx, w, h) => {
-          const mid = h / 2, x0 = 6, x1 = w - 14, span = Math.max(2, Math.min(16, p.time * 7));
-          const x = (t) => x0 + (x1 - x0) * (t / span);
-          ctx.strokeStyle = C.hair; ctx.beginPath(); ctx.moveTo(x0, mid + 0.5); ctx.lineTo(x1, mid + 0.5); ctx.stroke();
-          ctx.font = MONO(10); ctx.fillStyle = C.faint; ctx.fillText("L", w - 11, 12); ctx.fillText("R", w - 11, h - 4);
-          ctx.strokeStyle = C.inkHi; ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.moveTo(x(0) + 0.5, mid - (mid - 4)); ctx.lineTo(x(0) + 0.5, mid + (mid - 4)); ctx.stroke();
-          let a = 1;
-          for (let n = 1; n * p.time <= span && a > 0.02; n++) {
-            const xx = Math.round(x(n * p.time)) + 0.5, len = (mid - 4) * a;
-            ctx.strokeStyle = rgba("hi", clamp(0.35 + 0.65 * p.mix, 0, 1) * (0.4 + 0.6 * a));
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            if (p.ping) { const up = n % 2 === 1; ctx.moveTo(xx, mid); ctx.lineTo(xx, up ? mid - len : mid + len); }
-            else { ctx.moveTo(xx, mid - len); ctx.lineTo(xx, mid + len); }
-            ctx.stroke();
-            a *= p.fb * (0.75 + 0.25 * p.tone);
-          }
-        });
-      },
-    };
-  }
-
-  function ReverbView(canvas) {
-    const paint = cache(canvas);
-    return {
-      draw(p, wet) {
-        paint([p.size, p.decay, p.damp, p.pre, p.shimmer, p.mix].map((v) => v.toFixed(3)).join() + (wet * 30 | 0), (ctx, w, h) => {
-          const x0 = 4, x1 = w - 12, top = 4, bot = h - 4, span = Math.max(1.5, p.decay * 1.15 + p.pre / 1000);
-          const x = (t) => x0 + (x1 - x0) * (t / span);
-          const y = (db) => top + (bot - top) * clamp(-db / 60, 0, 1);
-          const t0 = p.pre / 1000;
-          ctx.strokeStyle = C.hairSoft;
-          for (let s = 1; s < span; s *= 2) { const xx = Math.round(x(s)) + 0.5; ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke(); }
-          // early reflections: denser with size
-          const er = 6 + Math.round(18 * p.size);
-          ctx.strokeStyle = "rgba(201,211,230,0.35)"; ctx.lineWidth = 1;
-          for (let i = 0; i < er; i++) {
-            const tt = t0 + (0.004 + 0.09 * (0.4 + p.size) * (i / er) ** 1.4), yy = y(-6 - 30 * (i / er));
-            const xx = Math.round(x(tt)) + 0.5;
-            ctx.beginPath(); ctx.moveTo(xx, bot); ctx.lineTo(xx, yy); ctx.stroke();
-          }
-          const tail = (t60, color, fill) => {
-            ctx.beginPath(); ctx.moveTo(x(t0), y(0));
-            ctx.lineTo(x(t0 + t60), y(-60));
-            ctx.strokeStyle = color; ctx.lineWidth = 1.25; ctx.stroke();
-            if (fill) { ctx.lineTo(x(t0), bot); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); }
-          };
-          tail(p.decay, "rgba(201,211,230,0.55)", `rgba(201,211,230,${0.05 + 0.1 * p.mix})`);
-          tail(p.decay * (1 - 0.75 * p.damp), C.inkHi, null);
-          // shimmer: the octave and the fifth, rising out of the tail
-          const sh = Math.round(14 * p.shimmer);
-          for (let i = 0; i < sh; i++) {
-            const tt = t0 + span * (0.1 + 0.8 * ((i * 0.618) % 1)), yy = y(-12 - 40 * ((i * 0.381) % 1));
-            ctx.fillStyle = rgba("hi", 0.35 + 0.55 * p.shimmer);
-            ctx.beginPath(); ctx.arc(x(tt), yy, 1.1, 0, 2 * Math.PI); ctx.fill();
-          }
-          // live wet level
-          ctx.fillStyle = C.hair; ctx.fillRect(w - 5, top, 2, bot - top);
-          const lv = clamp(wet * 2, 0, 1);
-          ctx.fillStyle = C.inkHi; ctx.fillRect(w - 5, bot - lv * (bot - top), 2, lv * (bot - top));
-        });
+      draw(tel) {
+        E.tick();
+        const T = E.get("decay", WT.get(id.decay)), mix = E.get("mix", clamp(liveOf(id.mix), 0, 1)), shim = E.get("shim", clamp(liveOf(id.shimmer), 0, 1));
+        const live = E.get("live", clamp((tel.verb || 0) * 2, 0.001, 1));
+        const hd = handles[id.decay], hot = drag || (hd && hd.focused);
+        const sig = [T, mix, shim, live].map((v) => v.toFixed(4)).join() + hot + canvas.clientWidth + UI.scale;
+        if (sig === shown) return;
+        shown = sig;
+        const { ctx, w, h } = UI.fit(canvas);
+        ctx.clearRect(0, 0, w, h);
+        const X = (s) => 6 + (Math.log(1 + s) / Math.log(61)) * (w - 12), base = h - 16;
+        const tail = (s, k) => base - (base - 10) * k * Math.pow(10, -3 * s / T / 2.2);
+        ctx.font = MONO(10); ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+        for (const s of [1, 5, 20, 60]) {
+          const x = Math.round(X(s)) + 0.5;
+          ctx.strokeStyle = C.hairSoft; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, 6); ctx.lineTo(x, base); ctx.stroke();
+          ctx.fillStyle = C.faint; ctx.fillText(s + (s === 60 ? " s" : ""), x - (s === 60 ? 8 : 0), h - 4);
+        }
+        ctx.textAlign = "left";
+        const level = 0.35 + 0.65 * mix;
+        const area = (k, fill) => {
+          ctx.beginPath(); ctx.moveTo(X(0), base);
+          for (let s = 0; s <= 60; s += 0.25) ctx.lineTo(X(s), tail(s, k));
+          ctx.lineTo(X(60), base); ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+        };
+        area(level, "rgba(201,211,230,0.16)");
+        if (shim > 0.01) area(level * Math.min(1, shim * 1.4) * 0.9, "rgba(238,242,250,0.32)");
+        ctx.beginPath();
+        for (let s = 0; s <= 60; s += 0.25) (s ? ctx.lineTo(X(s), tail(s, level)) : ctx.moveTo(X(s), tail(s, level)));
+        ctx.strokeStyle = C.inkHi; ctx.lineWidth = 1.6; ctx.stroke();
+        // the reverb's level now, where the tail is at that level
+        const sl = Math.min(60, -(2.2 * T / 3) * Math.log10(live));
+        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(X(sl), tail(sl, level), 2.5, 0, 2 * Math.PI); ctx.fill();
+        const hx = X(T * 0.37), hy = tail(T * 0.37, level);
+        handleRing(ctx, hx, hy);
+        if (hd) hd.place(canvas, hx, hy);
+        if (hot) tag(ctx, UI.format(id.decay, WT.get(id.decay)), w - 6, 15);
       },
     };
   }
 
   const dbOf = (g) => (g > 1e-5 ? 20 * Math.log10(g) : -100);
 
-  /** Output (T6.8: upright, the mockup's drawOut, for the 98 px module): the two channels' peaks, the
-   *  limiter's ceiling as a white line, and its gain reduction as a thin bar hanging from it. */
-  function OutputView(canvas) {
+  /** Output (upright, the mockup's drawOut): the two channels' peaks on a dB scale, the limiter's
+   *  ceiling as a white line that is dragged up and down, and its gain reduction as a thin bar
+   *  hanging from it. The auto-gain is in the bottom bar. */
+  function OutputView(canvas, { ids = {}, handles = {} } = {}) {
+    const id = Object.assign({ ceiling: "lim_ceiling" }, ids);
+    const E = Easer(0.1), MIN = -48;
+    let drag = false;
+    const span = () => canvas.clientHeight - 26;
+    UI.dragPicture(canvas, (p) => {
+      const c0 = WT.get(id.ceiling);
+      drag = true;
+      return { ids: [id.ceiling], move(q, ev) { WT.set(id.ceiling, c0 - ((q.y - p.y) / span()) * -MIN * (ev.shiftKey ? 0.15 : 1)); }, end() { drag = false; } };
+    });
     return {
-      draw(peakL, peakR, gr, ceiling) {
+      draw(tel) {
+        E.tick();
+        const ceiling = E.get("ceiling", WT.get(id.ceiling));
         const { ctx, w, h } = UI.fit(canvas);
         ctx.clearRect(0, 0, w, h);
-        const MIN = -48, top = 10, bot = h - 16, x1 = w - 30;
+        const top = 10, bot = h - 16, x1 = w - 30;
         const Y = (db) => top + (bot - top) * clamp(db / MIN, 0, 1);
         ctx.font = MONO(10); ctx.textAlign = "right"; ctx.textBaseline = "middle";
         for (const db of [0, -12, -24, -36]) {
@@ -537,18 +725,25 @@
         }
         const grad = ctx.createLinearGradient(0, Y(0), 0, Y(MIN));
         grad.addColorStop(0, C.inkHi); grad.addColorStop(1, "rgba(201,211,230,0.35)");
-        [peakL, peakR].forEach((g, ch) => {
+        [tel.peakL || 0, tel.peakR || 0].forEach((g, ch) => {
           const x = 12 + ch * 18, y = Y(clamp(dbOf(g), MIN, 0));
           ctx.fillStyle = C.track; ctx.fillRect(x, Y(0), 12, Y(MIN) - Y(0));
           ctx.fillStyle = grad; ctx.fillRect(x, y, 12, Y(MIN) - y);
         });
         const yc = Math.round(Y(ceiling));
         ctx.fillStyle = "#fff"; ctx.fillRect(8, yc - 1, x1 - 8, 1.5);
-        const grDb = -dbOf(gr);
+        const grDb = -dbOf(tel.gr || 1);
         if (grDb > 0.05) { ctx.fillStyle = rgba("hi", 0.8); ctx.fillRect(x1 - 4, yc, 2, Math.min(bot, Y(ceiling - grDb)) - yc); }
         ctx.fillStyle = C.ink; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
         ctx.fillText("L", 18, h - 4); ctx.fillText("R", 36, h - 4);
         ctx.textAlign = "left";
+        const hd = handles[id.ceiling];
+        if (hd) hd.place(canvas, (8 + x1) / 2, yc - 0.25, x1 - 4, 12);
+        if (drag || (hd && hd.focused)) {
+          const t = WT.get(id.ceiling).toFixed(1).replace("-", "−");
+          ctx.font = MONO(10); ctx.fillStyle = "rgba(5,7,13,0.85)"; ctx.fillRect(8, yc + 3, ctx.measureText(t).width + 6, 13);
+          ctx.fillStyle = C.inkHi; ctx.fillText(t, 11, yc + 13);
+        }
       },
     };
   }
@@ -573,5 +768,5 @@
     };
   }
 
-  Object.assign(UI, { DayStripView, KEO, DriveView, FilterView, KeyboardView, PhaserView, ChorusView, DelayView, ReverbView, OutputView, HeaderMeter, dbOf });
+  Object.assign(UI, { DayStripView, KEO, DriveView, FilterView, KeyboardView, PhaserView, ChorusView, DelayView, ReverbView, OutputView, HeaderMeter, dbOf, phaserResponse, phaserBreak });
 })();

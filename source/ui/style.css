@@ -289,6 +289,15 @@ header {
 #delay { padding: 10px 10px; }
 #delay .head { gap: 4px; }
 #delay .head .chip { margin-left: auto; padding: 0 6px; font-stretch: 90%; }
+/* T6.12: pictures are controls. Dragging inside a picture sets its values; each value set there has a
+   focusable proxy on its handle (views.js places it), which shows the focus ring and takes the keys
+   but lets the pointer through to the picture */
+#cv-phaser, #cv-chorus, #cv-delay, #cv-reverb { cursor: ew-resize; touch-action: none; }
+#cv-output { cursor: ns-resize; touch-action: none; }
+.handle { position: absolute; left: 0; top: 0; width: 18px; height: 18px; border-radius: 9px; pointer-events: none; }
+.handle:focus-visible { outline-offset: 1px; }
+.handle .handle-field { top: calc(100% + 4px); pointer-events: auto; }
+.head .chip b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
 
 /* ======== T6.11: the resonator display over the band row (the selected band │ detune, drift, width) */
 .head .low-note { overflow: visible; font-size: 12px; }

@@ -24,11 +24,16 @@
 // seeks (at its start and on release) and the sky lands there.
 // T6.8 (spec/09 §3, §5): every module has its size in the layout, no canvas's backing store is wider
 // than its box × the pixel ratio, and every More popover opens from its title by pointer, is next in
-// the Tab order, and closes on Escape with the focus back on the title. T6.11: a crossover dragged
-// in the resonator display moves its parameter in the engine; the grips and levels have proxies.
+// the Tab order, and closes on Escape with the focus back on the title.
+// T6.12: the effect pictures are controls: a drag in each sets its parameters (read back in C++), the
+// telemetry carries the input spectrum and the phaser's phase, every proxy sits inside its picture,
+// and the page's phaser response is dsp::Phaser::magnitude.
+// T6.11: a crossover dragged in the resonator display moves its parameter in the engine; the
+// grips and levels have proxies.
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "dsp/fx/Phaser.h"
 
 #include <iostream>
 
@@ -249,6 +254,51 @@ const char* const resonatorProbe = R"JS(JSON.stringify((function () {
            levels: document.querySelectorAll('#resonators .proxy.level[data-param]').length, canvas: cv.width + 'x' + cv.height,
            css: cv.clientWidth + 'x' + cv.clientHeight, lines: UI.res.lines().length };
 })()))JS";
+
+// T6.12: a drag in each picture, with pointer events dispatched in WebKit (the views' own handlers);
+// values are restored afterwards by restoreProbe, after C++ has read them.
+const char* const picturesProbe = R"JS(JSON.stringify((function () {
+  var IDS = ['ph_depth', 'ph_feedback', 'ch_rate', 'dly_time', 'dly_fb', 'rev_decay', 'lim_ceiling'];
+  var before = {}, after = {}, out = { telemetry: [], proxies: [], before: before, after: after };
+  IDS.forEach(function (id) { before[id] = WT.get(id); });
+  window.__t612 = before;
+  var drag = function (cvId, x0, y0, x1, y1) {
+    var cv = document.getElementById(cvId), r = cv.getBoundingClientRect(), s = UI.scale;
+    var ev = function (type, x, y) {
+      cv.dispatchEvent(new PointerEvent(type, { clientX: r.left + (x + cv.clientLeft) * s, clientY: r.top + (y + cv.clientTop) * s,
+        button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 7, isPrimary: true, bubbles: true, cancelable: true }));
+    };
+    ev('pointerdown', x0, y0);
+    for (var i = 1; i <= 6; i++) ev('pointermove', x0 + (x1 - x0) * i / 6, y0 + (y1 - y0) * i / 6);
+    ev('pointerup', x1, y1);
+  };
+  drag('cv-phaser', 90, 70, 60, 50);    // left: shallower sweep; up: more feedback
+  drag('cv-chorus', 90, 70, 120, 70);   // right: faster
+  drag('cv-delay', 40, 68, 70, 40);     // the first echo later, more feedback
+  drag('cv-reverb', 60, 100, 90, 100);  // right: a longer tail
+  drag('cv-output', 30, 40, 30, 60);    // down: a lower ceiling
+  IDS.forEach(function (id) { after[id] = WT.get(id); });
+  var tel = __wtState.tel;
+  if (!tel.spectrumIn || tel.spectrumIn.length !== 120) out.telemetry.push('spectrumIn');
+  if (typeof tel.phaser !== 'number' || tel.phaser < 0 || tel.phaser > 1) out.telemetry.push('phaser');
+  if (!(tel.sampleRate > 0)) out.telemetry.push('sampleRate');
+  [].forEach.call(document.querySelectorAll('.handle[data-param]'), function (h) {
+    var cv = h.parentElement.querySelector('canvas.view'), x = h.offsetLeft + h.offsetWidth / 2, y = h.offsetTop + h.offsetHeight / 2;
+    if (!cv || x < cv.offsetLeft || x > cv.offsetLeft + cv.offsetWidth || y < cv.offsetTop || y > cv.offsetTop + cv.offsetHeight) out.proxies.push(h.dataset.param);
+  });
+  // the page's phaser response on a grid, for C++ to compare with dsp::Phaser::magnitude
+  out.response = [];
+  [[632.5, 6, 0.3, 0.4], [2000, 8, 0.8, 1], [200, 4, 0.8, 0.5], [900, 3, 0.55, 0.7]].forEach(function (c) {
+    for (var k = 0; k <= 30; k++) { var f = 20 * Math.pow(1000, k / 30); out.response.push([f, c[0], c[1], c[2], c[3], UI.phaserResponse(f, c[0], 48000, c[1], c[2], c[3])]); }
+  });
+  return out;
+})()))JS";
+
+const char* const restoreProbe = R"JS((function () {
+  var b = window.__t612 || {};
+  Object.keys(b).forEach(function (id) { UI.commit(id, b[id]); });
+  return Object.keys(b).length;
+})())JS";
 } // namespace
 
 int main (int argc, char* argv[])
@@ -372,8 +422,8 @@ int main (int argc, char* argv[])
     bool layoutOk = parsedLayout.isObject();
     for (const auto* list : { "sizes", "canvas", "more" })
         layoutOk = layoutOk && parsedLayout[list].isArray() && parsedLayout[list].size() == 0;
-    // T6.11: the band edges, tones and shifts left Resonators' More for the display (18 now)
-    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 7 && static_cast<int> (parsedLayout["moreParams"]) >= 15;
+    // T6.11: the band edges, tones and shifts left Resonators' More for the display (12 params now)
+    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 5 && static_cast<int> (parsedLayout["moreParams"]) >= 10;
 
     // T6.11: a crossover dragged in the picture moves the parameter, in the page and in the engine
     const auto resDrag = evalSync (*browser, juce::String::fromUTF8 (resonatorProbe));
@@ -386,6 +436,44 @@ int main (int argc, char* argv[])
                     && static_cast<int> (parsedRes["grips"]) == 5 && static_cast<int> (parsedRes["levels"]) == 4;
     evalSync (*browser, "UI.commit('band_x1', " + juce::String (x1From) + "); true");
     pump (300);
+
+    // T6.12: the pictures as controls. The drags' values must have reached the processor.
+    const auto pictures = evalSync (*browser, juce::String::fromUTF8 (picturesProbe), 20000);
+    pump (400);
+    auto parsedPictures = juce::JSON::parse (pictures);
+    auto& apvts = processor.getValueTreeState();
+    const auto cpp = [&apvts] (const char* id) { return static_cast<double> (apvts.getRawParameterValue (id)->load()); };
+    const auto js = [&parsedPictures] (const char* when, const char* id) { return static_cast<double> (parsedPictures[when][id]); };
+    juce::StringArray dragBad;
+    const auto expect = [&] (const char* id, int direction)
+    {
+        const double b = js ("before", id), a = js ("after", id);
+        if (direction * (a - b) <= 1.0e-6 || std::abs (cpp (id) - a) > 1.0e-3 * (1.0 + std::abs (a)))
+            dragBad.add (juce::String (id) + " " + juce::String (b, 3) + " -> js " + juce::String (a, 3) + ", c++ " + juce::String (cpp (id), 3));
+    };
+    expect ("ph_depth", -1);
+    expect ("ph_feedback", 1);
+    expect ("ch_rate", 1);
+    expect ("dly_time", 1);
+    expect ("dly_fb", 1);
+    expect ("rev_decay", 1);
+    expect ("lim_ceiling", -1);
+    double responseError = 1.0e9;
+    if (const auto* rows = parsedPictures["response"].getArray())
+    {
+        responseError = 0.0;
+        for (const auto& r : *rows)
+        {
+            const double want = worldtable::dsp::Phaser::magnitude (r[0], r[1], 48000.0, static_cast<int> (r[2]), r[3], r[4]);
+            responseError = std::max (responseError, std::abs (20.0 * std::log10 (want) - 20.0 * std::log10 (static_cast<double> (r[5]))));
+        }
+    }
+    const auto restored = evalSync (*browser, juce::String::fromUTF8 (restoreProbe));
+    pump (400);
+    bool picturesOk = parsedPictures.isObject() && dragBad.isEmpty() && responseError < 1.0e-6
+                   && parsedPictures["response"].size() > 100;
+    for (const auto* list : { "telemetry", "proxies" })
+        picturesOk = picturesOk && parsedPictures[list].isArray() && parsedPictures[list].size() == 0;
     bool accessOk = parsedAccess.isObject();
     for (const auto* list : { "hint", "long", "role", "text", "focus", "keys", "pictures", "hues" })
         accessOk = accessOk && parsedAccess[list].isArray() && parsedAccess[list].size() == 0;
@@ -417,6 +505,7 @@ int main (int argc, char* argv[])
                  && stripOk
                  && layoutOk
                  && resOk
+                 && picturesOk
                  && parsedSky["date"].toString().startsWith ("10 May")
                  && parsedSky["ut"].toString().endsWith ("UT")
                  && parsedSky["day"].toString() == "2024-05-10"
@@ -449,6 +538,11 @@ int main (int argc, char* argv[])
               << "day strip:  " << strip << ", the sky landed " << juce::String (landed - target, 1) << " s after the drag's end\n"
               << "layout, canvases, More: " << layout << "\n"
               << "resonators, a crossover dragged: " << resDrag << ", C++ band_x1 " << cppX1 << "\n"
+              << "pictures (T6.12): drags " << (dragBad.isEmpty() ? juce::String ("all read back in C++") : dragBad.joinIntoString ("; "))
+              << ", page phaser response vs dsp::Phaser " << responseError << " dB"
+              << ", telemetry " << juce::JSON::toString (parsedPictures["telemetry"], true)
+              << ", proxies off their picture " << juce::JSON::toString (parsedPictures["proxies"], true)
+              << ", restored " << restored << "\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
 
     if (probe.isNotEmpty())
