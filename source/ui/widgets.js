@@ -199,6 +199,15 @@
     });
   }
   UI.commit = (id, v) => gesture(id).commit(v);
+  /** A run of discrete changes (keys, wheel) to one parameter as one gesture, for a picture's handles (T6.14). */
+  UI.step = (id, fn) => gesture(id).step(fn);
+  /** A pointer drag of a picture's handle over one or more parameters (T6.14: a dot moves frequency
+   *  and gain at once): one host gesture per parameter for the whole drag, a pending key or wheel run
+   *  on any of them ended first. Returns { set(id, v), end() }. */
+  UI.drag = function (ids) {
+    for (const id of ids) { gesture(id).flush(); WT.begin(id); }
+    return { set: (id, v) => WT.set(id, v), end() { for (const id of ids) WT.end(id); } };
+  };
   /** A drag in a picture (T6.11): begin ends a pending key run first, as a knob's drag does. */
   UI.begin = (id) => { gesture(id).flush(); WT.begin(id); };
   UI.end = (id) => WT.end(id);
@@ -266,6 +275,7 @@
     if (k === "Backspace" || k === "Delete") { g.commit(defaultValue(id)); return true; }
     return false;
   }
+  UI.sliderKey = sliderKey;
 
   /** Arrow keys in a radiogroup (the ARIA pattern): Right/Down next, Left/Up previous, wrapping;
    *  Home/End; Backspace or Delete = default. Returns true if handled. */

@@ -108,33 +108,16 @@
           <!-- ======== end T6.11 -->
         </div>
 
-        <!-- the tone module: T3.9's EQ as plain knobs (gain over drive per band) until its display (T6.14) -->
+        <!-- the tone module: the EQ display (T6.14). The picture is the whole control; EqView puts a
+             focusable proxy for each of the 14 parameters on its handle (spec/09 §5) -->
         <div class="module frame" id="eq">
           <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="eq-more" data-hint="More EQ: where each band sits, how wide the bells are, how far the sky opens the cut.">EQ</button>
-            <div class="more frame" id="eq-more" aria-label="EQ, more" hidden>
-              <div class="head"><span class="cap">Bands</span><span class="note">low shelf, two bells; the sky opens the cut</span></div>
-              <div class="knobs">
-                <div data-knob="eq1_freq" data-label="Low"></div>
-                <div data-knob="eq2_freq" data-label="Mid"></div>
-                <div data-knob="eq2_q" data-label="Mid Q"></div>
-                <div data-knob="eq3_freq" data-label="High"></div>
-                <div data-knob="eq3_q" data-label="High Q"></div>
-                <div data-knob="eq_sky" data-label="Sky"></div>
-              </div>
-            </div>
+            <span class="cap">EQ</span>
             <span class="spacer"></span>
-            <span class="note" id="eq-note" data-hint="Where the high cut is now, after the sky has opened it."></span>
+            <span class="eq-say" id="eq-say"></span>
           </div>
-          <div class="eq-grid">
-            <div data-knob="eq1_gain" data-label="Low"></div>
-            <div data-knob="eq2_gain" data-label="Mid"></div>
-            <div data-knob="eq3_gain" data-label="High"></div>
-            <div data-knob="eq4_freq" data-label="Cut"></div>
-            <div data-knob="eq1_drive" data-label="Drive"></div>
-            <div data-knob="eq2_drive" data-label="Drive"></div>
-            <div data-knob="eq3_drive" data-label="Drive"></div>
-            <div data-knob="eq4_drive" data-label="Drive"></div>
+          <div class="well eq-well" id="eq-well">
+            <canvas id="cv-eq" data-hint="Four bands, each with its own gain and drive. The top edge: how far the sky opens the cut."></canvas>
           </div>
         </div>
       </div>

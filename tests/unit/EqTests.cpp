@@ -759,3 +759,66 @@ TEST_CASE ("EQ in the instrument: sweeping every EQ parameter while the drone pl
         CHECK (worstRatio < std::max (3.0f, 1.25f * referenceRatio));   // a click would stand far out
     }
 }
+
+//==================================================================================================
+// T6.14: the page draws the EQ's curve itself (UI.eqDb in source/ui/widgets.js). Evaluated with node
+// (tests/unit/eq_page_curve.js); skipped where node is not on the PATH.
+TEST_CASE ("EQ: the page's curve matches the engine within 0.5 dB", "[eq][ui]")
+{
+    struct Case
+    {
+        float f1, g1, f2, g2, q2, f3, g3, q3, cut;
+        double fs;
+    };
+    const std::vector<Case> cases {
+        { 110.0f, 6.0f, 420.0f, -4.0f, 1.0f, 2400.0f, 3.0f, 2.0f, 6500.0f, 48000.0 },
+        { 30.0f, -12.0f, 80.0f, 12.0f, 0.3f, 12000.0f, -12.0f, 6.0f, 200.0f, 48000.0 },
+        { 400.0f, 12.0f, 3000.0f, -8.0f, 4.0f, 500.0f, 9.0f, 0.5f, Eq::kOpenHz, 44100.0 },
+    };
+    std::vector<double> freqs;
+    for (int i = 0; i < 20; ++i)
+        freqs.push_back (20.0 * std::pow (1000.0, i / 19.0));
+
+    juce::Array<juce::var> settings, fv;
+    for (const auto& c : cases)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("eq1_freq", c.f1); o->setProperty ("eq1_gain", c.g1);
+        o->setProperty ("eq2_freq", c.f2); o->setProperty ("eq2_gain", c.g2); o->setProperty ("eq2_q", c.q2);
+        o->setProperty ("eq3_freq", c.f3); o->setProperty ("eq3_gain", c.g3); o->setProperty ("eq3_q", c.q3);
+        o->setProperty ("eq4_freq", c.cut); o->setProperty ("fs", c.fs);
+        settings.add (juce::var (o));
+    }
+    for (const double f : freqs)
+        fv.add (f);
+    auto* req = new juce::DynamicObject();
+    req->setProperty ("freqs", fv);
+    req->setProperty ("settings", settings);
+
+    const auto script = juce::File (WORLDTABLE_FIXTURES_DIR).getSiblingFile ("unit").getChildFile ("eq_page_curve.js");
+    juce::ChildProcess node;
+    juce::String out;
+    if (node.start (juce::StringArray { "/usr/bin/env", "node", script.getFullPathName(), juce::JSON::toString (juce::var (req), true) }))
+    {
+        out = node.readAllProcessOutput();
+        node.waitForProcessToFinish (10000);
+    }
+    const auto page = juce::JSON::parse (out);
+    if (! page.isArray() || page.size() != static_cast<int> (cases.size()))
+        SKIP ("node not found or the page script failed: " << out.substring (0, 200));
+
+    for (size_t s = 0; s < cases.size(); ++s)
+    {
+        const auto& c = cases[s];
+        Eq::Settings set;
+        set.bands = { Eq::Band { c.f1, c.g1, Eq::kShelfQ, 0.0f }, Eq::Band { c.f2, c.g2, c.q2, 0.0f },
+                      Eq::Band { c.f3, c.g3, c.q3, 0.0f }, Eq::Band { c.cut, 0.0f, Eq::kCutQ, 0.0f } };
+        for (size_t i = 0; i < freqs.size(); ++i)
+        {
+            const double engine = Eq::responseDb (set, c.cut, freqs[i], c.fs);
+            const double drawn = static_cast<double> (page[static_cast<int> (s)][static_cast<int> (i)]);
+            INFO ("setting " << s << ", " << freqs[i] << " Hz: engine " << engine << " dB, page " << drawn << " dB");
+            CHECK (std::abs (drawn - engine) <= 0.5);
+        }
+    }
+}

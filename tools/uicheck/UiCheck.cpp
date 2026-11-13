@@ -35,6 +35,8 @@
 // T6.12: the effect pictures are controls: a drag in each sets its parameters (read back in C++), the
 // telemetry carries the input spectrum and the phaser's phase, every proxy sits inside its picture,
 // and the page's phaser response is dsp::Phaser::magnitude.
+// T6.14: the EQ display draws, a dot dragged, a bell scrolled, a drive bar pulled, the sky's end
+// dragged and a dot's keys set the right parameters, and the processor gets them.
 // T6.11: a crossover dragged in the resonator display moves its parameter in the engine; the
 // grips and levels have proxies.
 // T6.13: the welcome tour opens by itself on a clean settings file, its five spotlights land on their
@@ -94,8 +96,10 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
     if (!target || !el.contains(document.activeElement)) return 'focus';
     var v0 = WT.get(id);
     var key = function (k) { document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); };
-    key('ArrowUp');
-    if (WT.get(id) === v0) key('ArrowDown');
+    // a picture's handle may name the keys that move it (T6.14: a dot's frequency is ← →, its width [ ])
+    var keys = (el.getAttribute('data-keys') || 'ArrowUp,ArrowDown').split(',');
+    key(keys[0]);
+    if (WT.get(id) === v0) key(keys[1]);
     var moved = WT.get(id) !== v0;
     UI.commit(id, v0);
     return moved ? '' : 'keys';
@@ -267,6 +271,73 @@ const char* const transportProbe = R"JS(JSON.stringify((function () {
            journey: __wtState.tel.journey || null, dayButton: document.getElementById('tp-day').textContent };
 })()))JS";
 
+// T6.14: the EQ display in the real editor (spec/tasks/T6.14-eq-display.md). Synthetic pointer, wheel
+// and key events on the picture; the values it touches are kept in window.__eqSaved and restored after
+// the C++ side has read them.
+const char* const eqProbe = R"JS(JSON.stringify((function () {
+  var out = { bad: [] };
+  var cv = document.getElementById('cv-eq');
+  // the picture is drawn: the share of its backing store's pixels that are not empty
+  var px = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, lit = 0;
+  for (var i = 3; i < px.length; i += 4) if (px[i] > 0) lit++;
+  out.drawn = Math.round(lit / (px.length / 4) * 1000) / 1000;
+  out.size = [cv.clientWidth, cv.clientHeight, cv.width, cv.height];
+  var ids = ['eq1_drive', 'eq2_freq', 'eq2_gain', 'eq3_q', 'eq4_freq', 'eq_sky'];
+  var saved = { eq2_q: WT.get('eq2_q') };
+  ids.forEach(function (id) { saved[id] = WT.get(id); });
+  window.__eqSaved = saved;
+  UI.commit('eq4_freq', 6500);   // a cut below the top, so the sky's reach is drawn
+  UI.commit('eq_sky', 0.3);
+  var ev = function (type, x, y) {
+    cv.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, button: 0,
+                                              buttons: type === 'pointerup' ? 0 : 1, isPrimary: true, pointerType: 'mouse' }));
+  };
+  var pull = function (a, dx, dy) {
+    ev('pointerdown', a.x, a.y);
+    for (var i = 1; i <= 4; i++) ev('pointermove', a.x + dx * a.scale * i / 4, a.y + dy * a.scale * i / 4);
+    ev('pointerup', a.x + dx * a.scale, a.y + dy * a.scale);
+  };
+  var near = function (x, y, tol) { return Math.abs(x - y) <= tol; };
+  // a dot: band 2, 30 px right (frequency) and 15 px up (gain)
+  var a = UI.eq.at('dot', 1), f0 = WT.get('eq2_freq'), g0 = WT.get('eq2_gain');
+  pull(a, 30, -15);
+  var fx = f0 * Math.pow(1000, 30 / a.w), gx = Math.min(12, g0 + 15 / a.span * 12);
+  out.dot = [Math.round(WT.get('eq2_freq')), Math.round(fx), WT.get('eq2_gain'), Math.round(gx * 10) / 10];
+  if (!near(Math.log(WT.get('eq2_freq') / fx), 0, 0.02) || !near(WT.get('eq2_gain'), gx, 0.15)) out.bad.push('dot');
+  // scroll over a bell: band 3's width, one notch up (narrower)
+  var b = UI.eq.at('dot', 2), q0 = WT.get('eq3_q');
+  cv.dispatchEvent(new WheelEvent('wheel', { clientX: b.x, clientY: b.y, deltaY: -100, bubbles: true, cancelable: true }));
+  out.wheel = [q0, Math.round(WT.get('eq3_q') * 1000) / 1000];
+  if (!near(WT.get('eq3_q'), q0 * Math.exp(0.11), 0.01)) out.bad.push('wheel');
+  // pull a drive bar: band 1, from its foot 11 px up → 12 of its 22 px
+  var c = UI.eq.at('bar', 0);
+  pull(c, 0, -11);
+  out.bar = Math.round(WT.get('eq1_drive') * 1000) / 1000;
+  if (!near(WT.get('eq1_drive'), 12 / c.bh, 0.02)) out.bad.push('bar');
+  // the sky's reach: its end 20 px to the left
+  var s = UI.eq.at('sky'), s0 = WT.get('eq_sky');
+  pull(s, -20, 0);
+  var sx = s0 - 20 / s.w * Math.log2(1000) / 3;
+  out.sky = [s0, Math.round(WT.get('eq_sky') * 1000) / 1000, Math.round(sx * 1000) / 1000];
+  if (!near(WT.get('eq_sky'), sx, 0.01)) out.bad.push('sky');
+  // the keys on a dot: up and down move the gain, left and right the frequency, ] the width
+  var dot = document.querySelector('[data-param="eq2_freq"]'), key = function (k) {
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  };
+  dot.focus();
+  var v = [WT.get('eq2_freq'), WT.get('eq2_gain'), WT.get('eq2_q')];
+  key('ArrowUp');
+  if (WT.get('eq2_gain') <= v[1] || WT.get('eq2_freq') !== v[0]) out.bad.push('key up');
+  key('ArrowLeft');
+  if (WT.get('eq2_freq') >= v[0]) out.bad.push('key left');
+  key(']');
+  if (WT.get('eq2_q') <= v[2]) out.bad.push('key ]');
+  key('Backspace');   // the frequency's default
+  dot.blur();
+  cv.dispatchEvent(new PointerEvent('pointerleave', { pointerId: 1, pointerType: 'mouse' }));   // the pointer goes
+  out.after = ids.map(function (id) { return Math.round(WT.get(id) * 1000) / 1000; });
+  return out;
+})()))JS";
 // T6.11: drag the Low|Red crossover four semitones up in the resonator display, with pointer events
 // as a person's drag sends them; the parameter is read back here and in C++, then restored.
 const char* const resonatorProbe = R"JS(JSON.stringify((function () {
@@ -658,8 +729,9 @@ int main (int argc, char* argv[])
     bool layoutOk = parsedLayout.isObject();
     for (const auto* list : { "sizes", "canvas", "more" })
         layoutOk = layoutOk && parsedLayout[list].isArray() && parsedLayout[list].size() == 0;
-    // T6.11: the band edges, tones and shifts left Resonators' More for the display (12 params now)
-    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 5 && static_cast<int> (parsedLayout["moreParams"]) >= 10;
+    // T6.11: the band edges, tones and shifts left Resonators' More for the display; T6.12 and T6.14
+    // emptied others (the EQ has none)
+    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 4 && static_cast<int> (parsedLayout["moreParams"]) >= 5;
 
     // T6.11: a crossover dragged in the picture moves the parameter, in the page and in the engine
     const auto resDrag = evalSync (*browser, juce::String::fromUTF8 (resonatorProbe));
@@ -710,6 +782,28 @@ int main (int argc, char* argv[])
                    && parsedPictures["response"].size() > 100;
     for (const auto* list : { "telemetry", "proxies" })
         picturesOk = picturesOk && parsedPictures[list].isArray() && parsedPictures[list].size() == 0;
+
+    // T6.14: the EQ display, by pointer and keys; the values it set arrive in the processor
+    const auto eqRun = evalSync (*browser, juce::String::fromUTF8 (eqProbe), 20000);
+    pump (400);
+    auto parsedEq = juce::JSON::parse (eqRun);
+    bool eqOk = parsedEq.isObject() && parsedEq["bad"].isArray() && parsedEq["bad"].size() == 0
+             && static_cast<double> (parsedEq["drawn"]) > 0.05;
+    juce::String eqCpp;
+    {
+        const char* const ids[] = { "eq1_drive", "eq2_freq", "eq2_gain", "eq3_q", "eq4_freq", "eq_sky" };
+        const auto* after = parsedEq["after"].getArray();
+        eqOk = eqOk && after != nullptr && after->size() == 6;
+        for (int i = 0; eqOk && i < 6; ++i)
+        {
+            const double inCpp = cpp (ids[i]), inJs = (*after)[i];
+            eqCpp << (i ? ", " : "") << ids[i] << " " << inCpp;
+            eqOk = eqOk && std::abs (inCpp - inJs) <= 0.002 * std::max (1.0, std::abs (inJs));
+        }
+    }
+    evalSync (*browser, "Object.keys(window.__eqSaved).forEach(function (id) { UI.commit(id, window.__eqSaved[id]); }); true");
+    pump (300);
+
     bool accessOk = parsedAccess.isObject();
     for (const auto* list : { "hint", "long", "role", "text", "focus", "keys", "pictures", "hues" })
         accessOk = accessOk && parsedAccess[list].isArray() && parsedAccess[list].size() == 0;
@@ -810,6 +904,7 @@ int main (int argc, char* argv[])
                  && sizesOk
                  && transportOk
                  && accessOk
+                 && eqOk
                  && stripOk
                  && layoutOk
                  && resOk
@@ -829,7 +924,7 @@ int main (int argc, char* argv[])
                  && static_cast<int> (parsed["bands"]) > 0
                  && parsed["chord"].toString().isNotEmpty()
                  && static_cast<int> (parsed["voices"]) > 0
-                 && static_cast<int> (parsed["knobs"]) >= 40
+                 && static_cast<int> (parsed["knobs"]) >= 30   // T6.11, T6.12, T6.14 put values in pictures
                  && static_cast<int> (parsed["segs"]) >= 4
                  && parsed["unbound"].isArray() && parsed["unbound"].size() == 0
                  && std::abs (jsRevMix.getFloatValue() - 0.77f) < 0.001f
@@ -845,6 +940,8 @@ int main (int argc, char* argv[])
               << "keyboard, hints, colour, rings: " << access << "\n"
               << "day strip:  " << strip << ", the sky landed " << juce::String (landed - target, 1) << " s after the drag's end\n"
               << "layout, canvases, More: " << layout << "\n"
+              << "EQ display: " << eqRun << "\n"
+              << "EQ in C++:  " << eqCpp << "\n"
               << "resonators, a crossover dragged: " << resDrag << ", C++ band_x1 " << cppX1 << "\n"
               << "transport:  " << transport << "; journeySet 240x + loop → C++ " << set.speed << "x, loop " << (set.loop ? "on" : "off")
               << "; day menu → " << picked << " (C++ " << processor.getSkyFeed().dayId() << " after the restore, load "
