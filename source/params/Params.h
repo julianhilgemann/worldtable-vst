@@ -49,11 +49,20 @@ namespace id
     inline constexpr const char* macro_glow = "macro_glow";
     inline constexpr const char* macro_space = "macro_space";
     inline constexpr const char* macro_drift = "macro_drift";
-    inline constexpr const char* flt_type = "flt_type";
-    inline constexpr const char* flt_cutoff = "flt_cutoff";
-    inline constexpr const char* flt_reso = "flt_reso";
-    inline constexpr const char* flt_sky = "flt_sky";
-    inline constexpr const char* drive = "drive";
+    inline constexpr const char* eq1_freq = "eq1_freq";
+    inline constexpr const char* eq1_gain = "eq1_gain";
+    inline constexpr const char* eq1_drive = "eq1_drive";
+    inline constexpr const char* eq2_freq = "eq2_freq";
+    inline constexpr const char* eq2_gain = "eq2_gain";
+    inline constexpr const char* eq2_q = "eq2_q";
+    inline constexpr const char* eq2_drive = "eq2_drive";
+    inline constexpr const char* eq3_freq = "eq3_freq";
+    inline constexpr const char* eq3_gain = "eq3_gain";
+    inline constexpr const char* eq3_q = "eq3_q";
+    inline constexpr const char* eq3_drive = "eq3_drive";
+    inline constexpr const char* eq4_freq = "eq4_freq";
+    inline constexpr const char* eq4_drive = "eq4_drive";
+    inline constexpr const char* eq_sky = "eq_sky";
     inline constexpr const char* ph_rate = "ph_rate";
     inline constexpr const char* ph_depth = "ph_depth";
     inline constexpr const char* ph_feedback = "ph_feedback";
@@ -87,7 +96,6 @@ struct ChordShape { enum : int { kShape1 = 0, kShape2 = 1, kShape3 = 2, kCount =
 struct RedTones { enum : int { kRoot = 0, kRootFifth = 1, kChord = 2, kColours = 3, kAll = 4, kCount = 5 }; };
 struct GreenTones { enum : int { kRoot = 0, kRootFifth = 1, kChord = 2, kColours = 3, kAll = 4, kCount = 5 }; };
 struct VioletTones { enum : int { kRoot = 0, kRootFifth = 1, kChord = 2, kColours = 3, kAll = 4, kCount = 5 }; };
-struct FltType { enum : int { kLP12 = 0, kLP24 = 1, kBP = 2, kHP = 3, kCount = 4 }; };
 
 /** Raw value pointers into the APVTS, for lock-free reads on the audio thread. */
 struct ParamPointers
@@ -131,11 +139,20 @@ struct ParamPointers
     std::atomic<float>* macro_glow = nullptr;
     std::atomic<float>* macro_space = nullptr;
     std::atomic<float>* macro_drift = nullptr;
-    std::atomic<float>* flt_type = nullptr;
-    std::atomic<float>* flt_cutoff = nullptr;
-    std::atomic<float>* flt_reso = nullptr;
-    std::atomic<float>* flt_sky = nullptr;
-    std::atomic<float>* drive = nullptr;
+    std::atomic<float>* eq1_freq = nullptr;
+    std::atomic<float>* eq1_gain = nullptr;
+    std::atomic<float>* eq1_drive = nullptr;
+    std::atomic<float>* eq2_freq = nullptr;
+    std::atomic<float>* eq2_gain = nullptr;
+    std::atomic<float>* eq2_q = nullptr;
+    std::atomic<float>* eq2_drive = nullptr;
+    std::atomic<float>* eq3_freq = nullptr;
+    std::atomic<float>* eq3_gain = nullptr;
+    std::atomic<float>* eq3_q = nullptr;
+    std::atomic<float>* eq3_drive = nullptr;
+    std::atomic<float>* eq4_freq = nullptr;
+    std::atomic<float>* eq4_drive = nullptr;
+    std::atomic<float>* eq_sky = nullptr;
     std::atomic<float>* ph_rate = nullptr;
     std::atomic<float>* ph_depth = nullptr;
     std::atomic<float>* ph_feedback = nullptr;
@@ -163,7 +180,7 @@ struct ParamPointers
     void bind (juce::AudioProcessorValueTreeState&);
 };
 
-inline constexpr int kNumParameters = 67;
+inline constexpr int kNumParameters = 76;
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 

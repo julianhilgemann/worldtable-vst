@@ -478,7 +478,8 @@ juce::var PluginEditor::makeTelemetry()
         low->setProperty ("level", round3 (t.lowLevel.load()));
         o->setProperty ("low", juce::var (low));
     }
-    o->setProperty ("filterHz", std::round (static_cast<double> (t.filterHz.load())));
+    o->setProperty ("eqCutHz", std::round (static_cast<double> (t.eqCutHz.load())));   // T3.9: 20000 = open
+    o->setProperty ("sampleRate", wtProcessor.getSampleRate() > 0 ? wtProcessor.getSampleRate() : 48000.0);   // for the EQ's curve (T6.14)
 
     juce::Array<juce::var> spec;
     for (auto b : bands)

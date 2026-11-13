@@ -1,139 +1,14 @@
 /* The instrument layer's live pictures (spec/06, T6.1). Each view redraws only when what it shows
  * has changed (or, for the moving ones, only while its tab is visible), and every change glides.
- * T6.7 (spec/09 §2 rule 2): red, green and violet only where a picture shows the bands (voicing,
- * layers, keyboard) or the sky's own light (the day strip's keogram); the effect pictures are drawn in ink.
+ * T6.7 (spec/09 §2 rule 2): red, green and violet only where a picture shows the bands (layers, the
+ * keyboard strip) or the sky's own light (the day strip's keogram); the effect pictures are drawn in ink.
  * Axis numbers are at least 10 px, words in pictures 11 px. */
 (function () {
   "use strict";
   const UI = window.UI, C = UI.C, rgba = UI.rgba, MONO = UI.MONO;
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-  const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
   const LAYERS = ["red", "green", "violet"];
   const now = () => performance.now() / 1000;
-
-  // ================================================================ voicing
-  /** Every resonator voice on a pitch axis, one lane per layer. On a chord change the new voices
-   *  glide in from the nearest old ones (the voice-leading, made visible) while the old fade. */
-  function VoicingView(canvas) {
-    const LO = 24, HI = 108, GLIDE = 3.2;
-    let marks = [];
-    let signature = "";
-    let emission = [0.5, 0.5, 0.5], drawnEmission = [-1, -1, -1];
-    let levels = [1, 0.7, 0.4];
-    let animating = true, lastW = 0;
-
-    function setChord(notes) {
-      if (!notes) return;
-      const sig = notes.map((l) => [...new Set(l)].sort((a, b) => a - b).join(",")).join("|");
-      if (sig === signature) return;
-      signature = sig;
-      const t = now();
-      const old = marks.filter((m) => !m.dying);
-      for (const m of old) { m.pos = posOf(m, t); m.alpha = alphaOf(m, t); m.from = m.pos; m.to = m.pos; m.a0 = m.alpha; m.a1 = 0; m.t0 = t; m.dying = true; }
-      const fresh = [];
-      notes.forEach((layerNotes, l) => {
-        const counts = new Map();
-        for (const n of layerNotes) counts.set(n, (counts.get(n) || 0) + 1);
-        const total = layerNotes.length || 1;
-        for (const [n, c] of counts) {
-          let from = n, best = 8;
-          for (const m of old) if (m.layer === l && Math.abs(m.to - n) < best) { best = Math.abs(m.to - n); from = m.to; }
-          fresh.push({ layer: l, from, to: n, a0: 0, a1: 0.55 + 0.45 * Math.min(1, (c / total) * 3), t0: t, dying: false });
-        }
-      });
-      marks = marks.filter((m) => m.dying && alphaOf(m, t) > 0.01).concat(fresh);
-      animating = true;
-    }
-    const k = (m, t) => ease(clamp((t - m.t0) / GLIDE, 0, 1));
-    const posOf = (m, t) => m.from + (m.to - m.from) * k(m, t);
-    const alphaOf = (m, t) => m.a0 + (m.a1 - m.a0) * k(m, t);
-
-    function setEmission(e, lv) {
-      emission = e;
-      levels = lv;
-    }
-
-    function draw() {
-      const t = now();
-      const moved = emission.some((e, i) => Math.abs(e - drawnEmission[i]) > 0.02);
-      if (!animating && !moved && canvas.clientWidth === lastW) return;
-      lastW = canvas.clientWidth;
-      drawnEmission = emission.slice();
-      const { ctx, w, h } = UI.fit(canvas);
-      ctx.clearRect(0, 0, w, h);
-      const x0 = 16, x1 = w - 4;
-      const x = (n) => x0 + (x1 - x0) * (n - LO) / (HI - LO);
-      // three lanes over a 10 px octave axis: red low, green, violet high
-      const lh = Math.max(8, Math.floor((h - 20) / 3) - 2), axis = 4 + 3 * lh + 8;
-      const lane = [[4 + 2 * (lh + 3), 4 + 2 * (lh + 3) + lh], [4 + lh + 3, 4 + 2 * lh + 3], [4, 4 + lh]];
-
-      // semitone ruler and octave lines
-      ctx.font = MONO(10);
-      ctx.textBaseline = "alphabetic";
-      for (let n = LO; n <= HI; n++) {
-        const isC = n % 12 === 0, xx = Math.round(x(n)) + 0.5;
-        ctx.strokeStyle = isC ? C.hair : C.hairSoft;
-        ctx.beginPath();
-        if (isC) { ctx.moveTo(xx, 2); ctx.lineTo(xx, axis); } else { ctx.moveTo(xx, axis - 1); ctx.lineTo(xx, axis + 1); }
-        ctx.stroke();
-        if (isC && n < HI) { ctx.fillStyle = C.faint; ctx.fillText("C" + (n / 12 - 1), xx + 3, h - 3); }
-      }
-      LAYERS.forEach((name, l) => {
-        const yy = Math.round((lane[l][0] + lane[l][1]) / 2) + 0.5;
-        ctx.strokeStyle = rgba(name, 0.07);
-        ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x1, yy); ctx.stroke();
-        ctx.fillStyle = rgba(name, 0.7);
-        ctx.beginPath(); ctx.arc(5, (lane[l][0] + lane[l][1]) / 2, 1.8, 0, 2 * Math.PI); ctx.fill();
-      });
-
-      // the voices
-      let busy = false;
-      ctx.lineCap = "round";
-      for (const m of marks) {
-        const kk = k(m, t);
-        if (kk < 1) busy = true;
-        const a = alphaOf(m, t) * (0.3 + 0.7 * emission[m.layer]) * (0.35 + 0.65 * levels[m.layer]);
-        if (a < 0.01) continue;
-        const name = LAYERS[m.layer], xx = x(posOf(m, t)), [y0, y1] = lane[m.layer];
-        ctx.strokeStyle = rgba(name, clamp(a * 1.15, 0, 1));
-        ctx.lineWidth = 2.5;
-        ctx.beginPath(); ctx.moveTo(xx, y0 + 1); ctx.lineTo(xx, y1 - 1); ctx.stroke();
-      }
-      marks = marks.filter((m) => !(m.dying && k(m, t) >= 1));
-      animating = busy;
-    }
-
-    return { setChord, setEmission, draw };
-  }
-
-  // ================================================================ phase track and ticker
-  function PhaseTrack(root) {
-    const cells = [...root.children];
-    const NAMES = ["quiet", "growth", "onset", "recovery"];
-    let current = "";
-    return {
-      set(phase, progress) {
-        if (phase !== current) {
-          cells.forEach((c, i) => c.classList.toggle("on", NAMES[i] === phase));
-          current = phase;
-        }
-        const i = NAMES.indexOf(phase);
-        if (i >= 0) cells[i].querySelector("i").style.width = (clamp(progress, 0, 1) * 100).toFixed(1) + "%";
-      },
-    };
-  }
-
-  function Ticker(ol, max = 3) {
-    return {
-      push(html) {
-        const li = document.createElement("li");
-        li.className = "fresh";
-        li.innerHTML = html;
-        ol.insertBefore(li, ol.firstChild);
-        while (ol.children.length > max) ol.removeChild(ol.lastChild);
-      },
-    };
-  }
 
   // ================================================================ the day strip: keogram over the magnetometer (T6.10)
   /** The keogram's constants, tuned by eye in the mockup (spec/mockups/ui-v2.html `buildKeo`). The
@@ -492,53 +367,71 @@
     };
   }
 
-  /** Play mode's keyboard strip (T3.7), C1 to C8 like the voicing view: held notes bright, released
-   *  ones fading with their envelope, the low resonator's note as a dot under its key. */
-  function KeysView(canvas) {
-    const LO = 24, HI = 108;
-    const BLACK = [1, 3, 6, 8, 10];
-    const paint = cache(canvas);
-    return {
-      draw(voices, lowNote) {
-        const sig = (voices || []).map((v) => v[0] + ":" + (v[1] * 20 | 0) + (v[2] ? "h" : "")).join() + "|" + lowNote;
-        paint(sig, (ctx, w, h) => {
-          const kb = h - 12;
-          const whites = [];
-          for (let n = LO; n <= HI; n++) if (!BLACK.includes(n % 12)) whites.push(n);
-          const ww = w / whites.length;
-          const xOfWhite = new Map(whites.map((n, i) => [n, i * ww]));
-          const keyRect = (n) => BLACK.includes(n % 12)
-            ? [xOfWhite.get(n - 1) + ww * 0.68, 0, ww * 0.64, kb * 0.6]
-            : [xOfWhite.get(n), 0, ww, kb];
-          const lit = new Map();
-          for (const [note, level, held] of voices || []) {
-            if (note < LO || note > HI) continue;
-            const a = held ? 0.45 + 0.55 * clamp(level, 0, 1) : 0.6 * clamp(level, 0, 1);
-            lit.set(note, Math.max(lit.get(note) || 0, a));
-          }
-          // white keys, then black keys over them
-          for (const n of whites) {
-            const [x, y0, kw, kh] = keyRect(n);
-            const a = lit.get(n) || 0;
-            if (a > 0.01) { ctx.fillStyle = rgba("violet", a * 0.8); ctx.fillRect(x + 0.5, y0, kw - 1, kh); }
-            ctx.strokeStyle = C.hairSoft; ctx.strokeRect(Math.round(x) + 0.5, 0.5, Math.round(kw), kh - 1);
-          }
-          for (let n = LO; n <= HI; n++) {
-            if (!BLACK.includes(n % 12)) continue;
-            const [x, y0, kw, kh] = keyRect(n);
-            const a = lit.get(n) || 0;
-            ctx.fillStyle = a > 0.01 ? rgba("violet", 0.25 + a * 0.75) : "rgba(201,211,230,0.13)";
-            ctx.fillRect(x, y0, kw, kh);
-          }
-          if (lowNote >= LO && lowNote <= HI) {
-            const [x, , kw] = keyRect(lowNote);
-            ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(x + kw / 2, kb - 4, 1.6, 0, 2 * Math.PI); ctx.fill();
-          }
-          ctx.font = MONO(10); ctx.fillStyle = C.faint;
-          for (let n = LO; n < HI; n += 12) ctx.fillText("C" + (n / 12 - 1), xOfWhite.get(n) + 2, h - 2);
-        });
-      },
-    };
+  /** The notes sounding, as keys from C1 to B6 (T6.8, the mockup's drawKbd; it replaces T6.1's voicing
+   *  lanes and T3.7's Play keyboard). `lit` maps a MIDI note to [band, strength 0…1], band one of
+   *  "ink" (the low resonator), "red", "green", "violet": in Drone mode the chord's voices, in Play
+   *  mode the keys you hold and their release. Every key eases in and out (CLAUDE.md rule 4). */
+  function KeyboardView(canvas) {
+    const LO = 24, HI = 96, TAU = 0.3;
+    const WHITE = [0, 2, 4, 5, 7, 9, 11];
+    const keys = new Map();   // note → { band, a: shown, t: target }
+    let at = 0, shown = "";
+    const smooth = (a) => Math.min(1, a / 0.15);
+    function draw(lit) {
+      const t = now(), e = at ? 1 - Math.exp(-Math.min(0.25, t - at) / TAU) : 1;
+      at = t;
+      for (const [n, [band, v]] of lit) {
+        const k = keys.get(n);
+        if (k) { k.band = band; k.t = v; } else keys.set(n, { band, a: 0, t: v });
+      }
+      let sig = canvas.clientWidth + "|" + UI.scale;
+      for (const [n, k] of keys) {
+        if (!lit.has(n)) k.t = 0;
+        k.a += (k.t - k.a) * e;
+        if (k.t === 0 && k.a < 0.01) { keys.delete(n); continue; }
+        sig += `|${n}${k.band[0]}${Math.round(k.a * 60)}`;
+      }
+      if (sig === shown) return;
+      shown = sig;
+      const { ctx, w, h } = UI.fit(canvas);
+      ctx.clearRect(0, 0, w, h);
+      let whites = 0;
+      for (let m = LO; m < HI; m++) if (WHITE.includes(m % 12)) whites++;
+      const ww = (w - 12) / whites, kh = h - 12, bh = kh * 0.6;
+      const lift = (m, base, top) => {
+        const k = keys.get(m);
+        if (!k || k.a < 0.005) return;
+        ctx.fillStyle = rgba(k.band, (base + top * k.a) * smooth(k.a));
+        return true;
+      };
+      let i = 0;
+      for (let m = LO; m < HI; m++) {
+        if (!WHITE.includes(m % 12)) continue;
+        const x = 6 + i * ww;
+        ctx.fillStyle = "#141a28";
+        ctx.beginPath(); ctx.roundRect(x + 0.5, 6, ww - 1, kh, 2); ctx.fill();
+        const on = lift(m, 0.35, 0.6);
+        if (on) { ctx.beginPath(); ctx.roundRect(x + 0.5, 6, ww - 1, kh, 2); ctx.fill(); }
+        if (m % 12 === 0) {
+          const k = keys.get(m);
+          ctx.fillStyle = k && k.a > 0.4 ? "#05070d" : C.faint;
+          ctx.font = MONO(10); ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+          ctx.fillText("C" + (m / 12 - 1), x + ww / 2, h - 9);
+        }
+        i++;
+      }
+      i = 0;
+      for (let m = LO; m < HI; m++) {
+        if (WHITE.includes(m % 12)) { i++; continue; }
+        const x = 6 + i * ww - ww * 0.3;
+        ctx.fillStyle = C.well; ctx.fillRect(x - 1, 6, ww * 0.6 + 2, bh + 1);
+        ctx.fillStyle = "#232b3d";
+        ctx.beginPath(); ctx.roundRect(x, 6, ww * 0.6, bh, 1.5); ctx.fill();
+        if (lift(m, 0.5, 0.5)) { ctx.beginPath(); ctx.roundRect(x, 6, ww * 0.6, bh, 1.5); ctx.fill(); }
+      }
+      ctx.textAlign = "left";
+    }
+    return { draw };
   }
 
   function PhaserView(canvas) {
@@ -666,32 +559,39 @@
 
   const dbOf = (g) => (g > 1e-5 ? 20 * Math.log10(g) : -100);
 
+  /** Output (T6.8: upright, the mockup's drawOut, for the 98 px module): the two channels' peaks, the
+   *  limiter's ceiling as a white line, and its gain reduction as a thin bar hanging from it. */
   function OutputView(canvas) {
     return {
       draw(peakL, peakR, gr, ceiling) {
         const { ctx, w, h } = UI.fit(canvas);
         ctx.clearRect(0, 0, w, h);
-        const x0 = 12, x1 = w - 4, MIN = -48;
-        const x = (db) => x0 + (x1 - x0) * clamp((db - MIN) / -MIN, 0, 1);
-        ctx.font = MONO(10); ctx.fillStyle = C.faint;
-        for (const db of [-36, -24, -12, 0]) { const xx = Math.round(x(db)) + 0.5; ctx.fillStyle = C.faint; ctx.fillText(String(db).replace("-", "−"), xx - (db === 0 ? 6 : 12), h - 3); ctx.strokeStyle = C.hairSoft; ctx.beginPath(); ctx.moveTo(xx, 3); ctx.lineTo(xx, h - 14); ctx.stroke(); }
-        const bar = (y, g, label) => {
-          ctx.fillStyle = C.faint; ctx.fillText(label, 2, y + 6);
-          ctx.fillStyle = C.track; ctx.fillRect(x0, y, x1 - x0, 5);
-          const xx = x(dbOf(g));
-          const grad = ctx.createLinearGradient(x0, 0, x1, 0);
-          grad.addColorStop(0, "rgba(201,211,230,0.4)"); grad.addColorStop(1, C.inkHi);
-          ctx.fillStyle = grad; ctx.fillRect(x0, y, Math.max(0, xx - x0), 5);
-        };
-        bar(6, peakL, "L"); bar(17, peakR, "R");
+        const MIN = -48, top = 10, bot = h - 16, x1 = w - 30;
+        const Y = (db) => top + (bot - top) * clamp(db / MIN, 0, 1);
+        ctx.font = MONO(10); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        for (const db of [0, -12, -24, -36]) {
+          ctx.fillStyle = C.faint; ctx.fillText(String(db).replace("-", "−"), w - 4, Y(db));
+          ctx.fillStyle = C.hairSoft; ctx.fillRect(8, Math.round(Y(db)), x1 - 8, 1);
+        }
+        const grad = ctx.createLinearGradient(0, Y(0), 0, Y(MIN));
+        grad.addColorStop(0, C.inkHi); grad.addColorStop(1, "rgba(201,211,230,0.35)");
+        [peakL, peakR].forEach((g, ch) => {
+          const x = 12 + ch * 18, y = Y(clamp(dbOf(g), MIN, 0));
+          ctx.fillStyle = C.track; ctx.fillRect(x, Y(0), 12, Y(MIN) - Y(0));
+          ctx.fillStyle = grad; ctx.fillRect(x, y, 12, Y(MIN) - y);
+        });
+        const yc = Math.round(Y(ceiling));
+        ctx.fillStyle = "#fff"; ctx.fillRect(8, yc - 1, x1 - 8, 1.5);
         const grDb = -dbOf(gr);
-        if (grDb > 0.05) { const xc = x(ceiling); ctx.fillStyle = rgba("hi", 0.7); ctx.fillRect(xc - (x1 - x0) * Math.min(1, grDb / 12), 28, (x1 - x0) * Math.min(1, grDb / 12), 3); }
-        const xc = Math.round(x(ceiling)) + 0.5;
-        ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.moveTo(xc, 3); ctx.lineTo(xc, 32); ctx.stroke();
+        if (grDb > 0.05) { ctx.fillStyle = rgba("hi", 0.8); ctx.fillRect(x1 - 4, yc, 2, Math.min(bot, Y(ceiling - grDb)) - yc); }
+        ctx.fillStyle = C.ink; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+        ctx.fillText("L", 18, h - 4); ctx.fillText("R", 36, h - 4);
+        ctx.textAlign = "left";
       },
     };
   }
 
+  /** The top bar's meter (120 × 22): two rounded bars, a peak hold each, the ceiling as a tick. */
   function HeaderMeter(canvas) {
     let hold = [0, 0], holdT = [0, 0];
     return {
@@ -700,16 +600,16 @@
         ctx.clearRect(0, 0, w, h);
         const MIN = -48, x = (db) => w * clamp((db - MIN) / -MIN, 0, 1), t = now();
         [peakL, peakR].forEach((g, i) => {
-          const y = 8 + i * 6, db = dbOf(g);
+          const y = Math.round(h / 2) - 6 + i * 8, db = dbOf(g);
           if (db > hold[i] || t - holdT[i] > 1.5) { hold[i] = db; holdT[i] = t; }
-          ctx.fillStyle = C.track; ctx.fillRect(0, y, w, 3);
-          ctx.fillStyle = db > ceiling - 0.5 ? "#fff" : C.arc; ctx.fillRect(0, y, x(db), 3);
-          ctx.fillStyle = C.inkHi; ctx.fillRect(Math.max(0, x(hold[i]) - 1), y - 1, 1, 5);
+          ctx.fillStyle = C.track; ctx.beginPath(); ctx.roundRect(0, y, w, 4, 2); ctx.fill();
+          ctx.fillStyle = db > ceiling - 0.5 ? "#fff" : C.arc; ctx.beginPath(); ctx.roundRect(0, y, Math.max(0.5, x(db)), 4, 2); ctx.fill();
+          ctx.fillStyle = C.inkHi; ctx.fillRect(Math.max(0, x(hold[i]) - 1), y - 1, 1, 6);
         });
-        ctx.fillStyle = "#fff"; ctx.fillRect(Math.round(x(ceiling)), 5, 1.5, 14);
+        ctx.fillStyle = "#fff"; ctx.fillRect(Math.round(x(ceiling)), 3, 1.5, h - 6);
       },
     };
   }
 
-  Object.assign(UI, { VoicingView, PhaseTrack, Ticker, DayStripView, KEO, LayersView, DriveView, FilterView, KeysView, PhaserView, ChorusView, DelayView, ReverbView, OutputView, HeaderMeter, dbOf });
+  Object.assign(UI, { DayStripView, KEO, LayersView, DriveView, FilterView, KeyboardView, PhaserView, ChorusView, DelayView, ReverbView, OutputView, HeaderMeter, dbOf });
 })();
