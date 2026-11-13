@@ -31,6 +31,8 @@
 // and the page's phaser response is dsp::Phaser::magnitude.
 // T6.14: the EQ display draws, a dot dragged, a bell scrolled, a drive bar pulled, the sky's end
 // dragged and a dot's keys set the right parameters, and the processor gets them.
+// T6.11: a crossover dragged in the resonator display moves its parameter in the engine; the
+// grips and levels have proxies.
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
@@ -127,10 +129,11 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
   rm.blur();
   [].forEach.call(document.querySelectorAll('#stage canvas'), function (c) { if (!c.closest('[data-hint]')) bad.pictures.push(c.id || 'canvas'); });
   // spec/09 rule 2 in the DOM (canvas pixels are reviewed in the code): the bands' knobs, the
-  // Layers picture, the keyboard strip, the dome, the day strip, the brand mark
+  // resonator display and the band row's swatches (T6.11), the keyboard strip, the dome, the day
+  // strip, the brand mark
   var HUE = { red: '255, 107, 107', green: '92, 242, 160', violet: '143, 123, 255' };
   [].forEach.call(document.querySelectorAll('#stage *'), function (e) {
-    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #strip, #cv-layers, #cv-keys, .brand')) return;
+    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #strip, #cv-res, .bn-sw, #cv-keys, .brand')) return;
     var cs = getComputedStyle(e);
     var v = [cs.color, cs.backgroundColor, cs.borderTopColor, cs.borderBottomColor, cs.borderLeftColor, cs.borderRightColor,
              cs.fill, cs.stroke, cs.backgroundImage, cs.boxShadow, cs.outlineColor].join('|');
@@ -322,6 +325,26 @@ const char* const eqProbe = R"JS(JSON.stringify((function () {
   out.after = ids.map(function (id) { return Math.round(WT.get(id) * 1000) / 1000; });
   return out;
 })()))JS";
+// T6.11: drag the Low|Red crossover four semitones up in the resonator display, with pointer events
+// as a person's drag sends them; the parameter is read back here and in C++, then restored.
+const char* const resonatorProbe = R"JS(JSON.stringify((function () {
+  var cv = document.getElementById('cv-res'), r = cv.getBoundingClientRect(), k = r.width / cv.clientWidth, g = UI.res.geom();
+  var x0 = WT.get('band_x1'), y = r.top + g.gy * k;
+  var send = function (type, m) {
+    cv.dispatchEvent(new PointerEvent(type, { pointerId: 1, pointerType: 'mouse', isPrimary: true, bubbles: true, cancelable: true,
+                                              button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: r.left + g.X(m) * k, clientY: y }));
+  };
+  send('pointermove', x0);
+  send('pointerdown', x0);
+  send('pointermove', x0 + 2);
+  send('pointermove', x0 + 4);
+  send('pointerup', x0 + 4);
+  send('pointerleave', x0 + 4);   // the pointer goes, the grip is no longer hot
+  return { from: x0, to: WT.get('band_x1'), grips: document.querySelectorAll('#resonators .proxy.grip[data-param]').length,
+           levels: document.querySelectorAll('#resonators .proxy.level[data-param]').length, canvas: cv.width + 'x' + cv.height,
+           css: cv.clientWidth + 'x' + cv.clientHeight, lines: UI.res.lines().length };
+})()))JS";
+
 // T6.12: a drag in each picture, with pointer events dispatched in WebKit (the views' own handlers);
 // values are restored afterwards by restoreProbe, after C++ has read them.
 const char* const picturesProbe = R"JS(JSON.stringify((function () {
@@ -489,7 +512,21 @@ int main (int argc, char* argv[])
     bool layoutOk = parsedLayout.isObject();
     for (const auto* list : { "sizes", "canvas", "more" })
         layoutOk = layoutOk && parsedLayout[list].isArray() && parsedLayout[list].size() == 0;
-    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 4 && static_cast<int> (parsedLayout["moreParams"]) >= 15;   // T6.12 and T6.14 emptied some
+    // T6.11: the band edges, tones and shifts left Resonators' More for the display; T6.12 and T6.14
+    // emptied others (the EQ has none)
+    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 4 && static_cast<int> (parsedLayout["moreParams"]) >= 8;
+
+    // T6.11: a crossover dragged in the picture moves the parameter, in the page and in the engine
+    const auto resDrag = evalSync (*browser, juce::String::fromUTF8 (resonatorProbe));
+    pump (300);
+    auto parsedRes = juce::JSON::parse (resDrag);
+    const float cppX1 = processor.getValueTreeState().getRawParameterValue ("band_x1")->load();
+    const int x1From = static_cast<int> (parsedRes["from"]);
+    const bool resOk = parsedRes.isObject() && static_cast<int> (parsedRes["to"]) == x1From + 4
+                    && std::abs (cppX1 - static_cast<float> (x1From + 4)) < 0.001f
+                    && static_cast<int> (parsedRes["grips"]) == 5 && static_cast<int> (parsedRes["levels"]) == 4;
+    evalSync (*browser, "UI.commit('band_x1', " + juce::String (x1From) + "); true");
+    pump (300);
 
     // T6.12: the pictures as controls. The drags' values must have reached the processor.
     const auto pictures = evalSync (*browser, juce::String::fromUTF8 (picturesProbe), 20000);
@@ -607,6 +644,7 @@ int main (int argc, char* argv[])
                  && eqOk
                  && stripOk
                  && layoutOk
+                 && resOk
                  && picturesOk
                  && parsedSky["date"].toString().startsWith ("10 May")
                  && parsedSky["ut"].toString().endsWith ("UT")
@@ -641,6 +679,7 @@ int main (int argc, char* argv[])
               << "layout, canvases, More: " << layout << "\n"
               << "EQ display: " << eqRun << "\n"
               << "EQ in C++:  " << eqCpp << "\n"
+              << "resonators, a crossover dragged: " << resDrag << ", C++ band_x1 " << cppX1 << "\n"
               << "transport:  " << transport << "; journeySet 240x + loop → C++ " << set.speed << "x, loop " << (set.loop ? "on" : "off")
               << "; day menu → " << picked << " (C++ " << processor.getSkyFeed().dayId() << " after the restore, load "
               << juce::String (processor.getSkyFeed().lastLoadMs(), 1) << " ms)" << (transportOk ? "" : "  FAILED") << "\n"

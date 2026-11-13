@@ -1,7 +1,8 @@
 /* The instrument layer's live pictures (spec/06, T6.1). Each view redraws only when what it shows
  * has changed (or, for the moving ones, only while its tab is visible), and every change glides.
- * T6.7 (spec/09 §2 rule 2): red, green and violet only where a picture shows the bands (layers, the
- * keyboard strip) or the sky's own light (the day strip's keogram); the effect pictures are drawn in ink.
+ * T6.7 (spec/09 §2 rule 2): red, green and violet only where a picture shows the bands (the resonator
+ * display, resonators.js; the keyboard strip) or the sky's own light (the day strip's keogram); the
+ * effect pictures are drawn in ink.
  * Axis numbers are at least 10 px, words in pictures 11 px. */
 (function () {
   "use strict";
@@ -209,45 +210,6 @@
     }
 
     return { setDay, draw, utcAt, phaseAt, moment, setHover, get keo() { return keo; }, get day() { return day; } };
-  }
-
-  // ================================================================ layers: level and ring-out
-  function LayersView(canvas) {
-    let key = "";
-    return {
-      draw(levels, t60) {
-        const k = levels.map((v) => v.toFixed(3)).join() + t60.map((v) => v.toFixed(2)).join() + canvas.clientWidth + UI.scale;
-        if (k === key) return;
-        key = k;
-        const { ctx, w, h } = UI.fit(canvas);
-        ctx.clearRect(0, 0, w, h);
-        const x0 = 4, x1 = w - 4, top = 6, bot = h - 14, SPAN = 30;
-        const xt = (t) => x0 + (x1 - x0) * Math.sqrt(t / SPAN);
-        const yd = (db) => top + (bot - top) * clamp(-db / 60, 0, 1);
-        ctx.font = MONO(10); ctx.fillStyle = C.faint; ctx.strokeStyle = C.hairSoft;
-        for (const t of [1, 5, 10, 30]) {
-          const xx = Math.round(xt(t)) + 0.5;
-          ctx.beginPath(); ctx.moveTo(xx, top); ctx.lineTo(xx, bot); ctx.stroke();
-          ctx.fillText(t + (t === 30 ? " s" : ""), xx - (t === 30 ? 22 : t === 10 ? 6 : 3), h - 3);
-        }
-        ctx.strokeStyle = C.hair;
-        ctx.beginPath(); ctx.moveTo(x0, bot + 0.5); ctx.lineTo(x1, bot + 0.5); ctx.stroke();
-        // levels/t60: [red, green, violet] or [low, red, green, violet] (T3.7: low in ink, underneath)
-        const names = levels.length > 3 ? ["ink"].concat(LAYERS) : LAYERS;
-        names.forEach((name, l) => {
-          const L0 = 20 * Math.log10(Math.max(1e-3, levels[l]));
-          const db = (t) => L0 - 60 * t / t60[l];
-          ctx.beginPath();
-          for (let i = 0; i <= 60; i++) { const t = SPAN * (i / 60) ** 2; const y = yd(db(t)); i ? ctx.lineTo(xt(t), y) : ctx.moveTo(xt(t), y); }
-          ctx.lineWidth = 1.25; ctx.strokeStyle = rgba(name, name === "ink" ? 0.55 : 0.9); ctx.stroke();
-          ctx.lineTo(xt(SPAN), bot); ctx.lineTo(x0, bot); ctx.closePath();
-          ctx.fillStyle = rgba(name, name === "ink" ? 0.04 : 0.07); ctx.fill();
-          const tEnd = Math.min(SPAN, t60[l] * (L0 + 60) / 60);
-          ctx.fillStyle = rgba(name, 1);
-          ctx.beginPath(); ctx.arc(xt(tEnd), yd(-60), 1.8, 0, 2 * Math.PI); ctx.fill();
-        });
-      },
-    };
   }
 
   // ================================================================ FX pictures
@@ -1076,5 +1038,5 @@
     };
   }
 
-  Object.assign(UI, { DayStripView, KEO, LayersView, EqView, KeyboardView, PhaserView, ChorusView, DelayView, ReverbView, OutputView, HeaderMeter, dbOf, phaserResponse, phaserBreak });
+  Object.assign(UI, { DayStripView, KEO, EqView, KeyboardView, PhaserView, ChorusView, DelayView, ReverbView, OutputView, HeaderMeter, dbOf, phaserResponse, phaserBreak });
 })();

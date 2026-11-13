@@ -334,19 +334,36 @@ header {
 .handle .handle-field { top: calc(100% + 4px); pointer-events: auto; }
 .head .chip b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
 
-/* resonators: the picture over two rows of knobs (level over decay per band │ detune, drift, width) */
-.res-knobs { display: flex; justify-content: space-between; align-items: center; flex: none; padding: 0 2px; }
-.res-knobs .kcol { display: flex; flex-direction: column; }
-.res-knobs .kcol > .knob + .knob { margin-top: -4px; }
-.res-knobs .vr { align-self: stretch; width: 1px; margin: 8px 0; background: var(--line); }
+/* ======== T6.11: the resonator display over the band row (the selected band │ detune, drift, width) */
 .head .low-note { overflow: visible; font-size: 12px; }
 .head .low-note b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
-/* the Bands popover (T3.8's parameters, until T6.11 draws them in the picture) */
-.more.wide .head { margin-bottom: 2px; }
-.more.wide .head .cap { font-size: 12px; }
-.module .more.wide .knobs { justify-content: space-between; gap: 0; }
-.band-rows { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 0; margin-top: 2px; }
-.band-rows > .cap { font: 400 12px/1 var(--sans); color: var(--muted); }
+#resonators-more .head { margin-bottom: 2px; }
+#resonators-more .head .cap { font-size: 12px; }
+.res-well { position: relative; flex: 1 1 0; min-height: 0; margin: 6px 0 4px; overflow: hidden; }
+/* sized by the well, never by its own backing store (spec/06 §Rendering) */
+.res-well canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+/* a handle's proxy (spec/09 §5): the picture takes the pointer, the proxy the focus and the keys */
+.proxy { position: absolute; left: 0; top: 0; pointer-events: none; border-radius: 5px; }
+.proxy.grip { width: 14px; height: 28px; margin: -14px 0 0 -7px; }
+.proxy.level { width: 24px; height: 12px; margin: -6px 0 0 -12px; }
+.proxy:focus-visible { outline: 1.5px solid var(--ink-hi); outline-offset: 1px; }
+.proxy-field { pointer-events: auto; top: calc(100% + 4px); }
+.bandrow { display: flex; align-items: flex-start; gap: 6px; flex: none; }
+.bn-band { display: flex; align-items: flex-start; gap: 6px; }
+.bn-band[hidden] { display: none; }
+.bandsel { display: flex; flex-direction: column; gap: 5px; width: 128px; padding-top: 5px; }
+.bandsel .nm { display: flex; align-items: center; gap: 7px; font: 500 13px/1 var(--sans); color: var(--ink-hi); height: 16px; }
+.bandsel .nm i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.bandrow .kr { display: flex; align-items: flex-start; gap: 2px; flex: none; }
+.bandrow .res-globals { flex: 1; justify-content: space-around; }
+.bandrow .vr { align-self: stretch; width: 1px; margin: 4px 2px; background: var(--line); }
+/* a chip that steps through a parameter's values: its caption, then the value */
+.chip.vchip { height: 22px; padding: 0 8px; gap: 6px; font-size: 11.5px; min-width: 0; overflow: hidden; }
+.chip.vchip b { font-weight: 500; color: var(--ink-hi); overflow: hidden; text-overflow: ellipsis; }
+.chip.vchip.off { cursor: default; }
+.chip.vchip.off:hover { background: none; color: var(--muted); }
+.chip.vchip.off b { color: var(--muted); }
+/* ======== end T6.11 */
 
 /* the tone module: the EQ display (T6.14), the whole control of the EQ. The read-out of the band
    pointed at in the title row; the picture fills the rest. The canvas is placed absolutely in its
