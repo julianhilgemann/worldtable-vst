@@ -514,7 +514,7 @@ int main (int argc, char* argv[])
         layoutOk = layoutOk && parsedLayout[list].isArray() && parsedLayout[list].size() == 0;
     // T6.11: the band edges, tones and shifts left Resonators' More for the display; T6.12 and T6.14
     // emptied others (the EQ has none)
-    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 4 && static_cast<int> (parsedLayout["moreParams"]) >= 8;
+    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 4 && static_cast<int> (parsedLayout["moreParams"]) >= 5;
 
     // T6.11: a crossover dragged in the picture moves the parameter, in the page and in the engine
     const auto resDrag = evalSync (*browser, juce::String::fromUTF8 (resonatorProbe));
@@ -661,7 +661,7 @@ int main (int argc, char* argv[])
                  && static_cast<int> (parsed["bands"]) > 0
                  && parsed["chord"].toString().isNotEmpty()
                  && static_cast<int> (parsed["voices"]) > 0
-                 && static_cast<int> (parsed["knobs"]) >= 40
+                 && static_cast<int> (parsed["knobs"]) >= 30   // T6.11, T6.12, T6.14 put values in pictures
                  && static_cast<int> (parsed["segs"]) >= 4
                  && parsed["unbound"].isArray() && parsed["unbound"].size() == 0
                  && std::abs (jsRevMix.getFloatValue() - 0.77f) < 0.001f
