@@ -169,8 +169,8 @@ header {
 .clock b { font: 500 17px/1 var(--mono); color: var(--ink-hi); }
 #cv-hmeter { width: 120px; height: 22px; display: block; }
 
-/* chips: Journey, Ping-pong, Details (spec/09 §4: 22–28 high, radius 5–7) */
-.chip, .mode {
+/* chips: Loop, Ping-pong, Details (spec/09 §4: 22–28 high, radius 5–7) */
+.chip {
   display: inline-flex; align-items: center; gap: 7px;
   height: 28px; padding: 0 11px;
   border: 1px solid var(--line-hi); border-radius: 7px;
@@ -180,15 +180,50 @@ header {
 }
 .chip { height: 24px; padding: 0 7px; border-radius: 6px; border-color: var(--line); color: var(--muted); }
 .chip:hover { background: rgba(201, 211, 230, 0.07); color: var(--ink-hi); }
-.chip.on, .chip[aria-expanded="true"], .mode {
+.chip.on, .chip[aria-expanded="true"] {
   background: var(--selected); color: var(--ink-hi); border-color: var(--line-hi);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-/* Journey is running, so its dot breathes; slowly, and in ink */
-.mode { cursor: default; }
-.mode i { width: 6px; height: 6px; border-radius: 3px; background: var(--ink-hi); animation: breathe-dot 4s ease-in-out infinite; }
-.mode b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
-@keyframes breathe-dot { 50% { opacity: 0.4; } }
+
+/* the Journey transport (T6.9, mockup top bar): run or freeze, the clock, speed, day, loop */
+.transport { display: flex; align-items: center; gap: 10px; }
+.ibtn {
+  width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--line-hi);
+  display: grid; place-items: center; color: var(--ink-hi);
+  transition: background-color 0.2s;
+}
+.ibtn svg { display: block; }
+.ibtn:hover, .drop:hover { background: rgba(201, 211, 230, 0.07); }
+.seg.tp-speed { padding: 2px; }
+.seg.tp-speed button { height: 22px; padding: 0 9px; border-radius: 5px; font: 400 11.5px/1 var(--mono); }
+.drop {
+  height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line-hi);
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  font: 400 12px/1 var(--sans); color: var(--muted);
+  transition: background-color 0.2s;
+}
+.drop b { font-weight: 500; color: var(--ink-hi); }
+.drop .chev { color: var(--ink); transition: transform 0.2s; }
+.drop[aria-expanded="true"] { background: var(--selected); }
+.drop[aria-expanded="true"] .chev { transform: rotate(180deg); }
+#tp-loop { height: 22px; }
+/* the day menu drops over the strip and the dome: its own compositing layer (spec/06 §Rendering) */
+.tp-menu {
+  position: absolute; z-index: 30; transform: translateZ(0);
+  min-width: 250px; padding: 5px; border-radius: 9px;
+  background: #121826; border: 1px solid var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.tp-menu button {
+  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 7px 9px; border-radius: 6px; text-align: left;
+  font: 400 12.5px/1.2 var(--sans); color: var(--ink);
+}
+.tp-menu button:hover:not([disabled]), .tp-menu button:focus-visible { background: rgba(201, 211, 230, 0.08); }
+.tp-menu button small { margin-left: 10px; font: 400 12px/1 var(--sans); color: var(--muted); }
+.tp-menu button[disabled] { opacity: 0.45; cursor: default; }
+.tp-menu button.on::after { content: "✓"; color: var(--ink-hi); }
+.tp-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px; }
 
 /* ---------------------------------------------------------------- bottom bar: details, the hint line, auto-gain */
 #hintbar {
@@ -456,5 +491,4 @@ header {
 .shot *, .shot *::before, .shot *::after { transition: none !important; animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
-  .mode i { animation: none; }
 }
