@@ -86,8 +86,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                              })
         .withNativeFunction ("seek", [this] (const juce::Array<juce::var>& args, auto complete)
                              {
-                                 // T6.6: a click on the magnetogram jumps the Journey there (UTC
-                                 // seconds). Applied by the audio thread at its next block.
+                                 // T6.6: a click on the day strip jumps the Journey there (UTC
+                                 // seconds; T6.10: a drag scrubs, at most 5 seeks a second).
+                                 // Applied by the audio thread at its next block.
                                  if (! args.isEmpty())
                                      if (const double utc = args[0]; std::isfinite (utc))
                                          wtProcessor.getSky().seek (utc);
@@ -347,7 +348,8 @@ juce::var PluginEditor::makeDomeTelemetry() const
 
 juce::var PluginEditor::makeDayEvent() const
 {
-    // The loaded day at a glance (the magnetogram strip) and the station the dome looks up from.
+    // The loaded day at a glance (the day strip: keogram and magnetometer, T6.10) and the station
+    // the dome looks up from.
     const auto& c = wtProcessor.getSkyFeed().dayChart();
     const auto& ob = skyFrame.observer;
 
@@ -391,6 +393,19 @@ juce::var PluginEditor::makeDayEvent() const
     o->setProperty ("threshold", floats (c.threshold, 1000.0));
     o->setProperty ("phase", phases);
     o->setProperty ("onsets", onsets);
+
+    // T6.10: the keogram's inputs, per minute (2 decimals), and the oval's constants
+    o->setProperty ("eqLat", floats (c.eqLatitudeDeg, 100.0));
+    o->setProperty ("poleLat", floats (c.poleLatitudeDeg, 100.0));
+    o->setProperty ("activity", floats (c.activity, 100.0));
+    o->setProperty ("gain", floats (c.gain, 100.0));
+    o->setProperty ("unloading", floats (c.unloading, 100.0));
+    o->setProperty ("stormRed", floats (c.stormRed, 100.0));
+    o->setProperty ("mlt", floats (c.mltHours, 100.0));
+    o->setProperty ("kp", floats (c.kp, 100.0));
+    o->setProperty ("stationMlat", std::round (c.stationMlatDeg * 100.0) / 100.0);
+    o->setProperty ("dayShift", std::round (c.dayShiftDeg * 100.0) / 100.0);
+    o->setProperty ("arcPosition", std::round (c.arcPosition * 100.0) / 100.0);
 
     // T6.9: what the transport offers: the bundled days and the speeds
     juce::Array<juce::var> days, speeds;

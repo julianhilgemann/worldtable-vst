@@ -10,10 +10,11 @@
 namespace worldtable::sky
 {
 
-/** The whole loaded day at a glance, for the UI's magnetogram (spec/06, T6.1): one entry per
-    model minute of the track, taken from the timeline the feed publishes (the sketch's
-    `runSlow` trace). Built on the feed's thread when a day loads, so the editor never reads the
-    audio side's bundle. */
+/** The whole loaded day at a glance, for the UI's day strip (spec/06, T6.1; the keogram since
+    T6.10): one entry per model minute of the track, taken from the timeline the feed publishes
+    (the sketch's `runSlow` trace). Built on the feed's thread when a day loads, so the editor never
+    reads the audio side's bundle. Entry k is the slow sky after minute k's steps, at
+    startUtc + stepSeconds × (k + 1). */
 struct DayChart
 {
     struct Onset
@@ -34,6 +35,20 @@ struct DayChart
     std::vector<float>   threshold;      ///< the cycle's jittered threshold, same unit
     std::vector<uint8_t> phase;          ///< SkyPhase
     std::vector<Onset>   onsets;
+
+    // T6.10: what the page's keogram needs, the oval as the dome's shader (FS_OVAL) reads it
+    std::vector<float>   eqLatitudeDeg;     ///< the oval's equatorward edge at magnetic midnight
+    std::vector<float>   poleLatitudeDeg;   ///< … its poleward edge
+    std::vector<float>   activity;          ///< 0 … 1
+    std::vector<float>   gain;              ///< the assimilation gain
+    std::vector<float>   unloading;         ///< 0 … 2.5
+    std::vector<float>   stormRed;          ///< 0 … 1, as SkySnapshot::stormRed (Kp 5 → 9, smoothed)
+    std::vector<float>   mltHours;          ///< the station's magnetic local time
+    std::vector<float>   kp;                ///< Kp as the model sampled it
+    double stationMlatDeg = 0.0;            ///< the station's geomagnetic latitude (centred dipole)
+    double dayShiftDeg = 0.0;               ///< SkyParams::dayShiftDeg of the timeline
+    double arcPosition = 0.5;               ///< SkyParams::arcPosition of the timeline
+
     uint64_t sequence = 0;               ///< grows with every loaded day (0 = none yet)
 
     int size() const noexcept { return static_cast<int> (phase.size()); }

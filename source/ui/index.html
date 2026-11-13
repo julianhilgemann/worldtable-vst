@@ -41,9 +41,10 @@
 
     <!-- ============================================================ the day: strip and sky -->
     <section id="dayrow">
-      <!-- the day strip: today's magnetogram until T6.10 makes it a keogram -->
-      <section id="mag" class="frame" aria-label="The day">
-        <canvas id="cv-mag" data-hint="The recorded day: the magnetometer, stored energy, the phases. Click to jump there."></canvas>
+      <!-- the day strip (T6.10): a keogram over the magnetometer; a slider for the Journey -->
+      <section id="strip" class="frame" tabindex="0" role="slider" aria-label="The day"
+               data-hint="The whole day: the sky's light north to south, the field under it. Click to jump.">
+        <canvas id="cv-strip"></canvas>
       </section>
       <section id="sky" class="frame" aria-label="Sky">
         <div class="sky-ttl">
