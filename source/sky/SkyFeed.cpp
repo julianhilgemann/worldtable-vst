@@ -1,11 +1,22 @@
 #include "SkyFeed.h"
 
+#include "Observer.h"
 #include "data/SkyDays.h"
 
 #include <algorithm>
 
 namespace worldtable::sky
 {
+
+namespace
+{
+/** The great-storm red glow, 0 at Kp 5 … 1 at Kp 9 (smoothed Kp): SkyModel::writeSnapshot's
+    SkySnapshot::stormRed, which the dome's oval reads. */
+double stormRedOf (const SlowSkyState& s) noexcept
+{
+    return std::clamp ((s.kpSmooth - 5.0) / 4.0, 0.0, 1.0);
+}
+} // namespace
 
 SkyFeed::SkyFeed (SkyRuntime& r) : runtime (r) {}
 
@@ -43,16 +54,19 @@ void SkyFeed::buildChart (const juce::String& dayId, const TrackBundle& bundle)
     c.station = track.station;
     c.startUtc = track.startUtc;
     c.stepSeconds = track.stepSeconds;
-    c.dhMeasuredNt.reserve (n);
-    c.dhModelNt.reserve (n);
-    c.couplingMvM.reserve (n);
-    c.reservoir.reserve (n);
-    c.threshold.reserve (n);
+    for (auto* v : { &c.dhMeasuredNt, &c.dhModelNt, &c.couplingMvM, &c.reservoir, &c.threshold, &c.eqLatitudeDeg,
+                     &c.poleLatitudeDeg, &c.activity, &c.gain, &c.unloading, &c.stormRed, &c.mltHours, &c.kp })
+        v->reserve (n);
     c.phase.reserve (n);
+
+    const auto& params = bundle.timeline.params;
+    c.stationMlatDeg = Observer (data::stationInfo (track.station), params.poleLatDeg, params.poleLonDeg).mlatDeg();
+    c.dayShiftDeg = params.dayShiftDeg;
+    c.arcPosition = params.arcPosition;
 
     // The timeline's minute k is the state *before* that minute's steps; minute k + 1 is the state
     // after them, which is what the sketch's `runSlow` trace records at k.
-    const double unit = bundle.timeline.params.threshold > 0.0 ? bundle.timeline.params.threshold : 1.0;
+    const double unit = params.threshold > 0.0 ? params.threshold : 1.0;
     for (size_t k = 0; k < n; ++k)
     {
         const auto& s = minutes[std::min (k + 1, minutes.size() - 1)];
@@ -62,6 +76,14 @@ void SkyFeed::buildChart (const juce::String& dayId, const TrackBundle& bundle)
         c.reservoir.push_back (static_cast<float> (s.reservoir / unit));
         c.threshold.push_back (static_cast<float> (s.cycleThreshold / unit));
         c.phase.push_back (static_cast<uint8_t> (s.phase));
+        c.eqLatitudeDeg.push_back (static_cast<float> (s.eqLatDeg));
+        c.poleLatitudeDeg.push_back (static_cast<float> (s.poleLatDeg));
+        c.activity.push_back (static_cast<float> (s.activity));
+        c.gain.push_back (static_cast<float> (s.gain));
+        c.unloading.push_back (static_cast<float> (s.unloading));
+        c.stormRed.push_back (static_cast<float> (stormRedOf (s)));
+        c.mltHours.push_back (static_cast<float> (s.mltHours));
+        c.kp.push_back (static_cast<float> (s.kp));
     }
 
     for (const auto& e : bundle.timeline.events)

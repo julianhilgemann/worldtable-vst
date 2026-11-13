@@ -4,12 +4,14 @@
 #include "data/TrackBuilder.h"
 #include "dsp/SlotExchange.h"
 #include "sky/SkyFeed.h"
+#include "sky/Observer.h"
 #include "sky/SkyHandoff.h"
 #include "sky/SkyRuntime.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstring>
@@ -394,6 +396,68 @@ TEST_CASE ("SkyFeed charts the loaded day from its timeline (T6.1 magnetogram)",
 
     REQUIRE (feed.load (data::kDefaultSkyDay, 1, sky::SkyParams {}));   // a new day: a new chart
     CHECK (feed.dayChart().sequence == 2u);
+}
+
+TEST_CASE ("The day chart carries the keogram's inputs, minute by minute (T6.10)", "[sky][feed][ui]")
+{
+    auto rt = std::make_unique<sky::SkyRuntime>();
+    sky::SkyFeed feed (*rt);
+    sky::SkyParams params;
+    params.dayShiftDeg = 6.5;   // the chart passes the timeline's params on, not the defaults
+    params.arcPosition = 0.4;
+    REQUIRE (feed.load (data::kDefaultSkyDay, 1, params));
+
+    data::RawTrack raw;
+    REQUIRE (data::loadBundledDay (data::kDefaultSkyDay, raw));
+    auto track = std::make_unique<data::WorldSnapshot>();
+    REQUIRE (data::prepareTrack (raw, *track, 1));
+    sky::SkyTimeline timeline;
+    timeline.build (*track, 1, params);
+
+    const auto& c = feed.dayChart();
+    REQUIRE (c.size() == track->length);
+    for (const auto* v : { &c.eqLatitudeDeg, &c.poleLatitudeDeg, &c.activity, &c.gain, &c.unloading, &c.stormRed,
+                           &c.mltHours, &c.kp })
+        CHECK (static_cast<int> (v->size()) == c.size());
+
+    const sky::Observer observer (data::stationInfo (track->station), params.poleLatDeg, params.poleLonDeg);
+    CHECK_THAT (c.stationMlatDeg, Catch::Matchers::WithinULP (observer.mlatDeg(), 0));
+    CHECK_THAT (c.stationMlatDeg, Catch::Matchers::WithinAbs (65.6, 0.5));   // CMO, centred dipole
+    CHECK_THAT (c.dayShiftDeg, Catch::Matchers::WithinULP (6.5, 0));
+    CHECK_THAT (c.arcPosition, Catch::Matchers::WithinULP (0.4, 0));
+
+    // ten minutes across the day, the storm's quiet start, its onsets and its Kp 9 night among them;
+    // entry k is the timeline's state after minute k
+    bool sawStormRed = false, sawUnloading = false;
+    for (const int k : { 0, 61, 300, 600, 1000, 1060, 1300, 1700, 2200, c.size() - 1 })
+    {
+        const auto u = static_cast<size_t> (k);
+        const auto& s = timeline.minutes[u + 1];
+        INFO ("minute " << k);
+        using Catch::Matchers::WithinULP;
+        CHECK_THAT (c.eqLatitudeDeg[u], WithinULP (static_cast<float> (s.eqLatDeg), 0));
+        CHECK_THAT (c.poleLatitudeDeg[u], WithinULP (static_cast<float> (s.poleLatDeg), 0));
+        CHECK_THAT (c.activity[u], WithinULP (static_cast<float> (s.activity), 0));
+        CHECK_THAT (c.gain[u], WithinULP (static_cast<float> (s.gain), 0));
+        CHECK_THAT (c.unloading[u], WithinULP (static_cast<float> (s.unloading), 0));
+        CHECK_THAT (c.stormRed[u], WithinULP (static_cast<float> (std::clamp ((s.kpSmooth - 5.0) / 4.0, 0.0, 1.0)), 0));
+        CHECK_THAT (c.mltHours[u], WithinULP (static_cast<float> (s.mltHours), 0));
+        CHECK_THAT (c.kp[u], WithinULP (static_cast<float> (s.kp), 0));
+        sawStormRed = sawStormRed || c.stormRed[u] > 0.5f;
+        sawUnloading = sawUnloading || c.unloading[u] > 0.0f;
+    }
+    CHECK (sawStormRed);    // the samples reach the Kp 9 night …
+    CHECK (sawUnloading);   // … and a substorm letting go
+
+    // and over the whole day every field stays in the range the page's keogram expects
+    for (size_t k = 0; k < static_cast<size_t> (c.size()); ++k)
+    {
+        REQUIRE (c.eqLatitudeDeg[k] < c.poleLatitudeDeg[k]);
+        REQUIRE (c.stormRed[k] >= 0.0f);
+        REQUIRE (c.stormRed[k] <= 1.0f);
+        REQUIRE (c.mltHours[k] >= 0.0f);
+        REQUIRE (c.mltHours[k] < 24.0f);
+    }
 }
 
 TEST_CASE ("The telemetry carries the Breath cycle for the UI", "[processor][ui]")
