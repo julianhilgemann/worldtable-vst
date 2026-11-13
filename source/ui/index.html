@@ -96,24 +96,33 @@
           </div>
         </div>
 
-        <!-- the tone module: today's Filter with Drive until T3.9 and T6.14 make it the EQ -->
-        <div class="module frame" id="tone">
+        <!-- the tone module: T3.9's EQ as plain knobs (gain over drive per band) until its display (T6.14) -->
+        <div class="module frame" id="eq">
           <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="tone-more" data-hint="More filter controls: Cutoff, Resonance, Sky and Drive.">Filter</button>
-            <div class="more frame" id="tone-more" aria-label="Filter, more" hidden>
+            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="eq-more" data-hint="More EQ: where each band sits, how wide the bells are, how far the sky opens the cut.">EQ</button>
+            <div class="more frame" id="eq-more" aria-label="EQ, more" hidden>
+              <div class="head"><span class="cap">Bands</span><span class="note">low shelf, two bells; the sky opens the cut</span></div>
               <div class="knobs">
-                <div data-knob="flt_cutoff" data-label="Cutoff"></div>
-                <div data-knob="flt_reso" data-label="Reso"></div>
-                <div data-knob="flt_sky" data-label="Sky"></div>
-                <div data-knob="drive" data-label="Drive"></div>
+                <div data-knob="eq1_freq" data-label="Low"></div>
+                <div data-knob="eq2_freq" data-label="Mid"></div>
+                <div data-knob="eq2_q" data-label="Mid Q"></div>
+                <div data-knob="eq3_freq" data-label="High"></div>
+                <div data-knob="eq3_q" data-label="High Q"></div>
+                <div data-knob="eq_sky" data-label="Sky"></div>
               </div>
             </div>
             <span class="spacer"></span>
-            <div data-seg="flt_type"></div>
+            <span class="note" id="eq-note" data-hint="Where the high cut is now, after the sky has opened it."></span>
           </div>
-          <div class="filter-views">
-            <canvas class="view" id="cv-filter" data-hint="The filter now, over the spectrum. The sky moves it; the tick is the knob's cutoff."></canvas>
-            <canvas class="view" id="cv-drive" data-hint="Drive: how the sound bends on the way through, and where it sits now."></canvas>
+          <div class="eq-grid">
+            <div data-knob="eq1_gain" data-label="Low"></div>
+            <div data-knob="eq2_gain" data-label="Mid"></div>
+            <div data-knob="eq3_gain" data-label="High"></div>
+            <div data-knob="eq4_freq" data-label="Cut"></div>
+            <div data-knob="eq1_drive" data-label="Drive"></div>
+            <div data-knob="eq2_drive" data-label="Drive"></div>
+            <div data-knob="eq3_drive" data-label="Drive"></div>
+            <div data-knob="eq4_drive" data-label="Drive"></div>
           </div>
         </div>
       </div>

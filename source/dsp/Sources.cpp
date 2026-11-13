@@ -21,7 +21,7 @@ void Sources::prepare (double rate, uint32_t soundSeed, const Settings& s) noexc
     seed = soundSeed;
     voices.prepare (sampleRate, seed);
     low.prepare (sampleRate, seed ^ 0x10Bu);
-    flt.prepare (sampleRate);
+    tone.prepare (sampleRate);
     curtain = {};
     setSettings (s);
 
@@ -36,7 +36,8 @@ void Sources::prepare (double rate, uint32_t soundSeed, const Settings& s) noexc
     lowSwellStart = -1.0;
     lowSwellAmp = 0.0;
     ticks = 0;
-    flt.reset();
+    tone.setSkyOctaves (0.0f);
+    tone.reset();
 }
 
 void Sources::setSettings (const Settings& s) noexcept
@@ -44,14 +45,14 @@ void Sources::setSettings (const Settings& s) noexcept
     settings = s;
     settings.droneUnder = std::clamp (s.droneUnder, 0.0, 1.0);
     settings.lowLevel = std::clamp (s.lowLevel, 0.0, 1.0);
-    settings.filterSky = std::clamp (s.filterSky, 0.0, 1.0);
+    settings.eqSky = std::clamp (s.eqSky, 0.0, 1.0);
 
     auto v = s.voices;
     v.bow = kBowPerBed * s.bed;
     v.strike = s.strike;
     voices.setSettings (v);
     low.setSettings (s.low);
-    flt.setSettings (s.filter);
+    tone.setSettings (s.eq);
 }
 
 //==================================================================================================
@@ -126,13 +127,11 @@ void Sources::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEve
     droneStep = (droneTarget - drone) / samples;
     droneRampLeft = (droneTarget < drone || droneTarget > drone) ? samples : 0;
 
-    // the sky's activity, slewed ≥ 2 s (rule 4): the filter opens with it, the bow follows it
+    // the sky's activity, slewed ≥ 2 s (rule 4): the EQ's high cut opens with it, the bow follows it
     const double act = std::clamp (static_cast<double> (s.activity), 0.0, 1.5);
     activity = primed ? activity + (act - activity) * (1.0 - std::exp (-tickS / kSkySlewSeconds)) : act;
     primed = true;
-    const auto type = flt.getSettings().type;
-    flt.setSkyOctaves (static_cast<float> (settings.filterSky * kFilterSkyOctaves * std::min (activity, 1.0)
-                                           * Filter::openDirection (type)));
+    tone.setSkyOctaves (static_cast<float> (settings.eqSky * kEqSkyOctaves * std::min (activity, 1.0)));
 
     double onset = 0.0;
     for (const auto& e : events)
@@ -224,7 +223,7 @@ void Sources::renderSamples (float* left, float* right, int numSamples) noexcept
 
     voices.process (left, right, numSamples);
     low.process (left, right, numSamples);
-    flt.process (left, right, numSamples);
+    tone.process (left, right, numSamples);
 }
 
 } // namespace worldtable::dsp

@@ -1,13 +1,14 @@
 // Headless offline render: Worldtable processor → stereo WAV, plus signal statistics.
 //
 //   WorldtableRender --out renders/instrument.wav --seconds 45 [--rate 48000]
-//                    [--set progression=0 --set mood=Bittersweet --set drive=0.3 ...]
+//                    [--set progression=0 --set mood=Bittersweet --set eq1_drive=0.5 ...]
 //                    [--midi notes.mid] [--block 512] [--bands]
 //                    [--sweep band_x2=33:96[:t0:t1] ...]
+//   WorldtableRender --bands-of renders/x.wav       (the octave bands of an existing render, T3.9)
 //
 // --midi plays a Standard MIDI File into the processor at its sample positions (all tracks, the
 // file's tempo map); with --set play=1 that is Play mode (T3.7). --bands prints the mono mix's
-// octave-band levels (31.5 Hz … 16 kHz), for the low end and the filter.
+// octave-band levels (31.5 Hz … 16 kHz), for the low end and the EQ.
 // --sweep moves a parameter in a straight line from one value to another, between t0 and t1
 // seconds (default: the whole render), on a 0.1 s grid; the blocks are cut at the grid, so the
 // same sweep lands on the same samples whatever --block is (T3.8: the band edges).
@@ -29,9 +30,9 @@
 #include "data/SkyDays.h"
 #include "dsp/Harmony.h"
 #include "dsp/SkySound.h"
-#include "dsp/Drive.h"
 #include "dsp/fx/AutoGain.h"
 #include "dsp/fx/Chorus.h"
+#include "dsp/fx/Eq.h"
 #include "dsp/fx/Limiter.h"
 #include "dsp/fx/Phaser.h"
 #include "dsp/fx/StereoDelay.h"
@@ -93,7 +94,7 @@ void printBands (const juce::AudioBuffer<float>& audio, double rate, double skip
         }
         const double rms = std::sqrt (sum / std::max (1, total - skip));
         std::cout << (fc < 1000.0 ? juce::String (fc, fc < 100.0 ? 1 : 0) : juce::String (fc / 1000.0, 0) + "k") << " "
-                  << juce::String (juce::Decibels::gainToDecibels (static_cast<float> (rms), -200.0f), 1) << "  ";
+                  << juce::String (juce::Decibels::gainToDecibels (static_cast<float> (rms), -200.0f), 2) << "  ";
     }
     std::cout << "\n";
 }
@@ -255,9 +256,8 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
     const dsp::ChordName startName = dsp::nameOf (startChord);
     sound.prepare (o.rate, params.nodes, o.seed, settings, startChord);
 
-    dsp::Drive drive;
-    drive.prepare (o.rate);
-    drive.setDrive (0.15f);
+    dsp::Eq eq;   // T3.9: the plug-in's EQ at its defaults (flat, the cut open, the default drives)
+    eq.prepare (o.rate);
 
     dsp::Phaser phaser;
     phaser.prepare (o.rate);
@@ -327,11 +327,7 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
             return;
         timed (fxSeconds, [&]
         {
-            for (int k = 0; k < n; ++k)
-            {
-                l[k] = drive.process (l[k]);
-                r[k] = drive.process (r[k]);
-            }
+            eq.process (l, r, n);
             phaser.process (l, r, n);
             chorus.process (l, r, n);
             delay.process (l, r, n);
@@ -418,7 +414,7 @@ int renderSky (const juce::File& out, const SkyRenderOptions& o)
               << dsp::nameOf (sound.chord()).label.data() << ", "
               << (runtime.model().current().onsetCount - onsetsBefore) << " onsets in the file\n"
               << "length:  " << o.seconds << " s @ " << o.rate << " Hz" << (o.dry ? " (dry)"
-                                                                               : " (drive -> phaser -> chorus -> delay -> shimmer -> autogain -> dc -> limiter)") << "\n"
+                                                                               : " (eq -> phaser -> chorus -> delay -> shimmer -> autogain -> dc -> limiter)") << "\n"
               << "peak:    " << juce::Decibels::gainToDecibels (peak, -200.0f) << " dBFS\n"
               << "rms:     " << juce::Decibels::gainToDecibels (static_cast<float> (rms), -200.0f) << " dBFS\n"
               << "maxStep: " << maxDelta << "\n"
@@ -489,6 +485,20 @@ int main (int argc, char* argv[])
         }
         else if (a == "--blend")   sky.edges.blend = next().getDoubleValue();
         else if (a == "--sweep")   sweepArgs.add (next());
+        else if (a == "--bands-of")
+        {
+            // the octave bands of a render already made (to compare with one from another build)
+            const auto file = juce::File::getCurrentWorkingDirectory().getChildFile (next());
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> reader (wav.createReaderFor (file.createInputStream().release(), true));
+            if (reader == nullptr || reader->numChannels < 2)
+                return fail ("cannot read a stereo WAV from " + file.getFullPathName());
+            juce::AudioBuffer<float> audio (2, static_cast<int> (reader->lengthInSamples));
+            reader->read (&audio, 0, audio.getNumSamples(), 0, true, true);
+            std::cout << "file:    " << file.getFileName() << ", " << audio.getNumSamples() / reader->sampleRate << " s\n";
+            printBands (audio, reader->sampleRate, std::min (2.0, 0.25 * audio.getNumSamples() / reader->sampleRate));
+            return 0;
+        }
         else if (a == "--progression") sky.progression = juce::jlimit (0.0, 1.0, next().getDoubleValue());
         else return fail ("unknown argument " + a);
     }

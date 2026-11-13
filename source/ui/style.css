@@ -208,7 +208,7 @@ header {
 #main, #lower { display: grid; grid-template-columns: 435px 448px 433px; column-gap: 7px; min-height: 0; }
 .col { display: flex; flex-direction: column; gap: 7px; min-height: 0; min-width: 0; }
 #resonators { flex: 0 0 264px; }
-#tone { flex: 1 1 0; }
+#eq { flex: 1 1 0; }
 .grp { display: flex; gap: 7px; min-width: 0; min-height: 0; }
 #phaser, #chorus, #reverb { flex: 1 1 0; }
 #delay { flex: 0 0 146px; }
@@ -302,11 +302,12 @@ header {
 .band-rows { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 0; margin-top: 2px; }
 .band-rows > .cap { font: 400 12px/1 var(--sans); color: var(--muted); }
 
-/* the tone module: the filter over the spectrum, the drive curve beside it */
-.filter-views { display: flex; gap: 6px; flex: 1 1 0; min-height: 40px; margin: 6px 0 0; }
-.filter-views canvas.view { height: auto; min-height: 0; margin: 0; }
-.filter-views #cv-filter { flex: 1 1 0; width: 0; min-width: 0; }   /* never sized by its own pixels (T6.6 fix) */
-.filter-views #cv-drive { flex: 0 0 116px; width: 116px; }
+/* the tone module: T3.9's EQ as plain knobs until its display (T6.14): a column per band, the drive
+   under the gain; the frequencies, widths and the sky in its More popover */
+.eq-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); justify-items: center; margin-top: auto; flex: none; }
+.eq-grid > div:nth-child(n + 5) { margin-top: -4px; }
+#eq-more .head { margin-bottom: 2px; }
+#eq-more .head .cap { font-size: 12px; }
 
 /* ---------------------------------------------------------------- harmony: the chord, why, the rule, the notes, the choices */
 #chord-state.held { color: var(--ink-hi); font-weight: 500; }
@@ -419,7 +420,7 @@ header {
 .seg button:focus-visible { outline-offset: 1px; }
 .seg.small button { padding: 0 7px; }
 [data-seg="scale"] button { padding: 0 7px; }
-[data-seg="flt_type"] button, [data-seg="chord_shape"] button { font-family: var(--mono); min-width: 26px; }
+[data-seg="chord_shape"] button { font-family: var(--mono); min-width: 26px; }
 .seg.keys { gap: 2px; background: none; border: 0; }
 .seg.keys button { padding: 0; width: 28px; text-align: center; border-radius: 5px; }
 /* Drone | Play in the Harmony title row */

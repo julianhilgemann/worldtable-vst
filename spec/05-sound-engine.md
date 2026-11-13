@@ -13,14 +13,15 @@ Sparkles, whistlers and the full Breath cycle are T3.4; the raw-field layer (§5
 T3.6b and stays off. The default Journey opens at 17:20 UT on the storm day (the M3
 render window) rather than at 00:00. T3.7 (owner, 2026-11-09) adds Play mode (§13,
 ADR-0008), the low resonator (§14) and the filter (§15). T3.8 (owner, 2026-11-13) replaces the
-fixed layer ranges, Register, Spread and the low octave with the resonator bands (§16).
+fixed layer ranges, Register, Spread and the low octave with the resonator bands (§16); T3.9 the
+filter and the drive with one EQ with a drive per band (§15).
 
 ```
 SkySnapshot ─► Exciter ×N ─► ResonatorBank ×N (red · green · violet layers) × drone gain ─┐
      │                                ▲ tuning                                           │
      │                    Harmony (chord hold, progression, voice-leading)               │
      ├─► LowResonator (the bass note, in the low band from its floor; §14, §16) ─────────┤
-     ├─► PlayVoices (Play mode: MIDI notes, the curtain's colours; §13) ─────────────────┼─► mix ─► Filter (§15) ─► Drive
+     ├─► PlayVoices (Play mode: MIDI notes, the curtain's colours; §13) ─────────────────┼─► mix ─► EQ, drive per band (§15)
      ├─► Sparkles / whistlers ───────────────────────────────────────────────────────────┤   ─► Phaser ─► Chorus/Ensemble
      └─► (optional) raw-field wavetable layer ───────────────────────────────────────────┘   ─► Tape Delay ─► Shimmer Reverb
                                                                                               ─► AutoGain ─► Limiter ─► out
@@ -109,8 +110,7 @@ control, tuned to the chord root.
 ## 7. Effects (fixed order, one tab each)
 | Stage | Notes | POC code |
 |---|---|---|
-| Filter | SVF LP12 / LP24 / BP / HP, the sky opens it (§15, T3.7) | `dsp/Svf.h` (reuse) |
-| Drive | ADAA tanh + asymmetry, gentle | `dsp/Drive.h` (reuse) |
+| EQ | low shelf, two bells, 12 dB/oct high cut, a drive per band; the sky opens the cut (§15, T3.9) | `dsp/Svf.h`, `dsp/Drive.h` (reused inside `fx/Eq.h`) |
 | Phaser | slow, 4–8 stages, stereo | new |
 | Chorus / Ensemble | 3-voice ensemble, slow | new |
 | Delay | tape-style, long (≤ 4 s), filtered + saturating feedback, wow | `fx/StereoDelay.h` (rework) |
@@ -127,6 +127,9 @@ DC blocker and the shimmer's fifth are new. **The plug-in runs this chain since 
 them does not duck the mix. The reverb's size and pre-delay glide per sample and its line
 coefficients update on an absolute 64-sample grid, so a parameter move never clicks and the
 sound does not depend on the host's block size.
+**T3.9:** the Filter (T3.7) and the Drive gave way to one tone stage, `fx/Eq` (§15), inside
+`dsp::Sources` where the filter was: sources → EQ → Phaser → Chorus → Delay → Reverb → AutoGain → DC
+→ limiter. `WorldtableRender --sky` runs the EQ at its defaults in place of Drive.
 
 ## 8. Unattended safety
 - AutoGain: slow loudness normaliser toward ≈ −18 LUFS short-term, ±12 dB,
@@ -264,17 +267,30 @@ low end that we can set up using the UI". A resonator layer under red (`dsp/LowR
   curtain's red weight). On the storm render the 31.5 Hz octave band rises from −41.9 to
   −28.1 dBFS (level with the 63 and 125 Hz bands); at 1 it is −23.9.
 
-## 15. The filter (T3.7)
-The owner's request: the POC's filter back, in the chain. `fx/Filter`, between the sources and
-Drive, inside the sources' tick so the sky reaches it on the tick grid:
-- Two TPT SVF stages per channel (the POC's `Svf.h`): LP12 = stage 1 low, LP24 = a second stage
-  (k = √2) on it, BP = stage 1 band × k (unity peak), HP = stage 1 high. Resonance 0 … 1 →
-  damping 2 … 0.25 (Q ≤ 4, +12 dB).
-- Nothing jumps: the cutoff glides per sample in log frequency (τ 20 ms) with coefficients per
-  sample; a type change crossfades the outputs over ~20 ms.
-- **Sky:** the activity, slewed 2 s, opens it by up to 3 octaves × `flt_sky` (LP and BP upward, HP
-  downward). Default: LP12 open at 20 kHz, so the drone is unchanged until it is used.
-
+## 15. The EQ (T3.9; the filter of T3.7 before it)
+The owner's request (2026-11-13): "instead of filter, maybe making it an EQ with bands and drives."
+`fx/Eq.h`, inside the sources' tick (`dsp::Sources`) so the sky reaches it on the tick grid:
+- **Four fixed bands in series**, one TPT SVF each (the POC's `Svf.h`), out = m0·x + m1·band +
+  m2·low: 1 a **low shelf** (`eq1_freq` 30–400 Hz, the midpoint; Q 1/√2), 2 and 3 **bells**
+  (`eq2_freq` 80–3000, `eq3_freq` 500–12000 Hz; `eq2_q`, `eq3_q` 0.3–6), 4 a **high cut** at 12 dB
+  per octave (Butterworth; `eq4_freq` 200–20000 Hz, open from 19.98 kHz, where it sits at 0.49 fs).
+  Gains ±12 dB. The responses are the RBJ cookbook's exactly (bilinear, prewarped at f0);
+  `Eq::bandDb` / `responseDb` hold the formulas the display draws (T6.14). A band at 0 dB adds nothing.
+- **Drive per band, in parallel** (`eq1_drive` … `eq4_drive`): the part of the EQ's output the band
+  owns (two SVF stages: 24 dB/oct below the shelf's corner, 12 dB/oct either side of a bell's centre,
+  an octave-wide band-pass ending at the cut) through the ADAA tanh (pre-gain 1 + 8·drive, bias
+  0.3·drive, unity small-signal slope); only the nonlinear part, DC-blocked, is added:
+  `out = y + Σ driveₖ · eₖ`. Zero drive is the EQ alone, bit for bit; a band's harmonics come from
+  that band only (two tones ≥ 5 octaves apart: the other tone's products < −70 dB).
+- **Nothing jumps:** frequencies glide per sample in log (τ 20 ms), gains, widths and drives with the
+  same τ, in double so they land exactly on their targets. The instrument passes the parameters
+  through unglided, so a move lands on the same samples whatever the block size.
+- **Sky:** the activity, slewed 2 s, opens the cut by up to 3 octaves × `eq_sky` (0.3), as it opened
+  the filter. `eq_sky` is a stopgap: T4.2 turns it into the route Activity → `eq4_freq`.
+- **Defaults:** flat, the cut open, every drive 0: today's open filter without the old broadband
+  Drive 0.15 (no per-band drive comes closer to it; T3.9 notes). Telemetry `eqCutHz` (20000 = open).
+- **Removed:** `flt_type`, `flt_cutoff`, `flt_reso`, `flt_sky`, `drive` (state version 4: an older
+  state loads with the EQ's defaults).
 
 ## 16. The resonator bands (T3.8)
 The owner's request (2026-11-13): "the resonators need to have a way of being tuned somehow
