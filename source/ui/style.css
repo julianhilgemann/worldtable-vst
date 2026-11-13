@@ -509,3 +509,75 @@ header {
 
 @media (prefers-reduced-motion: reduce) {
 }
+
+/* ---------------------------------------------------------------- T6.13: sizes, the context menu, About, the tour
+   (menu.js, tour.js). Everything here opens over the dome's WebGL canvas, so each overlay has its own
+   compositing layer (translateZ(0)): without it WebKit makes it clickable but does not paint it. */
+/* S M L on the bottom bar */
+.size-seg { flex: none; }
+/* T6.13 acceptance: no new text under 10 px on screen at Small, so 12 px here and in the menu's notes */
+.size-seg button { min-width: 26px; padding: 0 7px; font: 400 12px/1 var(--mono); }
+
+/* the context menu (the mockup's .menu): drawn by the page, never the web view's */
+.ctx-menu {
+  position: absolute; z-index: 30; transform: translateZ(0);
+  min-width: 250px; max-width: 300px; padding: 5px;
+  border-radius: 9px; background: #121826; border: 1px solid var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.ctx-menu:focus, .ctx-menu:focus-visible { outline: none; }
+.ctx-menu button {
+  display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 16px;
+  min-height: 28px; padding: 7px 9px; border-radius: 6px;
+  font: 400 12.5px/1.1 var(--sans); color: var(--ink); text-align: left; white-space: nowrap;
+}
+.ctx-menu button:hover, .ctx-menu button:focus-visible { background: rgba(201, 211, 230, 0.08); color: var(--ink-hi); outline: none; }
+.ctx-menu button small { font: 400 12px/1 var(--mono); color: var(--muted); }
+.ctx-menu button > span > small { margin-left: 10px; }
+.ctx-menu button.on::after { content: "✓"; color: var(--ink-hi); }
+.ctx-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px; }
+/* a control's hint, dimmed, as the menu's first line */
+.ctx-hint { padding: 6px 9px 7px; font: 400 12px/1.35 var(--sans); color: var(--muted); white-space: normal; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+
+/* About: centred over the page */
+.about {
+  position: absolute; left: 50%; top: 50%; z-index: 25; width: 470px;
+  transform: translate(-50%, -50%) translateZ(0);
+  padding: 14px 16px 16px; border-color: var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+.about-head { display: flex; align-items: center; gap: 10px; }
+.about-head .spacer { flex: 1; }
+#about-title { font: 500 15px/1 var(--sans); color: var(--ink-hi); }
+.about-ver { font: 400 12px/1 var(--mono); color: var(--muted); white-space: pre; }
+.about p { margin: 10px 0 4px; font: 400 12.5px/1.45 var(--sans); color: var(--ink); }
+.about .info-grid { margin-top: 10px; }
+.about .info-grid b { font-weight: 500; }
+
+/* the tour: one stage-sized layer dims the page and clips the spotlight's shadow; the pointer goes
+   through it, so the page stays live; the card sits beside the spotlighted region */
+#tour-dim { position: absolute; inset: 0; z-index: 20; overflow: hidden; pointer-events: none; transform: translateZ(0); }
+#tour-spot {
+  position: absolute; border: 1.5px solid var(--ink-hi); border-radius: 12px;
+  box-shadow: 0 0 0 2000px rgba(3, 4, 8, 0.6);
+  transition: left 0.45s cubic-bezier(0.3, 0.7, 0.2, 1), top 0.45s cubic-bezier(0.3, 0.7, 0.2, 1),
+              width 0.45s cubic-bezier(0.3, 0.7, 0.2, 1), height 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+#tour-card {
+  position: absolute; z-index: 21; width: 290px; transform: translateZ(0);
+  display: flex; flex-direction: column; gap: 8px; padding: 14px;
+  border-radius: 10px; background: #121826; border: 1px solid var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+  transition: left 0.45s cubic-bezier(0.3, 0.7, 0.2, 1), top 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+#tour-dim.cut #tour-spot, #tour-card.cut { transition: none; }
+.tour-n { font: 400 12px/1.5 var(--mono); color: var(--muted); }
+#tour-card h4 { margin: 0; font: 500 14px/1.3 var(--sans); color: var(--ink-hi); }
+#tour-card p { margin: 0; font: 400 12.5px/1.45 var(--sans); color: var(--ink); }
+.tour-b { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+#tour-skip { height: 26px; padding: 0 2px; font: 400 12px/1 var(--mono); color: var(--muted); }
+#tour-skip:hover { color: var(--ink-hi); }
+#tour-go { height: 26px; padding: 0 14px; border-radius: 6px; background: var(--ink-hi); color: var(--ground); font-weight: 500; }
+@media (prefers-reduced-motion: reduce) {
+  #tour-spot, #tour-card { transition: none; }
+}
