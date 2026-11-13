@@ -97,7 +97,7 @@
         if (M.PHASE_NAMES[s.phase] === "onset") harmony.onOnset(0.8, minute); else harmony.onPhase(s.phase, minute);
       }
     }
-    window.WT_MOCK_NATIVE = {
+    window.WT_MOCK_NATIVE = Object.assign(window.WT_MOCK_NATIVE || {}, {   // mod.js adds modSet, modGet, envFire
       seek(utc) {
         const before = model.snapshot().phase;
         model.seek(utc * 1000);
@@ -115,7 +115,7 @@
         model.setSpeed(J.frozen ? 0 : J.speed);
         return journey();
       },
-    };
+    });
     WT.onParam("key", (v) => harmony.setKey(Math.round(v)));
     WT.onParam("mood", (v) => harmony.setMood(H.MOODS[Math.round(v)]));
     WT.onParam("progression", (v) => harmony.setProgression(v));
@@ -185,8 +185,7 @@
       const act = s.activity, breath = 0.5 - 0.5 * Math.cos(2 * Math.PI * (5 / 60) * r);
       const level = 0.14 + 0.22 * act + 0.05 * Math.sin(r * 0.7);
       const playing = WT.get("play") ? playDemo(r) : null;
-      const cut = Math.min(20000, WT.get("eq4_freq") * Math.pow(2, 0.3 * 3 * Math.min(1, act)));   // T4.2: the default route Activity → Cut
-      const eqCutHz = cut >= 19980 ? 20000 : cut;
+      const eqCutHz = WT.get("eq4_freq");   // T4.2: mod.js moves it (the Activity → Cut route) and sets eqCutHz
       return {
         play: { mix: playing ? 1 : 0, voices: playing ? playing.voices : [] },
         low: { note: playing ? playing.low : lowNoteOf(chord.key + chord.deg), level: WT.get("low_level") },

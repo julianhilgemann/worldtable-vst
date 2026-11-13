@@ -375,7 +375,6 @@ header {
 #cv-eq { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 .eq-proxy { position: absolute; left: 0; top: 0; width: 18px; height: 18px; border-radius: 50%; pointer-events: none; }
 .eq-proxy.eq-bar { width: 13px; height: 26px; border-radius: 4px; }
-.eq-proxy.eq-sky { width: 14px; height: 14px; }
 .eq-proxy:focus-visible { outline-offset: 1px; }
 .knob-field.eq-field { top: 0; z-index: 1; }
 
@@ -421,9 +420,42 @@ header {
 #harmony.is-play .choice-stack { opacity: 0; visibility: hidden; }
 .harmony-knobs { justify-content: flex-start !important; gap: 26px !important; }
 
-/* ---------------------------------------------------------------- the centre block: macros, at 50 px until T4.2 */
-#macros { padding: 10px 14px 12px; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.macro-row { flex: 1; display: flex; justify-content: space-around; align-items: center; padding-bottom: 8px; }
+/* ---------------------------------------------------------------- the centre block (T4.2, the mockup's #motion):
+   the macros in one row (448 × 112, knobs 40 px), under them the LFO (220 × 141) and the envelope (221 × 141) */
+#motion { display: grid; grid-template-rows: 112px minmax(0, 1fr); row-gap: 7px; min-width: 0; min-height: 0; }
+#motion .pair { display: grid; grid-template-columns: 220px 221px; column-gap: 7px; min-height: 0; }
+#macros { padding: 8px 12px 8px 12px; display: flex; align-items: center; min-width: 0; min-height: 0; }
+#macros .side { width: 62px; flex: none; display: flex; flex-direction: column; gap: 5px; align-self: flex-start; padding-top: 4px; }
+#macros .side .cap { font: 500 13px/1 var(--sans); color: var(--ink-hi); }
+#macros .side .note { font-size: 11px; line-height: 13px; white-space: normal; overflow: visible; }
+.macro-row { flex: 1; display: flex; justify-content: space-between; align-items: center; min-width: 0; }
+.macro-row .knob.macro { min-width: 70px; }
+.macro-row .knob.macro .label { margin-top: -6px; }
+/* the LFO: a grid, so each LFO's shape and rate (a set, display: contents) sit in the title row and
+   beside the picture; the hidden set takes no room */
+#lfo { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-rows: 20px minmax(0, 1fr); column-gap: 8px; row-gap: 6px; }
+#lfo > .cap { grid-row: 1; grid-column: 1; align-self: center; font: 500 13px/1 var(--sans); color: var(--ink-hi); }
+.lfo-n { grid-row: 1; grid-column: 2; align-self: center; padding: 2px; }
+.lfo-n button { height: 20px; padding: 0 9px; border-radius: 5px; font: 400 11.5px/1 var(--mono); }
+.lfo-n button[aria-checked="true"] { background: var(--selected); color: var(--ink-hi); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.lfo-set { display: contents; }
+.lfo-set[hidden] { display: none; }
+.lfo-shape { grid-row: 1; grid-column: 3 / 5; justify-self: end; align-self: center; }
+.lfo-shape .seg { padding: 2px; gap: 1px; }
+.lfo-shape .seg button { width: 22px; height: 18px; padding: 0; border-radius: 4px; display: grid; place-items: center; }
+.lfo-shape svg { display: block; }
+.lfo-well { grid-row: 2; grid-column: 1 / 4; position: relative; min-width: 0; min-height: 0; margin-right: -4px; }
+.lfo-rate { grid-row: 2; grid-column: 4; align-self: center; }
+#cv-lfo, #cv-env { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#cv-lfo { cursor: ew-resize; }
+/* the envelope: the trigger chip, Fire, the shape with its three points */
+#env .head { gap: 6px; }
+#env-trig .chip.vchip { height: 22px; }
+.fire { height: 22px; padding: 0 10px; border-radius: 6px; background: var(--ink-hi); color: var(--ground); font: 500 11.5px/1 var(--sans); flex: none; }
+.fire:hover { background: #fff; }
+.fire:active { transform: translateY(1px); }
+.env-well { position: relative; flex: 1 1 0; min-height: 0; margin-top: 6px; }
+.proxy.env-pt { width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; }
 
 /* details popover: observer, journey, the sky's numbers, data; it opens from the bottom bar */
 .details {
@@ -537,6 +569,13 @@ header {
 .ctx-menu button.on::after { content: "✓"; color: var(--ink-hi); }
 .ctx-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px; }
 /* a control's hint, dimmed, as the menu's first line */
+/* T4.2: "Modulate with ▸" opens the sources beside the menu; a control's routes are listed to clear */
+.ctx-menu button.sub-open { background: rgba(201, 211, 230, 0.08); color: var(--ink-hi); }
+.ctx-menu button[aria-disabled="true"] { color: var(--muted); cursor: default; }
+.ctx-menu button[aria-disabled="true"]:hover { background: none; color: var(--muted); }
+.ctx-sub { position: absolute; top: 0; left: calc(100% + 4px); min-width: 190px; }
+.ctx-sub.left { left: auto; right: calc(100% + 4px); }
+.ctx-group { padding: 6px 9px 3px; font: 400 12px/1 var(--sans); color: var(--muted); }
 .ctx-hint { padding: 6px 9px 7px; font: 400 12px/1.35 var(--sans); color: var(--muted); white-space: normal; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 
 /* About: centred over the page */

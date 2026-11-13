@@ -127,7 +127,7 @@
       const r = pending.get(pid);
       if (r) { pending.delete(pid); r(result); }
     });
-    for (const name of ["telemetry", "day", "status"])
+    for (const name of ["telemetry", "day", "status", "modulation"])
       juce.backend.addEventListener(name, (payload) => dispatch(name, payload));
   }
 

@@ -17,16 +17,13 @@
   const BASE_W = 1350, BASE_H = 900, PAD = 3, GAP = 12, CARD_W = 290;
   const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /** [the regions the spotlight covers, title, text]. Step 5 covers the macros alone until T4.2 adds
-   *  the LFO and Envelope panels: then it takes their ids and the mockup's text ("Macros, an LFO and
-   *  an envelope move other controls. Press Fire and watch Shimmer: a ring on a knob means something
-   *  is moving it."). */
+  /** [the regions the spotlight covers, title, text]: the mockup's TOUR. */
   const TOUR = (UI.TOUR = [
     [["strip"], "The day", "This strip is the whole recorded day: the sky's light from north to south, and the magnetic field under it. Click anywhere to jump there."],
     [["dome-wrap"], "The light", "Every ray of the curtain is one resonator. Brighter light bows it harder; the three colours are the three bands."],
     [["harmony"], "The chord", "The sky's phase picks the chord. Switch to Play and your keyboard plays the same resonators."],
     [["col-left"], "The sound", "The resonators make the sound and the EQ under them shapes its tone. The effects run along the bottom. Drag inside the pictures."],
-    [["macros"], "Motion", "The macros move other controls. Point at one to light what it moves: a ring on a knob means something is moving it."],
+    [["motion"], "Motion", "Macros, an LFO and an envelope move other controls. Press Fire and watch Shimmer: a ring on a knob means something is moving it."],
   ]);
 
   const dim = $("tour-dim"), spot = $("tour-spot"), card = $("tour-card"), go = $("tour-go");
