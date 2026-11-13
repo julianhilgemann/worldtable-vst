@@ -212,15 +212,47 @@
         </div>
       </div>
 
-      <!-- the centre block: the macros alone until T4.2 adds the LFO and the envelope -->
-      <div id="macros" class="frame">
-        <div class="head"><span class="cap">Macros</span><span class="note">point at one to see what it moves</span></div>
-        <div class="macro-row">
-          <div data-knob="macro_storm" data-label="Storm" data-size="macro"></div>
-          <div data-knob="macro_breath" data-label="Breath" data-size="macro"></div>
-          <div data-knob="macro_glow" data-label="Glow" data-size="macro"></div>
-          <div data-knob="macro_space" data-label="Space" data-size="macro"></div>
-          <div data-knob="macro_drift" data-label="Drift" data-size="macro"></div>
+      <!-- the centre block (T4.2, the mockup's #motion): what moves things. The macros in one row, under
+           them the LFO and the envelope. Pointing at a source lights the knobs it moves (app.js);
+           each picture says in its corner what its source moves (motion.js) -->
+      <div id="motion">
+        <div id="macros" class="frame">
+          <div class="side"><span class="cap">Macros</span><span class="note">point at one to see what it moves</span></div>
+          <div class="macro-row">
+            <div data-knob="macro_storm" data-label="Storm" data-size="macro"></div>
+            <div data-knob="macro_breath" data-label="Breath" data-size="macro"></div>
+            <div data-knob="macro_glow" data-label="Glow" data-size="macro"></div>
+            <div data-knob="macro_space" data-label="Space" data-size="macro"></div>
+            <div data-knob="macro_drift" data-label="Drift" data-size="macro"></div>
+          </div>
+        </div>
+        <div class="pair">
+          <!-- the LFO shown is one of two: each has its shape and rate in its own set (display: contents,
+               so they sit in the panel's grid); the other set is hidden, and its button names it -->
+          <div class="module frame src" id="lfo">
+            <span class="cap">LFO</span>
+            <div class="seg lfo-n" id="lfo-n" role="radiogroup" aria-label="LFO shown" data-hint="Two LFOs. Pick which one you are looking at.">
+              <button type="button" role="radio" aria-label="LFO 1" aria-controls="lfo1-set">1</button><button type="button" role="radio" aria-label="LFO 2" aria-controls="lfo2-set">2</button>
+            </div>
+            <div class="well lfo-well"><canvas id="cv-lfo"></canvas></div>
+            <div class="lfo-set" id="lfo1-set">
+              <div class="lfo-shape" data-seg="lfo1_shape"></div>
+              <div class="lfo-rate" data-knob="lfo1_rate" data-label="Rate"></div>
+            </div>
+            <div class="lfo-set" id="lfo2-set" hidden>
+              <div class="lfo-shape" data-seg="lfo2_shape"></div>
+              <div class="lfo-rate" data-knob="lfo2_rate" data-label="Rate"></div>
+            </div>
+          </div>
+          <div class="module frame src" id="env">
+            <div class="head">
+              <span class="cap">Envelope</span><span class="spacer"></span>
+              <div id="env-trig"></div>
+              <button type="button" class="fire" id="env-fire" data-hint="Fire the envelope now.">Fire</button>
+            </div>
+            <!-- the shape's three points carry the four times' proxies (motion.js places them) -->
+            <div class="well env-well" id="env-well"><canvas id="cv-env"></canvas></div>
+          </div>
         </div>
       </div>
 
@@ -342,13 +374,16 @@
   </div>
 
   <script src="params.js"></script>
+  <script src="params-pending.js"></script>
   <script src="bridge.js"></script>
   <script src="sky.js"></script>
   <script src="dome.js"></script>
   <script src="widgets.js"></script>
+  <script src="mod.js"></script>
   <script src="views.js"></script>
   <script src="resonators.js"></script>
   <script src="app.js"></script>
+  <script src="motion.js"></script>
   <script src="transport.js"></script>
   <script src="menu.js"></script>
   <script src="tour.js"></script>

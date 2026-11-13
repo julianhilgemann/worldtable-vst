@@ -54,53 +54,66 @@
   showHint(null);
   UI.showHint = showHint;   // for pictures whose hint follows the pointer (T6.11)
 
-  // ---------------------------------------------------------------- macro rings (T6.7)
-  // The macros are hard-wired until T4.2: each scales what it moves around its neutral 0.5
-  // (dsp/Instrument.cpp macroGain, stormGain; Breath in dsp/SkySound.cpp). The rings on the knobs
-  // they move are drawn from the same formulas: the arc is the target with the macro at 0 and at 1
-  // (Breath also at the top of its swell), the dot is the target now.
-  const macroGain = (m) => 0.5 + m;
-  const breathGain = (d, c) => 1 - 0.35 * d * c;
-  const breathViolet = (d, c) => breathGain(d, c) * (1 - 0.15 * d * c);
-  const MACROS = (UI.MACROS = {
-    macro_storm: { moves: { progression: (m) => 0.4 + 1.2 * m }, say: "the strike, Progression" },
-    macro_breath: { moves: { red_level: breathGain, green_level: breathGain, violet_level: breathViolet }, cycle: true, say: "red, green and violet levels" },
-    macro_glow: { moves: { violet_level: macroGain, rev_shimmer: macroGain }, say: "Violet level, Shimmer" },
-    macro_space: { moves: { dly_mix: macroGain, rev_mix: macroGain }, say: "Delay mix, Reverb mix" },
-    macro_drift: { moves: { detune: macroGain, drift: macroGain }, say: "Detune, Drift" },
-  });
-  const TARGETS = {};   // target id → [[macro id, gain(m, cycle), uses the breath cycle]]
-  for (const [mid, mac] of Object.entries(MACROS))
-    for (const [tid, f] of Object.entries(mac.moves)) (TARGETS[tid] = TARGETS[tid] || []).push([mid, f, !!mac.cycle]);
-  /** Puts each target's ring where the macros have it; `cycle` is Breath's swell now (0…1). */
-  function updateRings(cycle) {
-    for (const [tid, srcs] of Object.entries(TARGETS)) {
-      const k = knobs[tid];
-      if (!k) continue;
-      let lo = 1, hi = 1, now = 1;
-      for (const [mid, f, usesCycle] of srcs) {
-        const ends = usesCycle ? [f(0, 0), f(0, 1), f(1, 0), f(1, 1)] : [f(0), f(1)];
-        lo *= Math.min(...ends);
-        hi *= Math.max(...ends);
-        now *= f(WT.get(mid), usesCycle ? cycle : 0);
-      }
-      const base = WT.get(tid);
-      k.setMod(base * lo, base * hi, base * now);
+  // ---------------------------------------------------------------- modulation: rings and sources (T4.2)
+  // Every routing is the grid's (UI.mod, mod.js). A knob with at least one route carries the ring
+  // (spec/09 §2 rule 3): the arc is the range its sources can push it, the dot the value the engine
+  // uses now (telemetry mod.val, lo, hi); the number under it stays the value set. Pointing at a
+  // source (a macro, the LFO panel, the envelope panel) lights the knobs it moves, and its hint says
+  // what it moves.
+  const MOD = UI.mod;
+  let routed = new Set(), targetAt = {};
+  /** What a source moves, in words ("nothing yet"), at most `max` names and "N more". */
+  function movesText(key, max = 4) {
+    const names = MOD.movedBy(key).map((r) => MOD.destName(r.destination.key));
+    if (!names.length) return "nothing yet";
+    return names.length <= max ? names.join(", ") : names.slice(0, max - 1).join(", ") + " and " + (names.length - max + 1) + " more";
+  }
+  /** The value a parameter has now with what moves it, { lo, hi, now } in its own units, or null. */
+  UI.modLive = (id) => {
+    const t = MOD.tel, i = targetAt[id];
+    if (!routed.has(id) || !t || !t.val || i === undefined || !isFinite(t.val[i])) return null;
+    return { lo: t.lo[i], hi: t.hi[i], now: t.val[i] };
+  };
+  function updateRings() {
+    for (const id of Object.keys(knobs)) {
+      const m = UI.modLive(id), k = knobs[id];
+      if (m) k.setMod(m.lo, m.hi, m.now); else if (k.mod) k.clearMod();
     }
   }
-  UI.updateRings = () => updateRings(S.tel.breath || 0);
-  // a macro says what it moves, and lights those knobs while it is pointed at or focused
-  for (const [mid, mac] of Object.entries(MACROS)) {
-    const k = knobs[mid];
-    if (!k) continue;
-    k.root.dataset.hint = `${UI.hintOf(mid)} Moves: ${mac.say}.`;
-    const light = (on) => () => { for (const tid of Object.keys(mac.moves)) if (knobs[tid]) knobs[tid].setLit(on); };
-    k.root.addEventListener("pointerenter", light(true));
-    k.root.addEventListener("pointerleave", () => { if (document.activeElement !== k.root) light(false)(); });
-    k.root.addEventListener("focus", light(true));
-    k.root.addEventListener("blur", light(false));
+  UI.updateRings = updateRings;
+  /** A source (`key()`: the source shown now) lights the knobs it moves while it is pointed at or
+   *  focused; its hint is `base` and what it moves (≤ 90 characters with `max` names). */
+  const hovered = [];
+  function sourceHover(node, key, base, max) {
+    const say = () => { node.dataset.hint = `${base} Moves: ${movesText(key(), max)}.`; };
+    const light = (on) => () => {
+      for (const r of MOD.movedBy(key())) for (const p of r.destination.params || []) if (knobs[p]) knobs[p].setLit(on);
+    };
+    node.addEventListener("pointerenter", light(true));
+    node.addEventListener("pointerleave", () => { if (!node.contains(document.activeElement)) light(false)(); });
+    node.addEventListener("focusin", light(true));
+    node.addEventListener("focusout", (e) => { if (!node.contains(e.relatedTarget)) light(false)(); });
+    hovered.push(say);
+    say();
+    return { say, light };
   }
-  UI.updateRings();
+  UI.sourceHover = sourceHover;
+  UI.movesText = movesText;
+  for (const id of ["macro_storm", "macro_breath", "macro_glow", "macro_space", "macro_drift"])
+    if (knobs[id]) sourceHover(knobs[id].root, () => id, UI.hintOf(id), 3);
+  let routesSig = null;
+  MOD.on(() => {
+    // called on every telemetry frame too: only a change of the grid recomputes what is routed
+    const info = MOD.info, sig = info.depths.map((r) => r.join()).join("|") + "|" + (info.targets || []).join();
+    if (sig === routesSig) return;
+    routesSig = sig;
+    routed = new Set();
+    targetAt = {};
+    (info.targets || []).forEach((p, i) => { if (p) targetAt[p] = i; });
+    info.destinations.forEach((d, j) => { if (info.depths.some((row) => row[j])) for (const p of d.params || []) routed.add(p); });
+    for (const say of hovered) say();
+    updateRings();
+  });
 
   // ---------------------------------------------------------------- popovers: More, Details, View
   // One page (T6.5). Parameters without a visible knob live in their module's More popover (spec/09
@@ -597,6 +610,7 @@
 
   // ---------------------------------------------------------------- render loop
   const P = (id) => WT.get(id);
+  const EQ_MOD = ["eq1_gain", "eq2_gain", "eq3_gain", "eq4_freq", "eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive"];
   let last = 0;
   // T6.6: the dome draws at the display's rate (up to 60 fps; 30 with reduced motion), the
   // instrument pictures at 30.
@@ -633,8 +647,8 @@
     }
     hmeter.draw(tel.peakL || 0, tel.peakR || 0, P("lim_ceiling"));
 
-    // the macros' rings on the knobs they move: Breath's dot swells with the sound
-    updateRings(tel.breath || 0);
+    // the rings on the knobs the grid moves: the dot is the value the engine uses now
+    updateRings();
 
     res.draw(tel);
     const low = tel.low && tel.low.note >= 0 ? tel.low.note : -1;
@@ -643,7 +657,11 @@
       $("low-note").innerHTML = low >= 0 ? `<b class="num" style="--w:3">${noteName(low)}</b>` : "";
     }
     keys.draw(litKeys(tel));
-    eq.draw(tel);   // the cut now comes from tel.eqCutHz; T4.2 passes its modulated values as a second argument
+    // the EQ's values now, where the grid moves them (T4.2); the cut also arrives as tel.eqCutHz
+    const eqLive = {};
+    for (const id of EQ_MOD) { const m = UI.modLive(id); if (m) eqLive[id] = m.now; }
+    eq.draw(tel, eqLive);
+    if (UI.motion) UI.motion.draw(tel);
     {
       fx.phaser.draw(tel);
       fx.chorus.draw(tel);

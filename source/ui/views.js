@@ -233,8 +233,9 @@
    *  driven band. The curve as set (thin) and as it is now (bright, filled to 0 dB: the sky's opening
    *  of the cut, later T4.2's modulation), from UI.eqDb. A numbered dot per band (drag: frequency
    *  sideways, gain up and down; scroll over a bell: its width), a drive bar under each (pull it up),
-   *  the sky's reach on the top edge (drag its right end: eq_sky) with the cut now as a white dot.
-   *  Each of the 14 parameters has one focusable proxy on its handle (spec/09 §5), placed here; the
+   *  on the top edge the reach of what moves the cut (T4.2: the grid's routes onto it, Activity → Cut
+   *  by default) with the cut now as a white dot; white dots beside the handles where the grid moves
+   *  a gain or a drive. Each of the 13 parameters has one focusable proxy on its handle (spec/09 §5), placed here; the
    *  pointer works on the canvas. The title row reads out the band pointed at or selected. Ink only. */
   function EqView(canvas, well, say) {
     const WT = window.WT;
@@ -244,7 +245,7 @@
       { kind: 1, name: "bell", f: "eq3_freq", g: "eq3_gain", q: "eq3_q", d: "eq3_drive" },
       { kind: 2, name: "high cut", f: "eq4_freq", g: null, q: null, d: "eq4_drive" },
     ];
-    const SKY = 4, OPEN = 19980, FX0 = Math.log(20), FX1 = Math.log(20000), OCT = 3;   // Sources.cpp: kEqSkyOctaves
+    const OPEN = 19980, FX0 = Math.log(20), FX1 = Math.log(20000);
     const P = (id) => WT.get(id);
     /** The picture's frame (the mockup's eqG): the drive lane is the bottom 32 px, 0 dB halfway above it. */
     function geo() {
@@ -258,10 +259,10 @@
         G: (y) => (mid - y) / span * 12,
       };
     }
-    const reachOf = () => Math.min(20000, P("eq4_freq") * Math.pow(2, OCT * P("eq_sky")));
+    /** How far the grid can move the cut, [lo, hi] in Hz, or null (no route onto it). */
+    const reachOf = () => { const m = UI.modLive && UI.modLive("eq4_freq"); return m ? [Math.max(20, m.lo), Math.min(20000, m.hi)] : null; };
     /** Where each handle is drawn (CSS px in the canvas). */
     const dotAt = (g, k) => { const b = BANDS[k]; return { x: clamp(g.X(P(b.f)), 8, g.w - 8), y: b.kind === 2 ? g.Y(-3) : g.Y(P(b.g)) }; };
-    const skyAt = (g) => ({ x: clamp(g.X(reachOf()), 4, g.w - 4), y: 5 });
 
     let sel = 1, hot = null, drag = null, field = null, sig = "", said = "", hinted = "";
     let tel = {}, live = {};
@@ -297,14 +298,13 @@
       if (b.q) proxy(b.q, "dot", k, NAMES[k] + ", width", UI.hintOf(b.q), false, "],[");
       proxy(b.d, "bar", k, NAMES[k] + ", drive", UI.hintOf(b.d), true);
     });
-    proxy("eq_sky", "sky", SKY, "The sky's opening of the cut", UI.hintOf("eq_sky"), true);
     const proxyOf = (role, k) => proxies.find((e) => e.dataset.role === role && +e.dataset.band === k);
     let placed = "";
     function place(g) {
       const pos = proxies.map((e) => {
         const k = +e.dataset.band, role = e.dataset.role;
-        const p = role === "sky" ? skyAt(g) : dotAt(g, k);
-        return role === "bar" ? [p.x - 6.5, g.by - g.bh - 2] : role === "sky" ? [p.x - 7, p.y - 7] : [p.x - 9, p.y - 9];
+        const p = dotAt(g, k);
+        return role === "bar" ? [p.x - 6.5, g.by - g.bh - 2] : [p.x - 9, p.y - 9];
       });
       const s = pos.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
       if (s === placed) return;
@@ -360,7 +360,7 @@
       const r = canvas.getBoundingClientRect(), k = r.width / Math.max(1, canvas.clientWidth);
       return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k };
     };
-    /** The handle under p: a dot (nearest within 11 px), else a drive bar (padded to 24 px), else the sky's end. */
+    /** The handle under p: a dot (nearest within 11 px), else a drive bar (padded to 24 px). */
     function hitAt(p) {
       const g = geo();
       let best = null, dBest = 11;
@@ -374,18 +374,15 @@
         for (let k = 0; k < 4; k++) { const d = Math.abs(p.x - dotAt(g, k).x); if (d < dx) { dx = d; best = { role: "bar", k }; } }
         if (best) return best;
       }
-      const s = skyAt(g);
-      if (P("eq4_freq") < OPEN && Math.abs(p.x - s.x) < 12 && p.y < s.y + 10) return { role: "sky", k: SKY };
       return null;
     }
-    const HINT = "Four bands, each with its own gain and drive. The top edge: how far the sky opens the cut.";
+    const HINT = "Four bands, each with its own gain and drive. The top edge: how far the cut is moved.";
     canvas.dataset.hint = HINT;
     function hintFor(h) {
       if (!h) return HINT;
       const b = BANDS[h.k];
       if (h.role === "dot") return `Band ${h.k + 1}, ${b.name}: drag sideways for frequency${b.kind === 2 ? "" : ", up and down for gain"}${b.q ? ", scroll for width" : ""}.`;
-      if (h.role === "bar") return `Drive for band ${h.k + 1}: pull it up to saturate only this part of the sound.`;
-      return "Drag the end: how far the sky's activity opens the cut, up to three octaves.";
+      return `Drive for band ${h.k + 1}: pull it up to saturate only this part of the sound.`;
     }
     function setHint(text) {
       if (text === hinted) return;
@@ -397,7 +394,7 @@
       if (drag) { drag.move(local(e), e.shiftKey); return; }
       const h = hitAt(local(e));
       hot = h;
-      canvas.style.cursor = !h ? "default" : h.role === "dot" ? "grab" : h.role === "bar" ? "ns-resize" : "ew-resize";
+      canvas.style.cursor = !h ? "default" : h.role === "dot" ? "grab" : "ns-resize";
       setHint(hintFor(h));
     });
     canvas.addEventListener("pointerleave", () => { if (!drag) hot = null; hinted = ""; });
@@ -430,30 +427,18 @@
             if (b.g) run.set(b.g, Math.round(g.G(vy) * 10) / 10);
           },
         };
-      } else if (h.role === "bar") {
+      } else {
         // absolute, a fader: the bar's top follows the pointer
         const run = UI.drag([b.d]), set = (q) => run.set(b.d, clamp((g.by - q.y) / g.bh, 0, 1));
         set(p);
         drag = { run, move: set };
-      } else {
-        // relative, in octaves of reach; past the edge too (the reach is drawn up to 20 kHz)
-        const run = UI.drag(["eq_sky"]), cut = P("eq4_freq");
-        let vx = g.X(cut * Math.pow(2, OCT * P("eq_sky")));
-        drag = {
-          run,
-          move(q, fine) {
-            vx = clamp(vx + (q.x - last.x) * (fine ? 0.15 : 1), g.X(cut), g.X(cut * Math.pow(2, OCT)));
-            last = q;
-            run.set("eq_sky", Math.log2(g.F(vx) / cut) / OCT);
-          },
-        };
       }
     });
     const release = () => {
       if (!drag) return;
       drag.run.end();
       drag = null;
-      canvas.style.cursor = hot ? (hot.role === "dot" ? "grab" : hot.role === "bar" ? "ns-resize" : "ew-resize") : "default";
+      canvas.style.cursor = hot ? (hot.role === "dot" ? "grab" : "ns-resize") : "default";
     };
     canvas.addEventListener("pointerup", release);
     canvas.addEventListener("pointercancel", release);
@@ -462,7 +447,7 @@
       const h = hitAt(local(e));
       if (!h) return;
       const b = BANDS[h.k];
-      const id = h.role === "sky" ? "eq_sky" : h.role === "bar" ? b.d : b.g || b.f;   // a dot: its gain (the cut: open)
+      const id = h.role === "bar" ? b.d : b.g || b.f;   // a dot: its gain (the cut: open)
       UI.commit(id, UI.defaultValue(id));
     });
     // scroll over a bell (or with a bell selected): its width
@@ -478,10 +463,6 @@
     const hz = (f) => (f >= OPEN ? "open" : f >= 1000 ? (f / 1000).toFixed(f >= 10000 ? 1 : 2) + " kHz" : Math.round(f) + " Hz");
     function readout() {
       const k = drag ? sel : hot ? hot.k : sel;
-      if (k === SKY) {
-        const now = live.eq4_freq;
-        return `sky <b>+${(OCT * P("eq_sky")).toFixed(1)} oct</b> cut now <b>${hz(now)}</b>`;
-      }
       const b = BANDS[k], gain = b.g ? P(b.g) : 0;
       return `band <b>${k + 1}</b> ${b.name} <b>${hz(P(b.f))}</b>`
         + (b.g ? ` <b>${gain >= 0 ? "+" : "−"}${Math.abs(gain).toFixed(1)} dB</b>` : "")
@@ -496,8 +477,8 @@
       // the values now: the sky's cut (T3.9) and, from T4.2, whatever modulation moves
       live = Object.assign({ eq4_freq: tel.eqCutHz || P("eq4_freq") }, extra || {});
       const g = geo(), w = g.w, h = g.h;
-      const ids = ["eq1_freq", "eq1_gain", "eq1_drive", "eq2_freq", "eq2_gain", "eq2_q", "eq2_drive", "eq3_freq", "eq3_gain", "eq3_q", "eq3_drive", "eq4_freq", "eq4_drive", "eq_sky"];
-      const s = ids.map(P).join() + JSON.stringify(live) + (hot ? hot.role + hot.k : "") + sel + !!drag + w + "x" + h + UI.scale
+      const ids = ["eq1_freq", "eq1_gain", "eq1_drive", "eq2_freq", "eq2_gain", "eq2_q", "eq2_drive", "eq3_freq", "eq3_gain", "eq3_q", "eq3_drive", "eq4_freq", "eq4_drive"];
+      const s = ids.map(P).join() + JSON.stringify(reachOf()) + JSON.stringify(live) + (hot ? hot.role + hot.k : "") + sel + !!drag + w + "x" + h + UI.scale
         + (tel.spectrumIn || tel.spectrum || []).join();
       const text = readout();
       if (text !== said) { said = text; say.innerHTML = text; }
@@ -553,14 +534,13 @@
       path(setP); c.strokeStyle = "rgba(201,211,230,0.32)"; c.lineWidth = 1; c.stroke();
       path(liveP); c.strokeStyle = C.inkHi; c.lineWidth = 1.8; c.stroke();
 
-      // the sky's reach on the top edge: from the cut as set to the cut at full activity; its end is
-      // the handle for eq_sky; the white dot is the cut now
-      const cut = P("eq4_freq");
-      if (cut < OPEN) {
-        const x0 = g.X(cut), sk = skyAt(g), on = sel === SKY || (hot && hot.role === "sky");
-        c.fillStyle = "rgba(201,211,230,0.38)"; c.fillRect(x0, 4, Math.max(0, sk.x - x0), 2);
-        c.fillStyle = C.night; c.beginPath(); c.arc(sk.x, sk.y, 3.5, 0, 2 * Math.PI); c.fill();
-        c.strokeStyle = on ? "#fff" : C.ink; c.lineWidth = on ? 1.6 : 1.3; c.stroke();
+      // the reach of what moves the cut on the top edge (T4.2: the grid's routes, Activity → Cut by
+      // default; it replaces eq_sky's handle), the white dot the cut now. A cut that is open and can
+      // only open further has nothing to show
+      const reach = reachOf();
+      if (reach && reach[0] < OPEN) {
+        const x0 = clamp(g.X(reach[0]), 3, w - 3), x1 = clamp(g.X(reach[1]), 3, w - 3);
+        c.fillStyle = "rgba(201,211,230,0.38)"; c.fillRect(x0, 4, Math.max(1, x1 - x0), 2);
         c.fillStyle = "#fff"; c.beginPath(); c.arc(clamp(g.X(live.eq4_freq), 3, w - 3), 5, 2.6, 0, 2 * Math.PI); c.fill();
       }
 
@@ -584,16 +564,20 @@
         c.fillStyle = hh && hot.role === "bar" ? "#283248" : "#182031";
         c.beginPath(); c.roundRect(d.x - 4.5, top, 9, g.bh, 3); c.fill();
         if (fill > 0.5) { c.fillStyle = on ? "#fff" : C.arc; c.beginPath(); c.roundRect(d.x - 4.5, g.by - fill, 9, fill, 3); c.fill(); }
+        // the drive now, where the grid moves it: a white dot beside the bar (spec/09 rule 3)
+        if (b.d in live && Math.abs(live[b.d] - P(b.d)) > 0.004) {
+          c.fillStyle = "#fff"; c.beginPath(); c.arc(d.x + 9, g.by - g.bh * clamp(live[b.d], 0, 1), 2.2, 0, 2 * Math.PI); c.fill();
+        }
       });
       c.textAlign = "left"; c.textBaseline = "alphabetic";
     }
 
     return {
       draw,
-      /** For the UI check: where a handle is, in client px. role: dot, bar (its bottom), sky. */
+      /** For the UI check: where a handle is, in client px. role: dot, bar (its bottom). */
       at(role, k) {
         const g = geo(), r = canvas.getBoundingClientRect(), s = r.width / Math.max(1, g.w);
-        const p = role === "sky" ? skyAt(g) : role === "bar" ? { x: dotAt(g, k).x, y: g.by - 1 } : dotAt(g, k);
+        const p = role === "bar" ? { x: dotAt(g, k).x, y: g.by - 1 } : dotAt(g, k);
         return { x: r.left + p.x * s, y: r.top + p.y * s, scale: s, bh: g.bh, span: g.span, w: g.w };
       },
     };
@@ -675,8 +659,8 @@
   const DEFAULT_FS = 48000;
   const reducedMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const norm = (id) => WT.toNorm(id, WT.get(id));
-  /** The value a parameter has now with what moves it (the macro rings' dot), else the value set. */
-  const liveOf = (id) => { const k = UI.knobs && UI.knobs[id]; return k && k.mod ? k.mod.now : WT.get(id); };
+  /** The value a parameter has now with what moves it (T4.2: the grid, telemetry mod.val), else the value set. */
+  const liveOf = (id) => { const m = UI.modLive && UI.modLive(id); return m ? m.now : WT.get(id); };
   /** Eases named values toward their targets once per frame (τ in seconds); snaps when there. */
   function Easer(tau) {
     const v = {};

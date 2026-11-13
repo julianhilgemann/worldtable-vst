@@ -209,7 +209,7 @@ const char* const layoutProbe = R"JS(JSON.stringify((function () {
   var out = { sizes: [], canvas: [], more: [], moreCount: 0, moreParams: 0 };
   // module → [width, height] at the design size (CSS px, before the stage's zoom)
   var SIZE = { strip: [1110, 92], sky: [213, 92], resonators: [435, 264], eq: [435, 177], 'dome-wrap': [448, 448],
-               harmony: [433, 448], phaser: [214, 260], chorus: [214, 260], macros: [448, 260], delay: [146, 260],
+               harmony: [433, 448], phaser: [214, 260], chorus: [214, 260], macros: [448, 112], lfo: [220, 141], env: [221, 141], delay: [146, 260],
                reverb: [175, 260], output: [98, 260], topbar: [1350, 44], hintbar: [1350, 28] };
   Object.keys(SIZE).forEach(function (id) {
     var e = document.getElementById(id);
@@ -485,7 +485,8 @@ const char* const menuProbe = R"JS(JSON.stringify((function () {
   rc(knob, 0.5, 0.3);
   var hint = M.querySelector('.ctx-hint');
   if (M.dataset.kind !== 'control' || !hint || hint.textContent !== knob.dataset.hint) r.problems.push('knob: hint');
-  if (actions() !== 'reset,enter') r.problems.push('knob: items ' + actions());
+  // T4.2: rev_mix is moved by Space in the default grid: Modulate with ▸, then that route to clear
+  if (actions() !== 'reset,enter,modulate,clear-macro_space') r.problems.push('knob: items ' + actions());
   var reset = M.querySelector('[data-action="reset"]');
   if (reset) reset.click();
   if (Math.abs(WT.get('rev_mix') - d) > 1e-6) r.problems.push('knob: reset');
