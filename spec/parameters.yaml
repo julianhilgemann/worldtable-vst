@@ -72,15 +72,25 @@ groups:
     - { id: macro_space,  name: "Space",  type: float, min: 0, max: 1, default: 0.5 }
     - { id: macro_drift,  name: "Drift",  type: float, min: 0, max: 1, default: 0.5 }
 
-  # between the sources and Drive (T3.7); the POC's SVF
-  filter:
-    - { id: flt_type,   name: "Filter Type",      type: choice, choices: [LP12, LP24, BP, HP], default: LP12 }
-    - { id: flt_cutoff, name: "Filter Cutoff",    type: float, min: 20, max: 20000, default: 20000, mid: 1000, unit: Hz, modulatable: true }
-    - { id: flt_reso,   name: "Filter Resonance", type: float, min: 0, max: 1, default: 0.1, modulatable: true }
-    - { id: flt_sky,    name: "Filter Sky",       type: float, min: 0, max: 1, default: 0.3 }
-
-  drive:
-    - { id: drive, name: "Drive", type: float, min: 0, max: 1, default: 0.15, modulatable: true }
+  # The tone stage (T3.9, dsp/fx/Eq.h): a low shelf, two bells and a 12 dB/oct high cut in series
+  # after the sources, each band with its own drive in parallel (only that band saturates). Replaces
+  # flt_type, flt_cutoff, flt_reso, flt_sky and drive. eq4_freq at 20000 is "open". eq_sky is a
+  # stopgap: T4.2 turns it into the route Activity -> eq4_freq and removes it.
+  eq:
+    - { id: eq1_freq,  name: "EQ 1 Freq",  type: float, min: 30,  max: 400,   default: 110,   mid: 110,  unit: Hz, modulatable: true }
+    - { id: eq1_gain,  name: "EQ 1 Gain",  type: float, min: -12, max: 12,    default: 0,     unit: dB, modulatable: true }
+    - { id: eq1_drive, name: "EQ 1 Drive", type: float, min: 0,   max: 1,     default: 0,     modulatable: true }
+    - { id: eq2_freq,  name: "EQ 2 Freq",  type: float, min: 80,  max: 3000,  default: 420,   mid: 490,  unit: Hz, modulatable: true }
+    - { id: eq2_gain,  name: "EQ 2 Gain",  type: float, min: -12, max: 12,    default: 0,     unit: dB, modulatable: true }
+    - { id: eq2_q,     name: "EQ 2 Q",     type: float, min: 0.3, max: 6,     default: 1,     mid: 1.34 }
+    - { id: eq2_drive, name: "EQ 2 Drive", type: float, min: 0,   max: 1,     default: 0,     modulatable: true }
+    - { id: eq3_freq,  name: "EQ 3 Freq",  type: float, min: 500, max: 12000, default: 2400,  mid: 2450, unit: Hz, modulatable: true }
+    - { id: eq3_gain,  name: "EQ 3 Gain",  type: float, min: -12, max: 12,    default: 0,     unit: dB, modulatable: true }
+    - { id: eq3_q,     name: "EQ 3 Q",     type: float, min: 0.3, max: 6,     default: 1,     mid: 1.34 }
+    - { id: eq3_drive, name: "EQ 3 Drive", type: float, min: 0,   max: 1,     default: 0,     modulatable: true }
+    - { id: eq4_freq,  name: "EQ 4 Cut",   type: float, min: 200, max: 20000, default: 20000, mid: 2000, unit: Hz, modulatable: true }
+    - { id: eq4_drive, name: "EQ 4 Drive", type: float, min: 0,   max: 1,     default: 0,     modulatable: true }
+    - { id: eq_sky,    name: "EQ Sky",     type: float, min: 0,   max: 1,     default: 0.3 }
 
   phaser:
     - { id: ph_rate,     name: "Phaser Rate",     type: float, min: 0.005, max: 0.5, default: 0.05, mid: 0.05, unit: Hz }

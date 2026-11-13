@@ -85,16 +85,34 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& apvts)
     jassert (macro_space != nullptr);
     macro_drift = apvts.getRawParameterValue (id::macro_drift);
     jassert (macro_drift != nullptr);
-    flt_type = apvts.getRawParameterValue (id::flt_type);
-    jassert (flt_type != nullptr);
-    flt_cutoff = apvts.getRawParameterValue (id::flt_cutoff);
-    jassert (flt_cutoff != nullptr);
-    flt_reso = apvts.getRawParameterValue (id::flt_reso);
-    jassert (flt_reso != nullptr);
-    flt_sky = apvts.getRawParameterValue (id::flt_sky);
-    jassert (flt_sky != nullptr);
-    drive = apvts.getRawParameterValue (id::drive);
-    jassert (drive != nullptr);
+    eq1_freq = apvts.getRawParameterValue (id::eq1_freq);
+    jassert (eq1_freq != nullptr);
+    eq1_gain = apvts.getRawParameterValue (id::eq1_gain);
+    jassert (eq1_gain != nullptr);
+    eq1_drive = apvts.getRawParameterValue (id::eq1_drive);
+    jassert (eq1_drive != nullptr);
+    eq2_freq = apvts.getRawParameterValue (id::eq2_freq);
+    jassert (eq2_freq != nullptr);
+    eq2_gain = apvts.getRawParameterValue (id::eq2_gain);
+    jassert (eq2_gain != nullptr);
+    eq2_q = apvts.getRawParameterValue (id::eq2_q);
+    jassert (eq2_q != nullptr);
+    eq2_drive = apvts.getRawParameterValue (id::eq2_drive);
+    jassert (eq2_drive != nullptr);
+    eq3_freq = apvts.getRawParameterValue (id::eq3_freq);
+    jassert (eq3_freq != nullptr);
+    eq3_gain = apvts.getRawParameterValue (id::eq3_gain);
+    jassert (eq3_gain != nullptr);
+    eq3_q = apvts.getRawParameterValue (id::eq3_q);
+    jassert (eq3_q != nullptr);
+    eq3_drive = apvts.getRawParameterValue (id::eq3_drive);
+    jassert (eq3_drive != nullptr);
+    eq4_freq = apvts.getRawParameterValue (id::eq4_freq);
+    jassert (eq4_freq != nullptr);
+    eq4_drive = apvts.getRawParameterValue (id::eq4_drive);
+    jassert (eq4_drive != nullptr);
+    eq_sky = apvts.getRawParameterValue (id::eq_sky);
+    jassert (eq_sky != nullptr);
     ph_rate = apvts.getRawParameterValue (id::ph_rate);
     jassert (ph_rate != nullptr);
     ph_depth = apvts.getRawParameterValue (id::ph_depth);
@@ -216,16 +234,34 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::macro_drift, 1 }, "Drift",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.5f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id::flt_type, 1 }, "Filter Type",
-        StringArray { "LP12", "LP24", "BP", "HP" }, 0));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::flt_cutoff, 1 }, "Filter Cutoff",
-        NormalisableRange<float> (20.0f, 20000.0f, 0.0f, 0.22990455846863825f), 20000.0f, AudioParameterFloatAttributes().withLabel ("Hz")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::flt_reso, 1 }, "Filter Resonance",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.1f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::flt_sky, 1 }, "Filter Sky",
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq1_freq, 1 }, "EQ 1 Freq",
+        NormalisableRange<float> (30.0f, 400.0f, 0.0f, 0.45260063668070993f), 110.0f, AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq1_gain, 1 }, "EQ 1 Gain",
+        NormalisableRange<float> (-12.0f, 12.0f, 0.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("dB")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq1_drive, 1 }, "EQ 1 Drive",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq2_freq, 1 }, "EQ 2 Freq",
+        NormalisableRange<float> (80.0f, 3000.0f, 0.0f, 0.3530733645302691f), 420.0f, AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq2_gain, 1 }, "EQ 2 Gain",
+        NormalisableRange<float> (-12.0f, 12.0f, 0.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("dB")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq2_q, 1 }, "EQ 2 Q",
+        NormalisableRange<float> (0.3f, 6.0f, 0.0f, 0.4074351386498403f), 1.0f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq2_drive, 1 }, "EQ 2 Drive",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq3_freq, 1 }, "EQ 3 Freq",
+        NormalisableRange<float> (500.0f, 12000.0f, 0.0f, 0.3906115983476618f), 2400.0f, AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq3_gain, 1 }, "EQ 3 Gain",
+        NormalisableRange<float> (-12.0f, 12.0f, 0.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("dB")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq3_q, 1 }, "EQ 3 Q",
+        NormalisableRange<float> (0.3f, 6.0f, 0.0f, 0.4074351386498403f), 1.0f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq3_drive, 1 }, "EQ 3 Drive",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq4_freq, 1 }, "EQ 4 Cut",
+        NormalisableRange<float> (200.0f, 20000.0f, 0.0f, 0.2890648263178878f), 20000.0f, AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq4_drive, 1 }, "EQ 4 Drive",
+        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::eq_sky, 1 }, "EQ Sky",
         NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.3f, AudioParameterFloatAttributes().withLabel ("")));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::drive, 1 }, "Drive",
-        NormalisableRange<float> (0.0f, 1.0f, 0.0f, 1.0f), 0.15f, AudioParameterFloatAttributes().withLabel ("")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ph_rate, 1 }, "Phaser Rate",
         NormalisableRange<float> (0.005f, 0.5f, 0.0f, 0.2890648263178879f), 0.05f, AudioParameterFloatAttributes().withLabel ("Hz")));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id::ph_depth, 1 }, "Phaser Depth",

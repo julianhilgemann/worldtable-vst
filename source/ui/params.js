@@ -384,53 +384,137 @@ window.WT_PARAMS = {
     "default": 0.5,
     "skew": 1.0
   },
-  "flt_type": {
-    "name": "Filter Type",
-    "type": "choice",
-    "group": "filter",
-    "choices": [
-      "LP12",
-      "LP24",
-      "BP",
-      "HP"
-    ],
-    "default": 0
-  },
-  "flt_cutoff": {
-    "name": "Filter Cutoff",
+  "eq1_freq": {
+    "name": "EQ 1 Freq",
     "type": "float",
-    "group": "filter",
-    "min": 20,
-    "max": 20000,
-    "default": 20000,
-    "skew": 0.229904558,
+    "group": "eq",
+    "min": 30,
+    "max": 400,
+    "default": 110,
+    "skew": 0.452600637,
     "unit": "Hz"
   },
-  "flt_reso": {
-    "name": "Filter Resonance",
+  "eq1_gain": {
+    "name": "EQ 1 Gain",
     "type": "float",
-    "group": "filter",
+    "group": "eq",
+    "min": -12,
+    "max": 12,
+    "default": 0,
+    "skew": 1.0,
+    "unit": "dB"
+  },
+  "eq1_drive": {
+    "name": "EQ 1 Drive",
+    "type": "float",
+    "group": "eq",
     "min": 0,
     "max": 1,
-    "default": 0.1,
+    "default": 0,
     "skew": 1.0
   },
-  "flt_sky": {
-    "name": "Filter Sky",
+  "eq2_freq": {
+    "name": "EQ 2 Freq",
     "type": "float",
-    "group": "filter",
+    "group": "eq",
+    "min": 80,
+    "max": 3000,
+    "default": 420,
+    "skew": 0.353073365,
+    "unit": "Hz"
+  },
+  "eq2_gain": {
+    "name": "EQ 2 Gain",
+    "type": "float",
+    "group": "eq",
+    "min": -12,
+    "max": 12,
+    "default": 0,
+    "skew": 1.0,
+    "unit": "dB"
+  },
+  "eq2_q": {
+    "name": "EQ 2 Q",
+    "type": "float",
+    "group": "eq",
+    "min": 0.3,
+    "max": 6,
+    "default": 1,
+    "skew": 0.407435139
+  },
+  "eq2_drive": {
+    "name": "EQ 2 Drive",
+    "type": "float",
+    "group": "eq",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "skew": 1.0
+  },
+  "eq3_freq": {
+    "name": "EQ 3 Freq",
+    "type": "float",
+    "group": "eq",
+    "min": 500,
+    "max": 12000,
+    "default": 2400,
+    "skew": 0.390611598,
+    "unit": "Hz"
+  },
+  "eq3_gain": {
+    "name": "EQ 3 Gain",
+    "type": "float",
+    "group": "eq",
+    "min": -12,
+    "max": 12,
+    "default": 0,
+    "skew": 1.0,
+    "unit": "dB"
+  },
+  "eq3_q": {
+    "name": "EQ 3 Q",
+    "type": "float",
+    "group": "eq",
+    "min": 0.3,
+    "max": 6,
+    "default": 1,
+    "skew": 0.407435139
+  },
+  "eq3_drive": {
+    "name": "EQ 3 Drive",
+    "type": "float",
+    "group": "eq",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "skew": 1.0
+  },
+  "eq4_freq": {
+    "name": "EQ 4 Cut",
+    "type": "float",
+    "group": "eq",
+    "min": 200,
+    "max": 20000,
+    "default": 20000,
+    "skew": 0.289064826,
+    "unit": "Hz"
+  },
+  "eq4_drive": {
+    "name": "EQ 4 Drive",
+    "type": "float",
+    "group": "eq",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "skew": 1.0
+  },
+  "eq_sky": {
+    "name": "EQ Sky",
+    "type": "float",
+    "group": "eq",
     "min": 0,
     "max": 1,
     "default": 0.3,
-    "skew": 1.0
-  },
-  "drive": {
-    "name": "Drive",
-    "type": "float",
-    "group": "drive",
-    "min": 0,
-    "max": 1,
-    "default": 0.15,
     "skew": 1.0
   },
   "ph_rate": {
