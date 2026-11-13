@@ -1,12 +1,7 @@
 // T4.2: the modulation grid, the slow LFOs and the free envelope (spec/tasks/T4.2-modulation-grid.md).
 //
-// Step 1. The owner reviews source/dsp/mod/ModMatrix.h before anything is built (CLAUDE.md rule 6),
-// so the engine is stubbed:
-//  - the tests tagged [.t4.2-red] fail against the stubs on purpose. The tag hides them from the
-//    default run and from ctest. Run them with: WorldtableTests "[t4.2-red]". The engine PR removes
-//    the tag, and these tests are its definition of done;
-//  - the untagged [mod] tests check the header's own tables (lists, keys, ranges, the default grid)
-//    and pass already.
+// The header's own tables (lists, keys, ranges, the default grid) and the engine's parts on their
+// own. The engine in the instrument (state, determinism, clicks) is tested in ModEngineTests.cpp.
 
 #include "AllocationCounter.h"
 #include "PluginProcessor.h"
@@ -36,7 +31,6 @@ constexpr double kPi = std::numbers::pi;
 constexpr Target targetAt (int i) noexcept { return static_cast<Target> (i); }
 constexpr Source sourceAt (int i) noexcept { return static_cast<Source> (i); }
 constexpr Destination columnAt (int i) noexcept { return static_cast<Destination> (i); }
-const TargetInfo& infoOf (Target t) { return kTargets[indexOf (t)]; }
 
 double dbOf (double ratio) { return 20.0 * std::log10 (std::max (ratio, 1.0e-30)); }
 
@@ -85,6 +79,7 @@ Bases plainBases()
     b[Target::detune] = 3.0f;
     b[Target::drift] = 4.0f;
     b[Target::width] = 0.9f;
+    b[Target::excite] = 1.0f;   // fixed: no knob
     b[Target::eq1Gain] = 0.0f;
     b[Target::eq2Gain] = 0.0f;
     b[Target::eq3Gain] = 0.0f;
@@ -104,17 +99,17 @@ Bases plainBases()
     return b;
 }
 
-/** What each target is today at these knobs. Storm's exciter factor is folded into the levels,
-    since the sound is linear in it. eq_sky = 0.3 is its default. */
+/** What each target is today at these knobs (Strike: the exciter's factor). eq_sky = 0.3 was its
+    default. */
 double today (Target t, const Bases& bases, const Knobs& k)
 {
     const double base = bases[t];
     switch (t)
     {
-        case Target::lowLevel:    return base * stormGain (k.storm);
+        case Target::excite:      return base * stormGain (k.storm);
         case Target::redLevel:
-        case Target::greenLevel:  return base * stormGain (k.storm) * breathGain (k.breath, k.cycle);
-        case Target::violetLevel: return base * stormGain (k.storm) * macroGain (k.glow) * breathViolet (k.breath, k.cycle);
+        case Target::greenLevel:  return base * breathGain (k.breath, k.cycle);
+        case Target::violetLevel: return base * macroGain (k.glow) * breathViolet (k.breath, k.cycle);
         case Target::detune:
         case Target::drift:       return base * macroGain (k.drift);
         case Target::eq4Freq:     return std::min (20000.0, base * std::exp2 (0.3 * 3.0 * std::min (k.activity, 1.0)));
@@ -122,6 +117,7 @@ double today (Target t, const Bases& bases, const Knobs& k)
         case Target::revMix:      return std::clamp (base * macroGain (k.space), 0.0, 1.0);
         case Target::revShimmer:  return std::clamp (base * macroGain (k.glow), 0.0, 1.0);
         case Target::progression: return std::clamp (base * stormGain (k.storm), 0.0, 1.0);
+        case Target::lowLevel:
         case Target::width:
         case Target::eq1Gain:
         case Target::eq2Gain:
@@ -255,7 +251,7 @@ TEST_CASE ("Mod grid: the lists, their stable keys and the columns' targets", "[
         CHECK (kSources[static_cast<size_t> (i)].group == (i < 5 ? Group::macros : i < 7 ? Group::sky : Group::motion));
 
     // every column moves a target; Drive moves the four band drives; a one-target column's key is
-    // its parameter's ID
+    // its parameter's ID, or "excite" for Strike (no parameter)
     std::array<int, kNumDestinations> moved {};
     for (const auto& t : kTargets)
         ++moved[indexOf (t.column)];
@@ -264,19 +260,66 @@ TEST_CASE ("Mod grid: the lists, their stable keys and the columns' targets", "[
     CHECK (moved[indexOf (Destination::eqDrive)] == 4);
     for (const auto& t : kTargets)
         if (moved[indexOf (t.column)] == 1)
-            CHECK (std::string (kDestinations[indexOf (t.column)].key) == t.paramId);
+            CHECK (std::string (kDestinations[indexOf (t.column)].key) == (t.paramId[0] != '\0' ? t.paramId : "excite"));
 
-    // only the cut is in octaves
+    // the laws: the cut in octaves; the EQ gains and the drives add; everything else multiplies
     for (int i = 0; i < kNumTargets; ++i)
-        CHECK ((kTargets[static_cast<size_t> (i)].law == Law::oct) == (targetAt (i) == Target::eq4Freq));
+    {
+        const auto t = targetAt (i);
+        INFO (kTargets[static_cast<size_t> (i)].paramId);
+        const bool adds = t == Target::eq1Gain || t == Target::eq2Gain || t == Target::eq3Gain || t == Target::eq1Drive
+                       || t == Target::eq2Drive || t == Target::eq3Drive || t == Target::eq4Drive;
+        CHECK (lawOf (t) == (t == Target::eq4Freq ? Law::oct : adds ? Law::add : Law::mul));
+    }
+
+    // the modulated range holds the knob's; it reaches past it only for the four levels (+6 dB),
+    // Detune and Drift (today's × 1.5 at Drift 1) and Strike
+    for (int i = 0; i < kNumTargets; ++i)
+    {
+        const auto t = targetAt (i);
+        const auto& info = kTargets[static_cast<size_t> (i)];
+        INFO (info.paramId);
+        CHECK (info.modMin <= info.min);
+        CHECK (info.modMax >= info.max);
+        const bool wider = t == Target::lowLevel || t == Target::redLevel || t == Target::greenLevel || t == Target::violetLevel
+                        || t == Target::detune || t == Target::drift || t == Target::excite;
+        CHECK ((info.modMax > info.max) == wider);
+        CHECK_THAT (info.modMin, WithinULP (info.min, 0) || WithinULP (0.0f, 0));
+    }
+    for (auto t : { Target::lowLevel, Target::redLevel, Target::greenLevel, Target::violetLevel })
+        CHECK_THAT (infoOf (t).modMax, WithinULP (2.0f, 0));
+    CHECK_THAT (infoOf (Target::detune).modMax, WithinULP (18.0f, 0));
+    CHECK_THAT (infoOf (Target::drift).modMax, WithinULP (30.0f, 0));
+
+    // one target without a knob: Strike, a fixed base of 1, modulated 0 … 2, by the mul law
+    int internal = 0;
+    for (int i = 0; i < kNumTargets; ++i)
+        if (! hasParameter (targetAt (i)))
+        {
+            ++internal;
+            CHECK (targetAt (i) == Target::excite);
+        }
+    CHECK (internal == 1);
+    CHECK_THAT (infoOf (Target::excite).min, WithinULP (1.0f, 0));
+    CHECK_THAT (infoOf (Target::excite).max, WithinULP (1.0f, 0));
+    CHECK_THAT (infoOf (Target::excite).modMin, WithinULP (0.0f, 0));
+    CHECK_THAT (infoOf (Target::excite).modMax, WithinULP (2.0f, 0));
+    CHECK (std::string (kDestinations[indexOf (Destination::excite)].label) == "Strike");
+    CHECK (std::string (kDestinations[indexOf (Destination::excite)].module) == "Resonators");
 }
 
-TEST_CASE ("Mod grid: every target is a parameter with the same range; the macros are parameters", "[mod][params]")
+TEST_CASE ("Mod grid: every target with a knob is a parameter with the same range; the macros are parameters", "[mod][params]")
 {
     juce::ScopedJuceInitialiser_GUI juceEnv;
     PluginProcessor p (false);
     for (const auto& t : kTargets)
     {
+        if (t.paramId[0] == '\0')
+        {
+            // no knob: no parameter by its column's name either
+            CHECK (p.getValueTreeState().getParameter (kDestinations[indexOf (t.column)].key) == nullptr);
+            continue;
+        }
         INFO (t.paramId);
         auto* param = dynamic_cast<juce::RangedAudioParameter*> (p.getValueTreeState().getParameter (t.paramId));
         REQUIRE (param != nullptr);
@@ -290,15 +333,67 @@ TEST_CASE ("Mod grid: every target is a parameter with the same range; the macro
             INFO (s.key);
             CHECK (p.getValueTreeState().getParameter (s.key) != nullptr);
         }
+
+    // parameters.yaml names the law of every target (mod_law), as kDestinations has it
+    juce::File yaml (WORLDTABLE_FIXTURES_DIR "/../../spec/parameters.yaml");
+    REQUIRE (yaml.existsAsFile());
+    juce::StringArray lines;
+    yaml.readLines (lines);
+    int named = 0;
+    for (const auto& line : lines)
+    {
+        const auto id = line.fromFirstOccurrenceOf ("id:", false, false).upToFirstOccurrenceOf (",", false, false).trim();
+        const auto law = line.fromFirstOccurrenceOf ("mod_law:", false, false).upToFirstOccurrenceOf (",", false, false)
+                             .upToFirstOccurrenceOf ("}", false, false).trim();
+        if (id.isEmpty() || law.isEmpty())
+            continue;
+        ++named;
+        bool found = false;
+        for (int i = 0; i < kNumTargets; ++i)
+            if (id == kTargets[static_cast<size_t> (i)].paramId)
+            {
+                found = true;
+                const auto want = lawOf (targetAt (i));
+                INFO (id);
+                CHECK (law == (want == Law::mul ? "mul" : want == Law::add ? "add" : "oct"));
+            }
+        INFO (id << " has a mod_law but is not a target");
+        CHECK (found);
+    }
+    CHECK (named == kNumTargets - 1);   // all but Strike
+
+    // the LFOs' and the envelope's parameters, at the mockup's defaults (the headers' Settings)
+    CHECK_THAT (defaultOf (p, "lfo1_rate"), WithinRel (0.12, 1.0e-4));
+    CHECK_THAT (defaultOf (p, "lfo2_rate"), WithinRel (0.03, 1.0e-4));
+    CHECK (static_cast<int> (defaultOf (p, "lfo1_shape")) == static_cast<int> (SlowLfo::Shape::sine));
+    CHECK (static_cast<int> (defaultOf (p, "lfo2_shape")) == static_cast<int> (SlowLfo::Shape::smoothRandom));
+    const Envelope::Settings env;
+    CHECK_THAT (defaultOf (p, "env_attack"), WithinRel (env.attack, 1.0e-4));
+    CHECK_THAT (defaultOf (p, "env_decay"), WithinRel (env.decay, 1.0e-4));
+    CHECK_THAT (defaultOf (p, "env_sustain"), WithinRel (env.sustain, 1.0e-4));
+    CHECK_THAT (defaultOf (p, "env_release"), WithinRel (env.release, 1.0e-4));
+    CHECK (static_cast<int> (defaultOf (p, "env_trigger")) == static_cast<int> (env.trigger));
+    for (const char* id : { "lfo1_rate", "lfo2_rate" })
+    {
+        auto* param = dynamic_cast<juce::RangedAudioParameter*> (p.getValueTreeState().getParameter (id));
+        REQUIRE (param != nullptr);
+        CHECK_THAT (param->getNormalisableRange().start, WithinRel (SlowLfo::kMinHz, 1.0e-6));
+        CHECK_THAT (param->getNormalisableRange().end, WithinRel (SlowLfo::kMaxHz, 1.0e-6));
+    }
+    for (const char* id : { "env_attack", "env_decay", "env_release" })
+    {
+        auto* param = dynamic_cast<juce::RangedAudioParameter*> (p.getValueTreeState().getParameter (id));
+        REQUIRE (param != nullptr);
+        CHECK_THAT (param->getNormalisableRange().start, WithinRel (Envelope::kMinSeconds, 1.0e-6));
+        CHECK_THAT (param->getNormalisableRange().end, WithinRel (Envelope::kMaxSeconds, 1.0e-6));
+    }
 }
 
 TEST_CASE ("Mod grid: the default grid is today's wiring and nothing more", "[mod][params]")
 {
     struct Route { Source source; Destination column; float depth; };
     const Route routes[] = {
-        { Source::storm, Destination::lowLevel, 0.6f },     { Source::storm, Destination::redLevel, 0.6f },
-        { Source::storm, Destination::greenLevel, 0.6f },   { Source::storm, Destination::violetLevel, 0.6f },
-        { Source::storm, Destination::progression, 0.6f },
+        { Source::storm, Destination::excite, 0.6f },       { Source::storm, Destination::progression, 0.6f },
         { Source::breath, Destination::redLevel, -0.35f },  { Source::breath, Destination::greenLevel, -0.35f },
         { Source::breath, Destination::violetLevel, -0.5f },
         { Source::glow, Destination::violetLevel, 0.5f },   { Source::glow, Destination::reverbShimmer, 0.5f },
@@ -319,15 +414,18 @@ TEST_CASE ("Mod grid: the default grid is today's wiring and nothing more", "[mo
             CHECK_THAT (grid.get (sourceAt (s), columnAt (d)), WithinULP (want.get (sourceAt (s), columnAt (d)), 0));
             count += std::abs (grid.get (sourceAt (s), columnAt (d))) > 0.0f ? 1 : 0;
         }
-    CHECK (count == 15);
+    CHECK (count == 12);
+    for (auto level : { Destination::lowLevel, Destination::redLevel, Destination::greenLevel, Destination::violetLevel })
+        CHECK_THAT (grid.get (Source::storm, level), WithinULP (0.0f, 0));   // Storm drives the exciter, not the levels
     for (auto s : { Source::onset, Source::lfo1, Source::lfo2, Source::envelope })   // the new sources: no routes
         for (int d = 0; d < kNumDestinations; ++d)
             CHECK_THAT (grid.get (s, columnAt (d)), WithinULP (0.0f, 0));
 
-    // Activity → Cut is eq_sky (the parameter goes in the engine PR)
+    // Activity → Cut is the old eq_sky at its default (the parameter went: state v6)
     juce::ScopedJuceInitialiser_GUI juceEnv;
     PluginProcessor p (false);
-    CHECK_THAT (grid.get (Source::activity, Destination::eqCut), WithinAbs (defaultOf (p, "eq_sky"), 1.0e-6));
+    CHECK (p.getValueTreeState().getParameter ("eq_sky") == nullptr);
+    CHECK_THAT (grid.get (Source::activity, Destination::eqCut), WithinAbs (0.3, 1.0e-6));
 
     // a depth is clamped to −1 … +1; a non-finite one is no route
     Depths d;
@@ -342,28 +440,44 @@ TEST_CASE ("Mod grid: the default grid is today's wiring and nothing more", "[mo
 //==================================================================================================
 // ModMatrix (red until the engine PR)
 //==================================================================================================
-TEST_CASE ("ModMatrix: the mul law scales the base and clamps to the parameter's range", "[mod][.t4.2-red]")
+TEST_CASE ("ModMatrix: the mul law scales the base and clamps to the modulated range", "[mod]")
 {
     CHECK_THAT (ModMatrix::apply (Target::redLevel, 0.5f, 0.5f), WithinAbs (0.75, 1.0e-6));
     CHECK_THAT (ModMatrix::apply (Target::redLevel, 0.5f, -0.5f), WithinAbs (0.25, 1.0e-6));
-    CHECK_THAT (ModMatrix::apply (Target::redLevel, 0.8f, 0.5f), WithinAbs (1.0, 1.0e-6));     // clamped at the top
-    CHECK_THAT (ModMatrix::apply (Target::redLevel, 0.5f, -1.5f), WithinAbs (0.0, 1.0e-6));    // and at the bottom
-    CHECK_THAT (ModMatrix::apply (Target::detune, 10.0f, 0.5f), WithinAbs (12.0, 1.0e-5));
+    CHECK_THAT (ModMatrix::apply (Target::redLevel, 0.8f, 0.5f), WithinAbs (1.2, 1.0e-6));     // a level may go past its knob …
+    CHECK_THAT (ModMatrix::apply (Target::redLevel, 1.5f, 0.5f), WithinAbs (2.0, 1.0e-6));     // … up to 2 (+6 dB)
+    CHECK_THAT (ModMatrix::apply (Target::redLevel, 0.5f, -1.5f), WithinAbs (0.0, 1.0e-6));    // and down to 0
+    CHECK_THAT (ModMatrix::apply (Target::detune, 10.0f, 0.5f), WithinAbs (15.0, 1.0e-5));     // today's Drift 1
+    CHECK_THAT (ModMatrix::apply (Target::detune, 15.0f, 0.5f), WithinAbs (18.0, 1.0e-5));
+    CHECK_THAT (ModMatrix::apply (Target::drift, 20.0f, 1.0f), WithinAbs (30.0, 1.0e-5));
+    CHECK_THAT (ModMatrix::apply (Target::excite, 1.0f, 0.6f), WithinAbs (1.6, 1.0e-6));       // Strike: Storm 1
+    CHECK_THAT (ModMatrix::apply (Target::excite, 1.0f, 1.5f), WithinAbs (2.0, 1.0e-6));
+    CHECK_THAT (ModMatrix::apply (Target::width, 0.8f, 0.5f), WithinAbs (1.0, 1.0e-6));        // the rest: the parameter's range
     CHECK_THAT (ModMatrix::apply (Target::dlyFb, 0.5f, 1.0f), WithinAbs (0.95, 1.0e-6));
     CHECK_THAT (ModMatrix::apply (Target::revDecay, 1.0f, -0.9f), WithinAbs (0.3, 1.0e-6));    // the decay's floor
     CHECK_THAT (ModMatrix::apply (Target::revDecay, 9.0f, 1.0f), WithinAbs (18.0, 1.0e-5));
-    // a gain scales its boost or cut
-    CHECK_THAT (ModMatrix::apply (Target::eq1Gain, -6.0f, 1.0f), WithinAbs (-12.0, 1.0e-5));
-    CHECK_THAT (ModMatrix::apply (Target::eq1Gain, -10.0f, 1.0f), WithinAbs (-12.0, 1.0e-5));
-    CHECK_THAT (ModMatrix::apply (Target::eq3Gain, 6.0f, -0.5f), WithinAbs (3.0, 1.0e-5));
-    CHECK_THAT (ModMatrix::apply (Target::eq2Gain, 0.0f, 1.0f), WithinAbs (0.0, 1.0e-9));       // nothing to scale (open question 3)
     // no amount: untouched, bit for bit; a non-finite amount counts as none
     CHECK_THAT (ModMatrix::apply (Target::width, 0.123456f, 0.0f), WithinULP (0.123456f, 0));
     CHECK_THAT (ModMatrix::apply (Target::width, 0.5f, std::numeric_limits<float>::quiet_NaN()), WithinULP (0.5f, 0));
     CHECK_THAT (ModMatrix::apply (Target::width, 0.5f, std::numeric_limits<float>::infinity()), WithinULP (0.5f, 0));
 }
 
-TEST_CASE ("ModMatrix: the oct law moves the cut in octaves (3 per unit) and clamps", "[mod][.t4.2-red]")
+TEST_CASE ("ModMatrix: the add law moves the EQ gains and the drives by half their range per unit", "[mod]")
+{
+    // gains: ±12 dB at amount ±1, from any base, 0 dB included
+    CHECK_THAT (ModMatrix::apply (Target::eq2Gain, 0.0f, 1.0f), WithinAbs (12.0, 1.0e-5));
+    CHECK_THAT (ModMatrix::apply (Target::eq2Gain, 0.0f, -0.5f), WithinAbs (-6.0, 1.0e-5));
+    CHECK_THAT (ModMatrix::apply (Target::eq1Gain, -6.0f, 0.25f), WithinAbs (-3.0, 1.0e-5));
+    CHECK_THAT (ModMatrix::apply (Target::eq3Gain, 6.0f, 1.0f), WithinAbs (12.0, 1.0e-5));     // clamped to the range
+    CHECK_THAT (ModMatrix::apply (Target::eq3Gain, -6.0f, -1.0f), WithinAbs (-12.0, 1.0e-5));
+    // drives: +0.5 at amount 1
+    CHECK_THAT (ModMatrix::apply (Target::eq1Drive, 0.0f, 1.0f), WithinAbs (0.5, 1.0e-6));
+    CHECK_THAT (ModMatrix::apply (Target::eq4Drive, 0.8f, 1.0f), WithinAbs (1.0, 1.0e-6));
+    CHECK_THAT (ModMatrix::apply (Target::eq2Drive, 0.2f, -1.0f), WithinAbs (0.0, 1.0e-6));
+    CHECK_THAT (ModMatrix::apply (Target::eq3Drive, 0.3f, 0.0f), WithinULP (0.3f, 0));
+}
+
+TEST_CASE ("ModMatrix: the oct law moves the cut in octaves (3 per unit) and clamps", "[mod]")
 {
     CHECK_THAT (ModMatrix::apply (Target::eq4Freq, 1000.0f, 1.0f / 3.0f), WithinRel (2000.0, 1.0e-5));
     CHECK_THAT (ModMatrix::apply (Target::eq4Freq, 1000.0f, -1.0f / 3.0f), WithinRel (500.0, 1.0e-5));
@@ -373,7 +487,7 @@ TEST_CASE ("ModMatrix: the oct law moves the cut in octaves (3 per unit) and cla
     CHECK_THAT (ModMatrix::apply (Target::eq4Freq, 20000.0f, 0.0f), WithinULP (20000.0f, 0));
 }
 
-TEST_CASE ("ModMatrix: routes on one column add up; Drive moves the four drives", "[mod][.t4.2-red]")
+TEST_CASE ("ModMatrix: routes multiply on a mul column and add on the others; Drive moves the four drives", "[mod]")
 {
     Depths d;
     d.set (Source::storm, Destination::delayMix, 0.5f);
@@ -382,8 +496,8 @@ TEST_CASE ("ModMatrix: routes on one column add up; Drive moves the four drives"
     d.set (Source::lfo2, Destination::eqDrive, 0.5f);
     d.set (Source::activity, Destination::eqCut, 0.3f);
     d.set (Source::envelope, Destination::eqCut, 0.2f);
-    d.set (Source::storm, Destination::width, 0.5f);
-    d.set (Source::lfo1, Destination::width, 0.5f);
+    d.set (Source::storm, Destination::eqMidGain, 0.5f);
+    d.set (Source::lfo1, Destination::eqMidGain, 0.5f);
 
     SourceValues s;
     s[Source::storm] = 0.5f;
@@ -399,24 +513,40 @@ TEST_CASE ("ModMatrix: routes on one column add up; Drive moves the four drives"
     b[Target::eq3Drive] = 0.8f;
     b[Target::eq4Drive] = 0.0f;
     b[Target::eq4Freq] = 1000.0f;
+    b[Target::eq2Gain] = 3.3f;
     const auto f = evaluated (d, s, b);
 
-    // 0.5·0.5 + 0.25·(−0.5) − 0.5·0.2 = 0.025
-    CHECK_THAT (f.amount[indexOf (Destination::delayMix)], WithinAbs (0.025, 1.0e-6));
-    CHECK_THAT (f[Target::dlyMix], WithinAbs (0.4 * 1.025, 1.0e-6));
-    CHECK_THAT (f[Target::eq1Drive], WithinAbs (0.3, 1.0e-6));
-    CHECK_THAT (f[Target::eq2Drive], WithinAbs (0.6, 1.0e-6));
+    // (1 + 0.5·0.5)(1 + 0.25·(−0.5))(1 − 0.5·0.2) = 1.25 · 0.875 · 0.9
+    const double factor = 1.25 * 0.875 * 0.9;
+    CHECK_THAT (f.amount[indexOf (Destination::delayMix)], WithinAbs (factor - 1.0, 1.0e-6));
+    CHECK_THAT (f[Target::dlyMix], WithinAbs (0.4 * factor, 1.0e-6));
+    // Drive: + 0.5 · 1 · ½ to each of the four
+    CHECK_THAT (f[Target::eq1Drive], WithinAbs (0.45, 1.0e-6));
+    CHECK_THAT (f[Target::eq2Drive], WithinAbs (0.65, 1.0e-6));
     CHECK_THAT (f[Target::eq3Drive], WithinAbs (1.0, 1.0e-6));   // clamped
-    CHECK_THAT (f[Target::eq4Drive], WithinAbs (0.0, 1.0e-9));
+    CHECK_THAT (f[Target::eq4Drive], WithinAbs (0.25, 1.0e-6));
     // 0.3·1 + 0.2·0.2 = 0.34 → 2^1.02
     CHECK_THAT (f[Target::eq4Freq], WithinRel (1000.0 * std::exp2 (3.0 * 0.34), 1.0e-5));
-    // routes that cancel exactly leave the base untouched
-    CHECK_THAT (f[Target::width], WithinULP (b[Target::width], 0));
+    // add routes that cancel exactly leave the base untouched
+    CHECK_THAT (f[Target::eq2Gain], WithinULP (b[Target::eq2Gain], 0));
     // the sources used are in the frame
     CHECK_THAT (f.source[indexOf (Source::lfo2)], WithinULP (1.0f, 0));
+
+    // a product never flips a sign: two routes pushing all the way down give 0, not less
+    Depths down;
+    down.set (Source::storm, Destination::reverbMix, -1.0f);
+    down.set (Source::glow, Destination::reverbMix, -1.0f);
+    SourceValues full;
+    full[Source::storm] = 1.0f;
+    full[Source::glow] = 1.0f;
+    CHECK_THAT (evaluated (down, full, b)[Target::revMix], WithinAbs (0.0, 1.0e-9));
+    full[Source::storm] = 0.5f;
+    CHECK_THAT (evaluated (down, full, b)[Target::revMix], WithinAbs (0.0, 1.0e-9));
+    full[Source::glow] = 0.5f;
+    CHECK_THAT (evaluated (down, full, b)[Target::revMix], WithinAbs (0.35 * 0.25, 1.0e-6));
 }
 
-TEST_CASE ("ModMatrix: an all-zero grid leaves every target at its base, bit for bit", "[mod][.t4.2-red]")
+TEST_CASE ("ModMatrix: an all-zero grid leaves every target at its base, bit for bit", "[mod]")
 {
     // bases anywhere, even outside the range: with no route nothing is touched, not even clamped
     const float odd[] = { 0.123456f, 1.0f, 0.0f, -12.0f, 19999.9f, 0.3f, 1.25f, -0.0f, 7.77e-3f, 0.95f, 60.0f };
@@ -441,7 +571,7 @@ TEST_CASE ("ModMatrix: an all-zero grid leaves every target at its base, bit for
     REQUIRE_THAT (f.source[0], WithinULP (0.77f, 0));   // the frame was filled
 }
 
-TEST_CASE ("ModMatrix: the default grid at the macros' centres and no breath leaves the bases untouched", "[mod][.t4.2-red]")
+TEST_CASE ("ModMatrix: the default grid at the macros' centres and no breath leaves the bases untouched", "[mod]")
 {
     // What keeps the default patch where it is: every macro at 0.5 (x = 0) and no breath or
     // activity give amounts of exactly 0, so every target is its knob, bit for bit.
@@ -459,10 +589,10 @@ TEST_CASE ("ModMatrix: the default grid at the macros' centres and no breath lea
     REQUIRE (f.hi[indexOf (Target::dlyMix)] > f.lo[indexOf (Target::dlyMix)]);
 }
 
-TEST_CASE ("ModMatrix: the default grid plays today's macros at 0, 0.5 and 1", "[mod][.t4.2-red]")
+TEST_CASE ("ModMatrix: the default grid plays today's macros at every setting, alone and together", "[mod]")
 {
     const auto grid = defaultDepths();
-    const auto bases = plainBases();
+    auto bases = plainBases();
     const auto check = [&] (const Knobs& k, const char* what)
     {
         const auto f = evaluated (grid, sourcesOf (k), bases);
@@ -475,8 +605,8 @@ TEST_CASE ("ModMatrix: the default grid plays today's macros at 0, 0.5 and 1", "
             const double y = k.breath * k.cycle;
             if (t == Target::violetLevel && y > 0.0)
             {
-                // exception 4: violet's breath is quadratic, the route linear (slope matched)
-                const double grid1 = bases[t] * stormGain (k.storm) * macroGain (k.glow) * (1.0 - 0.5 * y);
+                // the one exception: violet's breath is quadratic, the route linear (slope matched)
+                const double grid1 = bases[t] * macroGain (k.glow) * (1.0 - 0.5 * y);
                 CHECK_THAT (static_cast<double> (f[t]), WithinRel (grid1, 1.0e-5));
                 CHECK (std::abs (dbOf (f[t] / want)) <= (k.breath <= 0.35 ? 0.07 : 0.87));
             }
@@ -515,7 +645,31 @@ TEST_CASE ("ModMatrix: the default grid plays today's macros at 0, 0.5 and 1", "
         }
     }
 
+    // together (routes multiply, as the macros did), at the knobs' tops too: violet at 1 with Glow
+    // 1 goes to 1.5, Detune 10 and Drift 16 at Drift 1 to 15 and 24 ct
+    bases[Target::redLevel] = 1.0f;
+    bases[Target::violetLevel] = 1.0f;
+    bases[Target::detune] = 10.0f;
+    bases[Target::drift] = 16.0f;
+    bases[Target::revMix] = 0.9f;
+    for (double storm : { 0.0, 0.3, 1.0 })
+        for (double glow : { 0.0, 0.7, 1.0 })
+            for (double space : { 0.0, 1.0 })
+                for (double breath : { 0.0, 0.35, 1.0 })
+                {
+                    Knobs k;
+                    k.storm = storm;
+                    k.glow = glow;
+                    k.space = space;
+                    k.drift = 1.0 - glow;
+                    k.breath = breath;
+                    k.cycle = 1.0;
+                    k.activity = storm;
+                    check (k, "together");
+                }
+
     // the default patch through a whole breath: what the goldens' patch hears
+    bases = plainBases();
     for (double c : { 0.0, 0.25, 0.5, 0.75, 1.0 })
     {
         Knobs k;
@@ -525,46 +679,36 @@ TEST_CASE ("ModMatrix: the default grid plays today's macros at 0, 0.5 and 1", "
     }
 }
 
-TEST_CASE ("ModMatrix: where the default grid departs from today (header exceptions 2 and 3)", "[mod][.t4.2-red]")
+TEST_CASE ("ModMatrix: where the default grid would have departed from today, it doesn't", "[mod]")
 {
+    // The header's first draft summed the routes and clamped the levels to their knobs. With the
+    // owner's product law, modulated ranges and Strike, these cases sound as today.
     const auto grid = defaultDepths();
     auto b = plainBases();
-
-    // 2. clamped to the parameter's range: red at 1 cannot rise with Storm (today × 1.6 in the exciter)
     b[Target::redLevel] = 1.0f;
     b[Target::violetLevel] = 1.0f;
-    b[Target::detune] = 10.0f;
-    b[Target::drift] = 16.0f;
+
+    // Storm 1 strikes 1.6 × harder (the exciter), and leaves the levels alone
     Knobs k;
     k.breath = 0.0;
     k.storm = 1.0;
-    CHECK_THAT (evaluated (grid, sourcesOf (k), b)[Target::redLevel], WithinAbs (1.0, 1.0e-6));
-    CHECK (today (Target::redLevel, b, k) > 1.5);
+    auto f = evaluated (grid, sourcesOf (k), b);
+    CHECK_THAT (f[Target::excite], WithinAbs (1.6, 1.0e-6));
+    CHECK_THAT (f[Target::redLevel], WithinULP (1.0f, 0));
+    k.storm = 0.0;
+    CHECK_THAT (evaluated (grid, sourcesOf (k), b)[Target::excite], WithinAbs (0.4, 1.0e-6));
+    // Glow 1 takes violet at its knob's top to 1.5
     k.storm = 0.5;
     k.glow = 1.0;
-    CHECK_THAT (evaluated (grid, sourcesOf (k), b)[Target::violetLevel], WithinAbs (1.0, 1.0e-6));   // today 1.5
-    k.glow = 0.5;
-    k.drift = 1.0;
-    CHECK_THAT (evaluated (grid, sourcesOf (k), b)[Target::detune], WithinAbs (12.0, 1.0e-5));        // today 15
-    CHECK_THAT (evaluated (grid, sourcesOf (k), b)[Target::drift], WithinAbs (20.0, 1.0e-5));         // today 24
-
-    // 3. routes add, today's macros multiplied: Storm 0 with a full breath (knob 0.35) on red
-    b[Target::redLevel] = 1.0f;
-    Knobs s0;
-    s0.storm = 0.0;
-    s0.cycle = 1.0;
-    CHECK_THAT (evaluated (grid, sourcesOf (s0), b)[Target::redLevel], WithinAbs (1.0 - 0.6 - 0.35 * 0.35, 1.0e-6));   // 0.2775
-    CHECK_THAT (today (Target::redLevel, b, s0), WithinAbs (0.4 * (1.0 - 0.35 * 0.35), 1.0e-9));                    // 0.351
-    // … and Storm 0 with Glow 0 silences violet (1 − 0.6 − 0.5 < 0), where today it is 0.2 of its base
+    CHECK_THAT (evaluated (grid, sourcesOf (k), b)[Target::violetLevel], WithinAbs (1.5, 1.0e-6));
+    // Glow 0 with a full breath (knob 0.35): 0.5 · (1 − 0.175), never 0
     Knobs g0;
-    g0.storm = 0.0;
     g0.glow = 0.0;
-    g0.breath = 0.0;
-    CHECK_THAT (evaluated (grid, sourcesOf (g0), b)[Target::violetLevel], WithinAbs (0.0, 1.0e-9));
-    CHECK_THAT (today (Target::violetLevel, b, g0), WithinAbs (0.2, 1.0e-9));
+    g0.cycle = 1.0;
+    CHECK_THAT (evaluated (grid, sourcesOf (g0), b)[Target::violetLevel], WithinAbs (0.5 * (1.0 - 0.5 * 0.35), 1.0e-6));
 }
 
-TEST_CASE ("ModMatrix: the reachable range of every target, for the rings", "[mod][.t4.2-red]")
+TEST_CASE ("ModMatrix: the reachable range of every target, for the rings", "[mod]")
 {
     auto b = plainBases();
     b[Target::redLevel] = 1.0f;
@@ -576,11 +720,17 @@ TEST_CASE ("ModMatrix: the reachable range of every target, for the rings", "[mo
     CHECK_THAT (f.amountHi[indexOf (Destination::delayMix)], WithinAbs (0.5, 1.0e-6));
     CHECK_THAT (f.lo[indexOf (Target::dlyMix)], WithinAbs (0.125, 1.0e-6));
     CHECK_THAT (f.hi[indexOf (Target::dlyMix)], WithinAbs (0.375, 1.0e-6));
-    // red: Storm ± 0.6, Breath 0 … −0.35·0.35; the top clamped at 1
-    CHECK_THAT (f.amountLo[indexOf (Destination::redLevel)], WithinAbs (-0.6 - 0.35 * 0.35, 1.0e-6));
-    CHECK_THAT (f.amountHi[indexOf (Destination::redLevel)], WithinAbs (0.6, 1.0e-6));
-    CHECK_THAT (f.lo[indexOf (Target::redLevel)], WithinAbs (0.2775, 1.0e-6));
+    // red: Breath 0 … −0.35·0.35
+    CHECK_THAT (f.amountLo[indexOf (Destination::redLevel)], WithinAbs (-0.35 * 0.35, 1.0e-6));
+    CHECK_THAT (f.amountHi[indexOf (Destination::redLevel)], WithinAbs (0.0, 1.0e-6));
+    CHECK_THAT (f.lo[indexOf (Target::redLevel)], WithinAbs (1.0 - 0.35 * 0.35, 1.0e-6));
     CHECK_THAT (f.hi[indexOf (Target::redLevel)], WithinAbs (1.0, 1.0e-6));
+    // violet: the product of each route's extremes, Glow (0.5 … 1.5) × Breath (1 − 0.5·0.35 … 1)
+    CHECK_THAT (f.lo[indexOf (Target::violetLevel)], WithinAbs (0.3 * 0.5 * (1.0 - 0.5 * 0.35), 1.0e-6));
+    CHECK_THAT (f.hi[indexOf (Target::violetLevel)], WithinAbs (0.3 * 1.5, 1.0e-6));
+    // Strike: Storm ± 1 at 0.6
+    CHECK_THAT (f.lo[indexOf (Target::excite)], WithinAbs (0.4, 1.0e-6));
+    CHECK_THAT (f.hi[indexOf (Target::excite)], WithinAbs (1.6, 1.0e-6));
     // the cut: Activity 0 … 1 at 0.3 → up to 0.9 octaves
     CHECK_THAT (f.lo[indexOf (Target::eq4Freq)], WithinRel (2000.0, 1.0e-6));
     CHECK_THAT (f.hi[indexOf (Target::eq4Freq)], WithinRel (2000.0 * std::exp2 (0.9), 1.0e-5));
@@ -591,19 +741,26 @@ TEST_CASE ("ModMatrix: the reachable range of every target, for the rings", "[mo
     // Breath's range follows its knob
     k.breath = 1.0;
     const auto full = evaluated (defaultDepths(), sourcesOf (k), b);
-    CHECK_THAT (full.amountLo[indexOf (Destination::redLevel)], WithinAbs (-0.95, 1.0e-6));
+    CHECK_THAT (full.amountLo[indexOf (Destination::redLevel)], WithinAbs (-0.35, 1.0e-6));
 
-    // a negative base turns the ends around: lo ≤ hi always
+    // an add route around a negative gain: lo ≤ hi
     Depths d;
     d.set (Source::lfo1, Destination::eqLowGain, 0.5f);
     b[Target::eq1Gain] = -6.0f;
     const auto g = evaluated (d, SourceValues {}, b);
-    CHECK_THAT (g.lo[indexOf (Target::eq1Gain)], WithinAbs (-9.0, 1.0e-5));
-    CHECK_THAT (g.hi[indexOf (Target::eq1Gain)], WithinAbs (-3.0, 1.0e-5));
+    CHECK_THAT (g.lo[indexOf (Target::eq1Gain)], WithinAbs (-12.0, 1.0e-5));
+    CHECK_THAT (g.hi[indexOf (Target::eq1Gain)], WithinAbs (0.0, 1.0e-5));
     CHECK_THAT (g[Target::eq1Gain], WithinULP (-6.0f, 0));   // LFO at 0 now
+
+    // a mul route pushing down: the range turns around (lo from the source's top)
+    Depths m;
+    m.set (Source::envelope, Destination::chorusMix, -1.0f);
+    const auto h = evaluated (m, SourceValues {}, b);
+    CHECK_THAT (h.lo[indexOf (Target::chMix)], WithinAbs (0.0, 1.0e-9));
+    CHECK_THAT (h.hi[indexOf (Target::chMix)], WithinAbs (0.25, 1.0e-6));
 }
 
-TEST_CASE ("ModMatrix: a new table glides, 1 per second, and never jumps", "[mod][.t4.2-red]")
+TEST_CASE ("ModMatrix: a new table glides, 1 per second, and never jumps", "[mod]")
 {
     ModMatrix m;
     m.reset (Depths {});
@@ -651,7 +808,7 @@ TEST_CASE ("ModMatrix: a new table glides, 1 per second, and never jumps", "[mod
     CHECK_THAT (m.depths().get (Source::storm, Destination::progression), WithinULP (0.6f, 0));
 }
 
-TEST_CASE ("ModMatrix: a non-finite source is ignored; a tick allocates nothing", "[mod][.t4.2-red]")
+TEST_CASE ("ModMatrix: a non-finite source is ignored; a tick allocates nothing", "[mod]")
 {
     Depths d = defaultDepths();
     d.set (Source::lfo1, Destination::width, 0.5f);
@@ -677,7 +834,7 @@ TEST_CASE ("ModMatrix: a non-finite source is ignored; a tick allocates nothing"
 //==================================================================================================
 // SlowLfo (red until the engine PR)
 //==================================================================================================
-TEST_CASE ("SlowLfo: sine and triangle, as the mockup draws them", "[mod][lfo][.t4.2-red]")
+TEST_CASE ("SlowLfo: sine and triangle, as the mockup draws them", "[mod][lfo]")
 {
     for (auto shape : { SlowLfo::Shape::sine, SlowLfo::Shape::triangle })
     {
@@ -699,7 +856,7 @@ TEST_CASE ("SlowLfo: sine and triangle, as the mockup draws them", "[mod][lfo][.
     }
 }
 
-TEST_CASE ("SlowLfo: the rate is clamped to 0.01 … 2 Hz; cycles are counted", "[mod][lfo][.t4.2-red]")
+TEST_CASE ("SlowLfo: the rate is clamped to 0.01 … 2 Hz; cycles are counted", "[mod][lfo]")
 {
     SlowLfo l;
     l.prepare (1, 0);
@@ -714,7 +871,7 @@ TEST_CASE ("SlowLfo: the rate is clamped to 0.01 … 2 Hz; cycles are counted", 
     CHECK_THAT (m.phase(), WithinAbs (0.185, 1.0e-9));
 }
 
-TEST_CASE ("SlowLfo: a rate change keeps the phase, so the output never jumps", "[mod][lfo][.t4.2-red]")
+TEST_CASE ("SlowLfo: a rate change keeps the phase, so the output never jumps", "[mod][lfo]")
 {
     auto l = makeLfo (SlowLfo::Shape::sine, 0.1);
     run (l, 300);
@@ -736,7 +893,7 @@ TEST_CASE ("SlowLfo: a rate change keeps the phase, so the output never jumps", 
     REQUIRE (peak > 0.99f);
 }
 
-TEST_CASE ("SlowLfo: the random shapes are seeded; smooth random is smooth, stepped random holds", "[mod][lfo][.t4.2-red]")
+TEST_CASE ("SlowLfo: the random shapes are seeded; smooth random is smooth, stepped random holds", "[mod][lfo]")
 {
     // the knots: −1 … 1, spread, the same for the same seed and stream
     float lo = 1.0f, hi = -1.0f;
@@ -798,7 +955,7 @@ TEST_CASE ("SlowLfo: the random shapes are seeded; smooth random is smooth, step
     REQUIRE (held > 1500);
 }
 
-TEST_CASE ("SlowLfo: every shape stays within −1 … 1; a shape change crossfades", "[mod][lfo][.t4.2-red]")
+TEST_CASE ("SlowLfo: every shape stays within −1 … 1; a shape change crossfades", "[mod][lfo]")
 {
     for (int sh = 0; sh < SlowLfo::kNumShapes; ++sh)
         for (double hz : { 0.01, 0.3, 2.0 })
@@ -830,7 +987,7 @@ TEST_CASE ("SlowLfo: every shape stays within −1 … 1; a shape change crossfa
     CHECK_THAT (l.value(), WithinAbs (SlowLfo::shapeAt (SlowLfo::Shape::steppedRandom, 0.5, 1, 0, l.cycle(), l.phase()), 1.0e-6));
 }
 
-TEST_CASE ("SlowLfo: the phase is double precision (a day at 0.0123 Hz)", "[mod][lfo][.t4.2-red]")
+TEST_CASE ("SlowLfo: the phase is double precision (a day at 0.0123 Hz)", "[mod][lfo]")
 {
     auto l = makeLfo (SlowLfo::Shape::triangle, 0.0123);
     for (int i = 0; i < 8640000; ++i)   // 24 h of ticks: 1062.72 cycles
@@ -839,7 +996,7 @@ TEST_CASE ("SlowLfo: the phase is double precision (a day at 0.0123 Hz)", "[mod]
     CHECK_THAT (l.phase(), WithinAbs (0.72, 1.0e-6));
 }
 
-TEST_CASE ("SlowLfo: set every block, ticked on the grid, it is the same at any block size", "[mod][lfo][.t4.2-red]")
+TEST_CASE ("SlowLfo: set every block, ticked on the grid, it is the same at any block size", "[mod][lfo]")
 {
     // The engine sets the rate and the shape every block (the same values) and ticks on the sky's
     // absolute grid (480 samples at 48 kHz). Neither may restart the phase or the fade.
@@ -876,7 +1033,7 @@ TEST_CASE ("SlowLfo: set every block, ticked on the grid, it is the same at any 
 //==================================================================================================
 // Envelope (red until the engine PR)
 //==================================================================================================
-TEST_CASE ("Envelope: attack, decay, a 1.2 s hold, release (Fire)", "[mod][env][.t4.2-red]")
+TEST_CASE ("Envelope: attack, decay, a 1.2 s hold, release (Fire)", "[mod][env]")
 {
     auto e = makeEnv (Envelope::Trigger::fire);
     e.fire();
@@ -912,7 +1069,7 @@ TEST_CASE ("Envelope: attack, decay, a 1.2 s hold, release (Fire)", "[mod][env][
     REQUIRE_THAT (firedAt (5), WithinAbs (0.5, 1.0e-12));
 }
 
-TEST_CASE ("Envelope: a note holds sustain while down; let go early, it releases from where it is", "[mod][env][.t4.2-red]")
+TEST_CASE ("Envelope: a note holds sustain while down; let go early, it releases from where it is", "[mod][env]")
 {
     auto e = makeEnv (Envelope::Trigger::note);
     e.noteOn (60);
@@ -948,7 +1105,7 @@ TEST_CASE ("Envelope: a note holds sustain while down; let go early, it releases
     CHECK_THAT (early.value(), WithinAbs (0.125, 1.0e-5));
 }
 
-TEST_CASE ("Envelope: Onset, Note or Fire only; Fire fires in every mode; an onset holds 1.2 s", "[mod][env][.t4.2-red]")
+TEST_CASE ("Envelope: Onset, Note or Fire only; Fire fires in every mode; an onset holds 1.2 s", "[mod][env]")
 {
     using T = Envelope::Trigger;
     constexpr int kOnset = 0, kNote = 1, kFire = 2;
@@ -981,7 +1138,7 @@ TEST_CASE ("Envelope: Onset, Note or Fire only; Fire fires in every mode; an ons
     CHECK (n.stage() == Envelope::Stage::release);
 }
 
-TEST_CASE ("Envelope: a retrigger rises from where it is and restarts the hold; notes overlap", "[mod][env][.t4.2-red]")
+TEST_CASE ("Envelope: a retrigger rises from where it is and restarts the hold; notes overlap", "[mod][env]")
 {
     // in the release (0.125 at tick 165): the attack starts from there, never from 0
     auto e = makeEnv (Envelope::Trigger::fire);
@@ -1031,7 +1188,7 @@ TEST_CASE ("Envelope: a retrigger rises from where it is and restarts the hold; 
     CHECK (n.stage() == Envelope::Stage::release);
 }
 
-TEST_CASE ("Envelope: events wait for the next tick; the same onsets and notes give the same output at any block size", "[mod][env][.t4.2-red]")
+TEST_CASE ("Envelope: events wait for the next tick; the same onsets and notes give the same output at any block size", "[mod][env]")
 {
     auto e = makeEnv (Envelope::Trigger::fire);
     e.fire();
@@ -1087,7 +1244,7 @@ TEST_CASE ("Envelope: events wait for the next tick; the same onsets and notes g
     CHECK (a[314] < a[313]);
 }
 
-TEST_CASE ("Envelope: times clamp to 10 ms … 10 s, the sustain to 0 … 1", "[mod][env][.t4.2-red]")
+TEST_CASE ("Envelope: times clamp to 10 ms … 10 s, the sustain to 0 … 1", "[mod][env]")
 {
     Envelope e;
     e.reset();

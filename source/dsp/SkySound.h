@@ -54,12 +54,16 @@ public:
         double gainSlewSeconds = 2.0;                     ///< colour → gain (rule 4: ≥ 2 s)
         double crossfadeSeconds = 12.0;                   ///< the bed moves to a new chord's bank
         double width = 0.9;                               ///< stereo width of the dome azimuth
-        double breathDepth = 0.0;                         ///< 0…1: the Breath macro (T3.6 first pass)
     };
 
-    /** Breath (spec/05 §4): 5 cycles a minute on the layer gains, evaluated on the tick grid so it
-        is the same at every block size. The full level/brightness cycle is T3.4. */
+    /** Breath (spec/05 §4): 5 cycles a minute, evaluated on the tick grid so it is the same at every
+        block size. Since T4.2 the cycle is a source of the modulation grid (the Breath macro's
+        routes move the layer levels); SkySound only keeps the clock. */
     static constexpr double kBreathHz = 5.0 / 60.0;
+
+    /** The breath cycle at sky tick `tick` (1 = the first after prepare), ½ − ½cos: what
+        breathCycle() reads once that tick has run. */
+    static double breathCycleAt (uint64_t tick) noexcept;
 
     static constexpr double kDampT60 = 3.0;               ///< s: an urgent change damps the old bank
     static constexpr int kRevoiceStillTicks = 30;         ///< 300 ms: a band change waits until it is still
@@ -92,6 +96,16 @@ public:
     /** Audio thread: steps the sky through `runtime` and renders its sound into left and right
         (overwrites). */
     void process (sky::SkyRuntime& runtime, float* left, float* right, int numSamples) noexcept;
+
+    /** The same, for a listener that wraps this one (the Instrument, T4.2: it evaluates the
+        modulation grid before each tick and runs the effects after each tick segment). Set the
+        block's output, run the runtime with the wrapper, and forward each tick and segment. */
+    void setOutput (float* left, float* right) noexcept           { outLeft = left; outRight = right; }
+    void tick (const sky::SkyModel& model, std::span<const sky::SkyEvent> events, int tickSamples) noexcept
+    {
+        skyTicked (model, events, tickSamples);
+    }
+    void render (int offset, int numSamples) noexcept             { renderSamples (offset, numSamples); }
 
     /** Audio thread, between blocks: asks for a chord. Taken on a tick when the banks allow (see the
         class comment). The progression asks by itself once `harmony()` is configured. */

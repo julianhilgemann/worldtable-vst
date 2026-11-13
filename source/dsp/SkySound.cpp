@@ -123,6 +123,12 @@ int SkySound::note (int bank, Layer layer, int voice) const noexcept
     return notes[static_cast<size_t> (bank)][static_cast<size_t> (layer)][static_cast<size_t> (voice)];
 }
 
+double SkySound::breathCycleAt (uint64_t tick) noexcept
+{
+    const double realS = static_cast<double> (tick) * Exciter::kTickSeconds;
+    return 0.5 - 0.5 * std::cos (2.0 * kPi * kBreathHz * realS);
+}
+
 double SkySound::realSeconds() const noexcept
 {
     return static_cast<double> (tickCount) * Exciter::kTickSeconds;
@@ -282,10 +288,7 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
     exciter.tick (realS, sky.activity, brightness.data());
 
     const double gainK = 1.0 - std::exp (-kTick / s.gainSlewSeconds);
-    const double breathPhase = 2.0 * kPi * kBreathHz * realS;
-    breath01 = 0.5 - 0.5 * std::cos (breathPhase);
-    const double breath = 1.0 - 0.35 * s.breathDepth * breath01;
-    const double breathViolet = breath * (1.0 - 0.15 * s.breathDepth * breath01);
+    breath01 = breathCycleAt (tickCount);   // the Breath source (T4.2: its routes move s.level)
     std::array<double, kNumLayers> radius {}, norm {};
     for (size_t l = 0; l < kNumLayers; ++l)
     {
@@ -324,9 +327,8 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
                 return l == 0 ? nd[i].red : l == 1 ? nd[i].green : nd[i].violet;
             };
             // √colour: a storm is brighter and wider, not 25 dB louder (auto-gain does the rest).
-            // Breath (T3.6) moves all three layers a little, the violet ones a little more.
-            const double target = s.level[li] * std::sqrt (colour (i0) + (colour (i1) - colour (i0)) * f) * presence[vi]
-                                * (l == 2 ? breathViolet : breath);
+            // The level arrives modulated (T4.2: Breath's routes, Glow's on violet).
+            const double target = s.level[li] * std::sqrt (colour (i0) + (colour (i1) - colour (i0)) * f) * presence[vi];
             gain[gi] += (target - gain[gi]) * gainK;
             const double g = gain[gi] * preGain;
             const double cents = s.detuneCents * (y / kDisplacementForFullDetuneKm)

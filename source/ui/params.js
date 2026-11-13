@@ -508,15 +508,6 @@ window.WT_PARAMS = {
     "default": 0,
     "skew": 1.0
   },
-  "eq_sky": {
-    "name": "EQ Sky",
-    "type": "float",
-    "group": "eq",
-    "min": 0,
-    "max": 1,
-    "default": 0.3,
-    "skew": 1.0
-  },
   "ph_rate": {
     "name": "Phaser Rate",
     "type": "float",
@@ -698,6 +689,100 @@ window.WT_PARAMS = {
     "max": 1,
     "default": 0.35,
     "skew": 1.0
+  },
+  "lfo1_rate": {
+    "name": "LFO 1 Rate",
+    "type": "float",
+    "group": "motion",
+    "min": 0.01,
+    "max": 2,
+    "default": 0.12,
+    "skew": 0.254053106,
+    "unit": "Hz"
+  },
+  "lfo1_shape": {
+    "name": "LFO 1 Shape",
+    "type": "choice",
+    "group": "motion",
+    "choices": [
+      "Sine",
+      "Triangle",
+      "Smooth Random",
+      "Stepped Random"
+    ],
+    "default": 0
+  },
+  "lfo2_rate": {
+    "name": "LFO 2 Rate",
+    "type": "float",
+    "group": "motion",
+    "min": 0.01,
+    "max": 2,
+    "default": 0.03,
+    "skew": 0.254053106,
+    "unit": "Hz"
+  },
+  "lfo2_shape": {
+    "name": "LFO 2 Shape",
+    "type": "choice",
+    "group": "motion",
+    "choices": [
+      "Sine",
+      "Triangle",
+      "Smooth Random",
+      "Stepped Random"
+    ],
+    "default": 2
+  },
+  "env_attack": {
+    "name": "Env Attack",
+    "type": "float",
+    "group": "motion",
+    "min": 0.01,
+    "max": 10,
+    "default": 0.1,
+    "skew": 0.199595039,
+    "unit": "s"
+  },
+  "env_decay": {
+    "name": "Env Decay",
+    "type": "float",
+    "group": "motion",
+    "min": 0.01,
+    "max": 10,
+    "default": 0.6,
+    "skew": 0.199595039,
+    "unit": "s"
+  },
+  "env_sustain": {
+    "name": "Env Sustain",
+    "type": "float",
+    "group": "motion",
+    "min": 0,
+    "max": 1,
+    "default": 0.35,
+    "skew": 1.0
+  },
+  "env_release": {
+    "name": "Env Release",
+    "type": "float",
+    "group": "motion",
+    "min": 0.01,
+    "max": 10,
+    "default": 1.5,
+    "skew": 0.199595039,
+    "unit": "s"
+  },
+  "env_trigger": {
+    "name": "Env Trigger",
+    "type": "choice",
+    "group": "motion",
+    "choices": [
+      "Onset",
+      "Note",
+      "Fire only"
+    ],
+    "default": 0
   },
   "lim_ceiling": {
     "name": "Limiter Ceiling",

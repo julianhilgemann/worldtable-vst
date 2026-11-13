@@ -230,7 +230,7 @@ const char* const layoutProbe = R"JS(JSON.stringify((function () {
     });
   };
   [].forEach.call(document.querySelectorAll('.more-btn[aria-controls]'), function (btn) {
-    var panel = document.getElementById(btn.getAttribute('aria-controls')), id = btn.closest('.module').id;
+    var panel = document.getElementById(btn.getAttribute('aria-controls')), id = btn.closest('.module, #macros').id;
     out.moreCount++;
     if (!panel || !panel.hidden) { out.more.push(id + ' not closed'); return; }
     btn.click();
@@ -282,12 +282,11 @@ const char* const eqProbe = R"JS(JSON.stringify((function () {
   for (var i = 3; i < px.length; i += 4) if (px[i] > 0) lit++;
   out.drawn = Math.round(lit / (px.length / 4) * 1000) / 1000;
   out.size = [cv.clientWidth, cv.clientHeight, cv.width, cv.height];
-  var ids = ['eq1_drive', 'eq2_freq', 'eq2_gain', 'eq3_q', 'eq4_freq', 'eq_sky'];
+  var ids = ['eq1_drive', 'eq2_freq', 'eq2_gain', 'eq3_q', 'eq4_freq'];
   var saved = { eq2_q: WT.get('eq2_q') };
   ids.forEach(function (id) { saved[id] = WT.get(id); });
   window.__eqSaved = saved;
   UI.commit('eq4_freq', 6500);   // a cut below the top, so the sky's reach is drawn
-  UI.commit('eq_sky', 0.3);
   var ev = function (type, x, y) {
     cv.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, button: 0,
                                               buttons: type === 'pointerup' ? 0 : 1, isPrimary: true, pointerType: 'mouse' }));
@@ -314,12 +313,6 @@ const char* const eqProbe = R"JS(JSON.stringify((function () {
   pull(c, 0, -11);
   out.bar = Math.round(WT.get('eq1_drive') * 1000) / 1000;
   if (!near(WT.get('eq1_drive'), 12 / c.bh, 0.02)) out.bad.push('bar');
-  // the sky's reach: its end 20 px to the left
-  var s = UI.eq.at('sky'), s0 = WT.get('eq_sky');
-  pull(s, -20, 0);
-  var sx = s0 - 20 / s.w * Math.log2(1000) / 3;
-  out.sky = [s0, Math.round(WT.get('eq_sky') * 1000) / 1000, Math.round(sx * 1000) / 1000];
-  if (!near(WT.get('eq_sky'), sx, 0.01)) out.bad.push('sky');
   // the keys on a dot: up and down move the gain, left and right the frequency, ] the width
   var dot = document.querySelector('[data-param="eq2_freq"]'), key = function (k) {
     document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
@@ -791,10 +784,10 @@ int main (int argc, char* argv[])
              && static_cast<double> (parsedEq["drawn"]) > 0.05;
     juce::String eqCpp;
     {
-        const char* const ids[] = { "eq1_drive", "eq2_freq", "eq2_gain", "eq3_q", "eq4_freq", "eq_sky" };
+        const char* const ids[] = { "eq1_drive", "eq2_freq", "eq2_gain", "eq3_q", "eq4_freq" };   // T4.2: eq_sky went
         const auto* after = parsedEq["after"].getArray();
-        eqOk = eqOk && after != nullptr && after->size() == 6;
-        for (int i = 0; eqOk && i < 6; ++i)
+        eqOk = eqOk && after != nullptr && after->size() == 5;
+        for (int i = 0; eqOk && i < 5; ++i)
         {
             const double inCpp = cpp (ids[i]), inJs = (*after)[i];
             eqCpp << (i ? ", " : "") << ids[i] << " " << inCpp;

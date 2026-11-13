@@ -18,8 +18,8 @@ namespace worldtable::dsp::mod
     The output is −1 … 1.
 
     The phase is double precision: at 0.01 Hz it doesn't drift over days. A rate change keeps the
-    phase, so the output never jumps. A shape change crossfades from the old shape to the new one
-    over kShapeFadeSeconds. setShape() with the shape it already has does nothing, and so does
+    phase, so the output never jumps. A shape change crossfades from the value heard at the change to
+    the new shape over kShapeFadeSeconds (a change during a fade starts from where the fade was). setShape() with the shape it already has does nothing, and so does
     setRate() with its rate: the engine sets both every block.
 
     Seeded (rule 5): the knots depend only on (seed, stream, cycle index). LFO 1 and LFO 2 are two
@@ -85,8 +85,9 @@ private:
     double hz = 0.1;
     double position = 0.0;     ///< 0 … 1
     uint64_t cycles = 0;
-    Shape current = Shape::sine, previous = Shape::sine;
-    double fade = 1.0;         ///< 0 … 1 from `previous` to `current`
+    Shape current = Shape::sine;
+    double fade = 1.0;         ///< 0 … 1 from `fadeFrom` to `current`
+    float fadeFrom = 0.0f;     ///< the value heard when the shape changed
     float out = 0.0f;
 };
 

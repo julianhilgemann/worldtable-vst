@@ -56,7 +56,6 @@
     lim_ceiling: (v) => v.toFixed(1) + " dB",
     master: (v) => (v <= -59.9 ? "−∞" : v.toFixed(1) + " dB"),
     eq4_freq: (v) => (v >= 19980 ? "open" : WT.fmt("eq4_freq", v)),   // the engine opens the cut from 19.98 kHz (Eq::isOpen)
-    eq_sky: (v) => (v < 0.005 ? "still" : "+" + (3 * v).toFixed(1) + " oct"),
     play_velocity: (v) => (v < 0.005 ? "fixed" : Math.round(v * 30) + " dB"),
     play_drone: (v) => (v < 0.005 ? "off" : Math.round(v * 100) + " %"),
   };
@@ -73,13 +72,13 @@
   const WORDS = {
     macro_storm: NEUTRAL, macro_glow: NEUTRAL, macro_space: NEUTRAL, macro_drift: NEUTRAL, macro_breath: { off: 0 },
     progression: { hold: 0, "follow sky": 1, follow: 1 }, play_velocity: { fixed: 0 }, play_drone: { off: 0 },
-    eq4_freq: { open: 20000 }, eq_sky: { still: 0 }, master: { "-∞": -60, "∞": -60, "-inf": -60, inf: -60 },
+    eq4_freq: { open: 20000 }, master: { "-∞": -60, "∞": -60, "-inf": -60, inf: -60 },
   };
   for (const id of ["eq1_drive", "eq2_drive", "eq3_drive", "eq4_drive"]) WORDS[id] = { off: 0 };
   const signedFrom = (n) => 0.5 + n / 200;
   const PARSE = {
     macro_storm: signedFrom, macro_glow: signedFrom, macro_space: signedFrom, macro_drift: signedFrom,
-    play_velocity: (n) => n / 30, eq_sky: (n) => n / 3,
+    play_velocity: (n) => n / 30,
   };
   UI.parse = function (id, text) {
     const m = WT.META[id];
@@ -153,7 +152,15 @@
     eq3_drive: "Saturates only what the upper bell holds.",
     eq4_freq: "Cuts the highs above this, 12 dB per octave. At the top it is open.",
     eq4_drive: "Saturates only the octave just under the cut.",
-    eq_sky: "How far the sky's activity opens the cut, up to three octaves.",
+    lfo1_rate: "How fast LFO 1 cycles, 0.01 to 2 times a second.",
+    lfo1_shape: "LFO 1's shape: sine, triangle, smooth random or stepped random.",
+    lfo2_rate: "How fast LFO 2 cycles, 0.01 to 2 times a second.",
+    lfo2_shape: "LFO 2's shape: sine, triangle, smooth random or stepped random.",
+    env_attack: "The envelope's rise to its peak.",
+    env_decay: "The envelope's fall from the peak to the sustain.",
+    env_sustain: "Where the envelope holds: while a key is down, or 1.2 s after an onset or Fire.",
+    env_release: "The envelope's fall back to zero.",
+    env_trigger: "What fires the envelope: a substorm onset, a MIDI note, or only the Fire button.",
     ph_rate: "How fast the phaser's notches travel.",
     ph_depth: "How far the notches sweep: the bar under the picture. Drag sideways in it.",
     ph_feedback: "Feedback: sharper, more resonant notches.",

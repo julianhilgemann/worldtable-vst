@@ -185,7 +185,7 @@
       const act = s.activity, breath = 0.5 - 0.5 * Math.cos(2 * Math.PI * (5 / 60) * r);
       const level = 0.14 + 0.22 * act + 0.05 * Math.sin(r * 0.7);
       const playing = WT.get("play") ? playDemo(r) : null;
-      const cut = WT.get("eq4_freq") * Math.pow(2, WT.get("eq_sky") * 3 * Math.min(1, act));   // T3.9: the sky opens the EQ's cut
+      const cut = Math.min(20000, WT.get("eq4_freq") * Math.pow(2, 0.3 * 3 * Math.min(1, act)));   // T4.2: the default route Activity → Cut
       const eqCutHz = cut >= 19980 ? 20000 : cut;
       return {
         play: { mix: playing ? 1 : 0, voices: playing ? playing.voices : [] },

@@ -15,6 +15,24 @@ params::ParamPointers& bound (params::ParamPointers& pp, juce::AudioProcessorVal
 }
 
 const juce::Identifier kDayId { "day" }, kSpeedId { "speed" }, kFrozenId { "frozen" }, kLoopId { "loop" }, kUtcId { "utc" };
+const juce::Identifier kSourceId { "source" }, kDestinationId { "destination" }, kDepthId { "depth" };
+const juce::Identifier kParamType { "PARAM" }, kParamIdId { "id" }, kParamValueId { "value" };
+
+int sourceIndexOf (const juce::String& key) noexcept
+{
+    for (size_t i = 0; i < dsp::mod::kSources.size(); ++i)
+        if (key == dsp::mod::kSources[i].key)
+            return static_cast<int> (i);
+    return -1;
+}
+
+int destinationIndexOf (const juce::String& key) noexcept
+{
+    for (size_t i = 0; i < dsp::mod::kDestinations.size(); ++i)
+        if (key == dsp::mod::kDestinations[i].key)
+            return static_cast<int> (i);
+    return -1;
+}
 } // namespace
 
 //==============================================================================
@@ -69,6 +87,42 @@ JourneyState JourneyState::fromTree (const juce::ValueTree& t)
 }
 
 //==============================================================================
+juce::ValueTree PluginProcessor::modulationToTree (const dsp::mod::Depths& d)
+{
+    juce::ValueTree t (kModulationType);
+    for (size_t s = 0; s < dsp::mod::kSources.size(); ++s)
+        for (size_t c = 0; c < dsp::mod::kDestinations.size(); ++c)
+        {
+            const float depth = d.cells[s][c];
+            if (! (std::abs (depth) > 0.0f))
+                continue;
+            juce::ValueTree r (kRouteType);
+            r.setProperty (kSourceId, juce::String (dsp::mod::kSources[s].key), nullptr);
+            r.setProperty (kDestinationId, juce::String (dsp::mod::kDestinations[c].key), nullptr);
+            r.setProperty (kDepthId, static_cast<double> (depth), nullptr);
+            t.appendChild (r, nullptr);
+        }
+    return t;
+}
+
+dsp::mod::Depths PluginProcessor::modulationFromTree (const juce::ValueTree& t)
+{
+    dsp::mod::Depths d;
+    for (const auto& r : t)
+    {
+        if (! r.hasType (kRouteType))
+            continue;
+        const int s = sourceIndexOf (r.getProperty (kSourceId).toString());
+        const int c = destinationIndexOf (r.getProperty (kDestinationId).toString());
+        if (s < 0 || c < 0)
+            continue;   // a key this build doesn't know: skipped
+        d.set (static_cast<dsp::mod::Source> (s), static_cast<dsp::mod::Destination> (c),
+               static_cast<float> (static_cast<double> (r.getProperty (kDepthId, 0.0))));
+    }
+    return d;
+}
+
+//==============================================================================
 
 PluginProcessor::PluginProcessor (bool networkEnabled)
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
@@ -110,7 +164,21 @@ juce::ValueTree PluginProcessor::migrateState (juce::ValueTree state)
     // loads flat with the cut open and the default drives.
     // v4 → v5 (T6.9): the `journey` child (day, speed, frozen, loop, model time). An older state
     // has none, so the Journey restores to its defaults (JourneyState::fromTree of nothing): the
-    // storm day from 17:20 UT at 24×, running, no loop. Future upgrades go here.
+    // storm day from 17:20 UT at 24×, running, no loop.
+    // v5 → v6 (T4.2): the modulation grid. The macros' hard-wiring became the default grid (the
+    // `modulation` child) and eq_sky became its route Activity → Cut: an older state gets the
+    // default grid with its eq_sky as that depth (0.3 if it has none), and eq_sky goes. Future
+    // upgrades go here.
+    if (version < 6 && ! state.getChildWithName (kModulationType).isValid())
+    {
+        auto grid = dsp::mod::defaultDepths();
+        const auto sky = state.getChildWithProperty (kParamIdId, "eq_sky");
+        if (sky.isValid() && sky.hasType (kParamType))
+            grid.set (dsp::mod::Source::activity, dsp::mod::Destination::eqCut,
+                      static_cast<float> (static_cast<double> (sky.getProperty (kParamValueId, 0.3))));
+        state.removeChild (sky, nullptr);
+        state.appendChild (modulationToTree (grid), nullptr);
+    }
     state.setProperty (kStateVersionId, kStateVersion, nullptr);
     return state;
 }
@@ -149,6 +217,8 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto state = apvts.copyState();
     state.removeChild (state.getChildWithName (kJourneyType), nullptr);
     state.appendChild (getJourney().toTree(), nullptr);
+    state.removeChild (state.getChildWithName (kModulationType), nullptr);
+    state.appendChild (modulationToTree (getModulation()), nullptr);
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -167,7 +237,11 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     const auto saved = migrated.getChildWithName (kJourneyType);
     const auto restored = JourneyState::fromTree (saved);
     migrated.removeChild (saved, nullptr);   // the APVTS keeps parameters only
+    const auto grid = migrated.getChildWithName (kModulationType);
+    const auto depths = grid.isValid() ? modulationFromTree (grid) : dsp::mod::defaultDepths();
+    migrated.removeChild (grid, nullptr);
     apvts.replaceState (migrated);
+    storeModulation (depths, false);   // the host set it: nothing to tell it
 
     // A day loads on the message thread (SkyFeed allocates and the editor reads its chart there).
     // From another thread the restore waits for it; until then getJourney() reports it.
@@ -268,6 +342,50 @@ JourneyState PluginProcessor::getJourney() const
     if (! restorePending)
         s.utc = skyRuntime.modelTimeNow();
     return s;
+}
+
+//==============================================================================
+dsp::mod::Depths PluginProcessor::getModulation() const
+{
+    const juce::ScopedLock sl (modLock);
+    return modDepths;
+}
+
+void PluginProcessor::setModulation (const dsp::mod::Depths& depths)
+{
+    storeModulation (depths, true);
+}
+
+void PluginProcessor::setRoute (dsp::mod::Source source, dsp::mod::Destination destination, float depth)
+{
+    auto d = getModulation();
+    d.set (source, destination, depth);
+    storeModulation (d, true);
+}
+
+void PluginProcessor::storeModulation (const dsp::mod::Depths& depths, bool notifyHost)
+{
+    {
+        const juce::ScopedLock sl (modLock);
+        modDepths = depths;
+        // The audio thread holds a slot only while it copies one (Instrument::process), and an
+        // unconsumed pending slot is reclaimed, so a free slot is there at once.
+        auto& exchange = instrument.depthsExchange();
+        for (int tries = 0; tries < 1000; ++tries)
+        {
+            const int slot = exchange.acquireForWriting();
+            if (slot >= 0)
+            {
+                exchange.slot (slot) = depths;
+                exchange.publish (slot);
+                break;
+            }
+            juce::Thread::yield();
+        }
+        modRevision.fetch_add (1, std::memory_order_acq_rel);
+    }
+    if (notifyHost)
+        updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
 bool PluginProcessor::journeyEnded() const

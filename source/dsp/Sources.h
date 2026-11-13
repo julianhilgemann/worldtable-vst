@@ -20,9 +20,11 @@ class ScopeFifo;   // dsp/Instrument.h
     LowResonator ─────────────────┘
     ```
     It is SkySound's companion, so it runs on the sky's clock: per tick it reads the curtain (pan,
-    presence, displacement, emission) for the played notes, the bass note for the low resonator
-    and the activity for the EQ's high cut; per tick segment it mixes and equalises in place. That
-    keeps Play mode and the EQ as block-size independent as the curtain (rule 5).
+    presence, displacement, emission) for the played notes and the bass note for the low resonator;
+    per tick segment it mixes and equalises in place. That keeps Play mode and the EQ as block-size
+    independent as the curtain (rule 5). The activity slew is the modulation grid's Activity source
+    (T4.2): the Instrument advances it before each tick (slewActivity), so the grid hears this
+    tick's activity; the EQ's cut arrives already modulated (the route Activity → Cut).
 
     Mode: `play` glides a mix from drone to Play over kModeSeconds (rule 4). The drone gain goes to
     `droneUnder` in Play mode; the low resonator follows the chord root (drone) or the lowest held
@@ -34,8 +36,8 @@ class Sources final : public SkySound::Companion
 {
 public:
     static constexpr double kModeSeconds = 2.0;          ///< drone ↔ Play
-    static constexpr double kSkySlewSeconds = 2.0;       ///< the activity the high cut and bow follow
-    static constexpr double kEqSkyOctaves = 3.0;         ///< the cut opens by this at Sky 1 and activity 1
+    static constexpr double kSkySlewSeconds = 2.0;       ///< the activity (the grid's Activity, the bow)
+    static constexpr double kMaxLevel = 2.0;             ///< the low level's modulated top (T4.2: +6 dB)
     static constexpr double kLowDroneCrossfade = 4.0;    ///< s, to a new chord root
     static constexpr double kBowPerBed = 2.7;            ///< a held note is bowed harder than the bed
     static constexpr double kLowBowPerBed = 1.4;         ///< the low under held notes (T3.7 renders)
@@ -47,12 +49,11 @@ public:
         bool play = false;
         double droneUnder = 0.0;          ///< the drone's level in Play mode
         PlayVoices::Settings voices;      ///< bow and strike are set from `bed` and `strike` below
-        double bed = 0.3, strike = 1.0;   ///< the exciter's (Storm-scaled), for the notes and the low
+        double bed = 0.3, strike = 1.0;   ///< the exciter's (× Strike, T4.2), for the notes and the low
         double detuneCents = 3.0, driftCents = 4.0;
-        double lowLevel = 0.5;
+        double lowLevel = 0.5;            ///< 0 … kMaxLevel (modulated)
         LowResonator::Settings low;
-        Eq::Settings eq;
-        double eqSky = 0.3;               ///< 0 … 1: how far the activity opens the high cut
+        Eq::Settings eq;                  ///< gains, the cut and the drives modulated (T4.2)
     };
 
     void prepare (double sampleRate, uint32_t seed, const Settings&) noexcept;
@@ -71,6 +72,10 @@ public:
     void sustain (bool down) noexcept   { voices.sustain (down); }
     void allNotesOff() noexcept         { voices.allNotesOff(); }
     void allSoundOff() noexcept         { voices.allSoundOff(); }
+
+    /** Before each tick (the Instrument, T4.2): the sky's activity, slewed ≥ 2 s (rule 4) over this
+        tick's length. The grid's Activity source reads it (skyActivity()), the bow follows it. */
+    void slewActivity (const sky::SkyModel&, int tickSamples) noexcept;
 
     //== SkySound::Companion =========================================================================
     void skyTicked (const sky::SkyModel&, std::span<const sky::SkyEvent>, const SkySound&, int tickSamples) noexcept override;

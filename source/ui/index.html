@@ -212,9 +212,26 @@
         </div>
       </div>
 
-      <!-- the centre block: the macros alone until T4.2 adds the LFO and the envelope -->
+      <!-- the centre block: the macros alone until T4.2 adds the LFO and the envelope panels; their
+           parameters sit under Macros' More meanwhile (T4.2 engine PR) -->
       <div id="macros" class="frame">
-        <div class="head"><span class="cap">Macros</span><span class="note">point at one to see what it moves</span></div>
+        <div class="head">
+          <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="motion-more" data-hint="More: the two LFOs and the envelope, sources of the modulation grid.">Macros</button>
+          <div class="more frame" id="motion-more" aria-label="LFOs and envelope" hidden>
+            <div class="knobs">
+              <div data-knob="lfo1_rate" data-label="LFO 1"></div>
+              <div data-knob="lfo2_rate" data-label="LFO 2"></div>
+              <div data-knob="env_attack" data-label="Attack"></div>
+              <div data-knob="env_decay" data-label="Decay"></div>
+              <div data-knob="env_sustain" data-label="Sustain"></div>
+              <div data-knob="env_release" data-label="Release"></div>
+            </div>
+            <div class="choice-line"><span class="cap">LFO 1</span><div data-seg="lfo1_shape"></div></div>
+            <div class="choice-line"><span class="cap">LFO 2</span><div data-seg="lfo2_shape"></div></div>
+            <div class="choice-line"><span class="cap">Fires on</span><div data-seg="env_trigger"></div></div>
+          </div>
+          <span class="note">point at one to see what it moves</span>
+        </div>
         <div class="macro-row">
           <div data-knob="macro_storm" data-label="Storm" data-size="macro"></div>
           <div data-knob="macro_breath" data-label="Breath" data-size="macro"></div>

@@ -95,14 +95,19 @@ public:
 
 private:
     Settings settings;
+    void startRelease() noexcept;
+    bool anyKey() const noexcept { return (keys[0] | keys[1]) != 0; }
+
     Stage now = Stage::idle;
     float out = 0.0f;
+    double level = 0.0;                 ///< the value in double precision (out is its float)
     double f = 0.0;                     ///< progress through decay or release
     double releaseFrom = 0.0;           ///< v₀
     int holdTicks = 0;                  ///< ticks of the timed hold done
     bool stageDone = false;             ///< the stage ended on the last tick: the next one starts
     bool heldByNote = false;            ///< the gate is a key (Note mode), not the timed hold
     bool firePending = false;           ///< a trigger arrived since the last tick
+    bool fireByNote = false;            ///< … and it was a note (the gate is the key)
     bool releasePending = false;        ///< the last key went up since the last tick
     std::array<uint64_t, 2> keys {};    ///< the keys down, one bit per note
 };
