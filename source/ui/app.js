@@ -24,7 +24,8 @@
   // ---------------------------------------------------------------- controls
   const knobs = (UI.knobs = {});
   for (const n of document.querySelectorAll("[data-knob]")) {
-    const k = UI.Knob(n, n.dataset.knob, n.dataset.label || "", { size: n.dataset.size, color: n.dataset.color });
+    // data-view: a second view of a parameter bound elsewhere (T6.11's band row Level)
+    const k = UI.Knob(n, n.dataset.knob, n.dataset.label || "", { size: n.dataset.size, color: n.dataset.color, view: n.hasAttribute("data-view"), hint: n.dataset.hint });
     if (k) knobs[n.dataset.knob] = k;
   }
   for (const n of document.querySelectorAll("[data-seg]")) UI.Seg(n, n.dataset.seg, n.dataset.labels ? n.dataset.labels.split(",") : null);
@@ -51,6 +52,7 @@
   $("stage").addEventListener("pointerleave", () => showHint(document.activeElement));
   document.addEventListener("focusin", (e) => showHint(e.target));
   showHint(null);
+  UI.showHint = showHint;   // for pictures whose hint follows the pointer (T6.11)
 
   // ---------------------------------------------------------------- macro rings (T6.7)
   // The macros are hard-wired until T4.2: each scales what it moves around its neutral 0.5
@@ -148,19 +150,23 @@
   if (hash.has("view")) viewPop.set(true);
 
   // ---------------------------------------------------------------- scaling
+  // The page fills the window (T6.13: the editor's window is Small, Medium or Large). In the browser
+  // mock the chosen size caps the zoom instead (`UI.sizeFactor`, set by menu.js).
   function rescale() {
-    UI.scale = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H);
+    UI.scale = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H, UI.sizeFactor || Infinity);
     UI.dpr = window.devicePixelRatio || 1;
     const x = (window.innerWidth - BASE_W * UI.scale) / 2, y = (window.innerHeight - BASE_H * UI.scale) / 2;
     $("stage").style.transform = `translate(${x}px, ${y}px) scale(${UI.scale})`;
   }
   window.addEventListener("resize", rescale);
+  UI.rescale = rescale;
   rescale();
 
   // ---------------------------------------------------------------- views
   const strip = UI.DayStripView($("cv-strip"));
-  const layers = UI.LayersView($("cv-layers"));
+  const res = (UI.res = UI.ResonatorDisplay($("resonators")));   // T6.11
   const keys = UI.KeyboardView($("cv-keys"));
+  const eq = (UI.eq = UI.EqView($("cv-eq"), $("eq-well"), $("eq-say")));   // T6.14; UI.eq for the UI check
   const fx = {
     // T6.12: the pictures are the effects' controls; the phaser's outline is shaped by the tone stage
     phaser: UI.PhaserView($("cv-phaser"), { handles, tone: (f, tel) => UI.eqDb(f, UI.eqParams(tel.eqCutHz), tel.sampleRate || 48000) }),
@@ -365,11 +371,8 @@
   }
 
   // ---------------------------------------------------------------- the day
-  const DAY_LABELS = {
-    "2024-05-10": "10–11 May 2024, Gannon storm (Kp 9)",
-    "2025-01-19": "19–20 Jan 2025, moderate, substorms",
-    "2025-01-25": "25–26 Jan 2025, quiet",
-  };
+  /** The day's name from the transport's list (T6.9: the plug-in sends it with the day). */
+  const dayLabel = (id) => (UI.dayLabel ? UI.dayLabel(id) : id);
   /** A live number in a fixed slot of w characters (mono), so nothing beside it moves when it changes. */
   const num = (text, w, tag = "b", cls = "") => `<${tag} class="num${cls ? " " + cls : ""}" style="--w:${w}">${text}</${tag}>`;
   const signed = (v, d) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d);
@@ -381,6 +384,7 @@
   let dayEvents = [];
 
   WT.on("day", (day) => {
+    if (S.day && S.day.day !== day.day) S.journeyFrom = undefined;   // T6.9: a new day, joined where it lands
     S.day = day;
     strip.setDay(day);
     stripBox.setAttribute("aria-valuemin", String(day.t0));
@@ -510,8 +514,6 @@
     const date = new Date(sky.utc * 1000);
     setHtml("ro-date", date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }));
     setHtml("ro-ut", `<b>${ut(sky.utc)}</b> UT`);
-    const frozen = (sky.speed || 0) < 0.01;
-    setHtml("mode", `<i></i>${frozen ? "Frozen" : "Journey"} <b id="mode-speed" class="num l" style="--w:4">${frozen ? "" : Math.round(sky.speed) + "×"}</b>`);
 
     // the Sky block: phase and how far through it; wind, Bz, Kp; energy against the release mark,
     // activity; the last thing that happened
@@ -539,11 +541,18 @@
     if (details.open) showJourney(sky);
   }
 
+  /** How long a whole day lasts at `speed`: 1 h at 24×, 6 min at 240×. */
+  const perDay = (speed) => { const m = 1440 / speed; return m >= 60 ? +(m / 60).toFixed(1) + " h" : Math.round(m) + " min"; };
   function showJourney(sky) {
     const day = S.day;
+    // T6.9: the transport's state, read-only here
+    const j = S.tel.journey || { speed: sky.speed, frozen: !(sky.speed > 0), loop: false, ended: false };
+    const run = j.speed || sky.speed || 0;
+    const state = (j.ended ? "the recording has ended" : j.frozen ? "frozen" : run > 1 ? perDay(run) + " of listening per day" : "real time")
+      + (j.loop ? ", looping" : "");
     $("info-journey").innerHTML =
-      `<span class="k">day</span><span><b>${DAY_LABELS[sky.day] || sky.day}</b></span>` +
-      `<span class="k">speed</span><span>${num(Math.round(sky.speed) + "×", 4, "b", "l")}<span class="gap">${sky.speed > 0 ? (24 / sky.speed).toFixed(sky.speed >= 24 ? 1 : 0) + " h of listening per day" : "frozen"}</span></span>` +
+      `<span class="k">day</span><span><b>${dayLabel(sky.day)}</b></span>` +
+      `<span class="k">speed</span><span>${num(Math.round(run) + "×", 5, "b", "l")}<span class="gap">${state}</span></span>` +
       `<span class="k">now</span><span><b>${new Date(sky.utc * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} ${ut(sky.utc)} UT</b><span class="gap">MLT ${num(sky.mlt.toFixed(1), 4, "span")} h</span></span>`;
     // the sky's full numbers (the Sky block keeps only a few)
     const c = S.tel.chord;
@@ -561,12 +570,12 @@
     $("journey-bar").querySelector("i").style.width = (f * 100).toFixed(2) + "%";
     if (S.journeyFrom === undefined) S.journeyFrom = sky.utc;   // where this session joined the day
     $("journey-bar").querySelector("u").style.left = (clamp((S.journeyFrom - day.t0) / span, 0, 1) * 100).toFixed(2) + "%";
-    const leftS = (day.t0 + span - sky.utc) / Math.max(1e-6, sky.speed);
+    const leftS = (day.t0 + span - sky.utc) / Math.max(1e-6, run);
     const past = day.onsets.filter((o) => o.utc <= sky.utc).length;
     $("info-journey-2").innerHTML =
-      `<span class="k">left</span><span>${num(sky.speed > 0 ? Math.round(leftS / 60) + " min" : "—", 7, "b", "l")} of listening to the end of the recording</span>` +
+      `<span class="k">left</span><span>${num(j.ended ? "0 min" : Math.round(leftS / 60) + " min", 7, "b", "l")} of listening to the end of the recording${j.frozen && !j.ended ? ", once it runs" : ""}</span>` +
       `<span class="k">onsets</span><span>${num(past, 2, "b", "l")} of ${day.onsets.length} in this day</span>` +
-      `<span class="k">choice</span><span>day and speed arrive with the transport (T6.9)</span>`;
+      `<span class="k">at the end</span><span>${j.loop ? "it starts again from the beginning" : "it holds there; Run plays it again"}</span>`;
   }
 
   // ---------------------------------------------------------------- telemetry
@@ -584,8 +593,6 @@
       const db = 20 * Math.log10(tel.autoGain);
       setHtml("out-note", `auto ${num(signed(db, 1), 4, "span")} dB`);
     }
-    if (tel.eqCutHz)   // T3.9: the EQ's high cut now, after the sky
-      setHtml("eq-note", tel.eqCutHz >= 19980 ? "cut open" : `cut ${num(UI.format("eq4_freq", tel.eqCutHz), 8, "span")}`);
   });
 
   // ---------------------------------------------------------------- render loop
@@ -629,13 +636,14 @@
     // the macros' rings on the knobs they move: Breath's dot swells with the sound
     updateRings(tel.breath || 0);
 
-    layers.draw([P("low_level"), P("red_level"), P("green_level"), P("violet_level")], [P("low_decay"), P("red_decay"), P("green_decay"), P("violet_decay")]);
+    res.draw(tel);
     const low = tel.low && tel.low.note >= 0 ? tel.low.note : -1;
     if (low !== S.lowShown) {
       S.lowShown = low;
       $("low-note").innerHTML = low >= 0 ? `<b class="num" style="--w:3">${noteName(low)}</b>` : "";
     }
     keys.draw(litKeys(tel));
+    eq.draw(tel);   // the cut now comes from tel.eqCutHz; T4.2 passes its modulated values as a second argument
     {
       fx.phaser.draw(tel);
       fx.chorus.draw(tel);

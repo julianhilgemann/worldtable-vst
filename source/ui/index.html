@@ -25,10 +25,15 @@
         </svg>
         <div class="word">Worldtable</div>
       </div>
-      <!-- T6.9 replaces the Journey pill with the transport (run/freeze, speed, day, loop) -->
-      <div class="mode" id="mode" data-hint="Journey: a recorded day, time-lapsed. Day and speed arrive with the transport."><i></i>Journey <b id="mode-speed">24×</b></div>
-      <div class="clock" id="clock" data-hint="Model time: the moment of the recorded day you are hearing.">
-        <span id="ro-date">—</span><span id="ro-ut"><b>--:--</b> UT</span>
+      <!-- T6.9: the Journey transport (transport.js): run or freeze, the clock, the speed, the day, loop -->
+      <div class="transport" id="transport" aria-label="Journey">
+        <button type="button" class="ibtn" id="tp-run" aria-label="Freeze the journey" data-hint="Freeze the journey. Frozen, the curtain keeps breathing in place."></button>
+        <div class="clock" id="clock" data-hint="Model time: the moment of the recorded day you are hearing.">
+          <span id="ro-date">—</span><span id="ro-ut"><b>--:--</b> UT</span>
+        </div>
+        <div class="seg tp-speed" id="tp-speed" role="radiogroup" aria-label="Journey speed" data-hint="How fast the day passes. 24× plays a whole day in one hour."></div>
+        <button type="button" class="drop" id="tp-day" aria-haspopup="menu" aria-expanded="false" aria-controls="tp-days" data-hint="Which recorded day to travel through. A new day starts where its story does."></button>
+        <button type="button" class="chip" id="tp-loop" role="switch" aria-checked="false" data-hint="At the end of the recording, start again from the beginning.">Loop</button>
       </div>
       <span class="spacer"></span>
       <canvas id="cv-hmeter" data-hint="Output level, left and right. The white line is the limiter's ceiling."></canvas>
@@ -63,67 +68,56 @@
       <div class="col" id="col-left">
         <div class="module frame" id="resonators">
           <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="resonators-more" data-hint="The bands: where each sits on the pitch axis, which chord tones it rings, its shift.">Resonators</button>
-            <!-- More: T3.8's band parameters, plain, until the resonator display (T6.11) draws them -->
-            <div class="more frame wide" id="resonators-more" aria-label="Bands" hidden>
+            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="resonators-more" data-hint="More: how far neighbouring bands reach into each other.">Resonators</button>
+            <!-- More: the blend (T6.11: the edges are grips in the picture, tones and shift in the band row) -->
+            <div class="more frame" id="resonators-more" aria-label="Bands" hidden>
               <div class="head"><span class="cap">Bands</span><span class="note">a move re-voices after 300 ms</span></div>
-              <div class="knobs">
-                <div data-knob="band_floor" data-label="Floor"></div>
-                <div data-knob="band_x1" data-label="Low|Red"></div>
-                <div data-knob="band_x2" data-label="Red|Grn"></div>
-                <div data-knob="band_x3" data-label="Grn|Vio"></div>
-                <div data-knob="band_ceiling" data-label="Ceiling"></div>
-                <div data-knob="band_blend" data-label="Blend"></div>
-              </div>
-              <div class="band-rows">
-                <span class="cap">Red</span><div data-seg="red_tones" data-labels="Root,Root+5,Chord,Colours,All"></div><div data-knob="red_shift" data-label="Shift" data-color="red"></div>
-                <span class="cap">Green</span><div data-seg="green_tones" data-labels="Root,Root+5,Chord,Colours,All"></div><div data-knob="green_shift" data-label="Shift" data-color="green"></div>
-                <span class="cap">Violet</span><div data-seg="violet_tones" data-labels="Root,Root+5,Chord,Colours,All"></div><div data-knob="violet_shift" data-label="Shift" data-color="violet"></div>
-              </div>
+              <div class="knobs"><div data-knob="band_blend" data-label="Blend"></div></div>
             </div>
-            <span class="note">the low resonator and three bands</span>
+            <span class="note">drag a grip for a crossover, a band for its level</span>
             <span class="spacer"></span>
             <span class="note low-note" id="low-note" data-hint="The low resonator's note: the chord's root, or the lowest note you hold."></span>
           </div>
-          <canvas class="view" id="cv-layers" data-hint="Each band's level and how long it rings on; the low resonator in grey."></canvas>
-          <div class="res-knobs">
-            <div class="kcol"><div data-knob="low_level" data-label="Low"></div><div data-knob="low_decay" data-label="Decay"></div></div>
-            <div class="kcol"><div data-knob="red_level" data-label="Red" data-color="red"></div><div data-knob="red_decay" data-label="Decay" data-color="red"></div></div>
-            <div class="kcol"><div data-knob="green_level" data-label="Green" data-color="green"></div><div data-knob="green_decay" data-label="Decay" data-color="green"></div></div>
-            <div class="kcol"><div data-knob="violet_level" data-label="Violet" data-color="violet"></div><div data-knob="violet_decay" data-label="Decay" data-color="violet"></div></div>
-            <i class="vr"></i>
-            <div class="kcol"><div data-knob="detune" data-label="Detune"></div><div data-knob="drift" data-label="Drift"></div></div>
-            <div class="kcol"><div data-knob="width" data-label="Width"></div></div>
+          <!-- ======== T6.11: the resonator display (resonators.js); the grips' and levels' proxies are added into the well -->
+          <div class="well res-well">
+            <canvas class="res-view" id="cv-res" data-hint="The resonators on a pitch axis. Each line is one note ringing."></canvas>
           </div>
+          <!-- the band row: the selected band's name, Tones, Shift, Level (a view: its binding is the band's handle), Decay │ Detune, Drift, Width -->
+          <div class="bandrow">
+            <div class="bn-band" id="bn-low">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#c9d3e6"></i>Low band</div>
+                <button type="button" class="chip vchip off" tabindex="-1" aria-disabled="true" data-hint="The low resonator rings the chord's root, within an octave above the floor."><span>Tones</span><b>the root</b></button>
+                <button type="button" class="chip vchip off" tabindex="-1" aria-disabled="true" data-hint="The low resonator follows the root; move the floor to move it."><span>Shift</span><b>0 st</b></button></div>
+              <div class="kr"><div data-knob="low_level" data-view data-label="Level" data-hint="Level of the low resonator. Dragging the band in the picture does the same."></div><div data-knob="low_decay" data-label="Decay"></div></div>
+            </div>
+            <div class="bn-band" id="bn-red">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#ff6b6b"></i>Red band</div></div>
+              <div class="kr"><div data-knob="red_level" data-view data-label="Level" data-color="red" data-hint="Level of the red band. Dragging the band in the picture does the same."></div><div data-knob="red_decay" data-label="Decay" data-color="red"></div></div>
+            </div>
+            <div class="bn-band" id="bn-green">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#5cf2a0"></i>Green band</div></div>
+              <div class="kr"><div data-knob="green_level" data-view data-label="Level" data-color="green" data-hint="Level of the green band. Dragging the band in the picture does the same."></div><div data-knob="green_decay" data-label="Decay" data-color="green"></div></div>
+            </div>
+            <div class="bn-band" id="bn-violet">
+              <div class="bandsel"><div class="nm"><i class="bn-sw" style="background:#8f7bff"></i>Violet band</div></div>
+              <div class="kr"><div data-knob="violet_level" data-view data-label="Level" data-color="violet" data-hint="Level of the violet band. Dragging the band in the picture does the same."></div><div data-knob="violet_decay" data-label="Decay" data-color="violet"></div></div>
+            </div>
+            <i class="vr"></i>
+            <div class="kr res-globals"><div data-knob="detune" data-label="Detune"></div><div data-knob="drift" data-label="Drift"></div><div data-knob="width" data-label="Width"></div></div>
+          </div>
+          <!-- ======== end T6.11 -->
         </div>
 
-        <!-- the tone module: T3.9's EQ as plain knobs (gain over drive per band) until its display (T6.14) -->
+        <!-- the tone module: the EQ display (T6.14). The picture is the whole control; EqView puts a
+             focusable proxy for each of the 14 parameters on its handle (spec/09 §5) -->
         <div class="module frame" id="eq">
           <div class="head">
-            <button type="button" class="cap more-btn" aria-expanded="false" aria-controls="eq-more" data-hint="More EQ: where each band sits, how wide the bells are, how far the sky opens the cut.">EQ</button>
-            <div class="more frame" id="eq-more" aria-label="EQ, more" hidden>
-              <div class="head"><span class="cap">Bands</span><span class="note">low shelf, two bells; the sky opens the cut</span></div>
-              <div class="knobs">
-                <div data-knob="eq1_freq" data-label="Low"></div>
-                <div data-knob="eq2_freq" data-label="Mid"></div>
-                <div data-knob="eq2_q" data-label="Mid Q"></div>
-                <div data-knob="eq3_freq" data-label="High"></div>
-                <div data-knob="eq3_q" data-label="High Q"></div>
-                <div data-knob="eq_sky" data-label="Sky"></div>
-              </div>
-            </div>
+            <span class="cap">EQ</span>
             <span class="spacer"></span>
-            <span class="note" id="eq-note" data-hint="Where the high cut is now, after the sky has opened it."></span>
+            <span class="eq-say" id="eq-say"></span>
           </div>
-          <div class="eq-grid">
-            <div data-knob="eq1_gain" data-label="Low"></div>
-            <div data-knob="eq2_gain" data-label="Mid"></div>
-            <div data-knob="eq3_gain" data-label="High"></div>
-            <div data-knob="eq4_freq" data-label="Cut"></div>
-            <div data-knob="eq1_drive" data-label="Drive"></div>
-            <div data-knob="eq2_drive" data-label="Drive"></div>
-            <div data-knob="eq3_drive" data-label="Drive"></div>
-            <div data-knob="eq4_drive" data-label="Drive"></div>
+          <div class="well eq-well" id="eq-well">
+            <canvas id="cv-eq" data-hint="Four bands, each with its own gain and drive. The top edge: how far the sky opens the cut."></canvas>
           </div>
         </div>
       </div>
@@ -282,14 +276,21 @@
       </div>
     </section>
 
-    <!-- ============================================================ bottom bar: details, the hint line, auto-gain -->
+    <!-- ============================================================ bottom bar: details, the tour, the size, the hint line, auto-gain -->
     <footer id="hintbar">
       <button type="button" class="chip info-btn" id="details-btn" aria-label="Details" aria-expanded="false" aria-controls="details" data-hint="Details: the station, the journey so far, the sky's numbers, where the data comes from.">i</button>
+      <!-- T6.13 (menu.js, tour.js): the welcome tour and the window's size, both also on right-click -->
+      <button type="button" class="chip" id="tour-btn" data-hint="The welcome tour: five steps through the window, what each part does.">Tour</button>
+      <div class="seg size-seg" id="size-seg" role="radiogroup" aria-label="Window size" data-hint="Window size: small, medium or large. Also on right-click.">
+        <button type="button" role="radio" aria-label="Small" data-size="0">S</button><button type="button" role="radio" aria-label="Medium" data-size="1">M</button><button type="button" role="radio" aria-label="Large" data-size="2">L</button>
+      </div>
       <span id="hint" aria-live="polite"></span>
       <span class="note" id="out-note" data-hint="Auto-gain: how much the drone is lifted or lowered to keep it even."></span>
     </footer>
 
     <!-- ============================================================ details popover -->
+    <div class="tp-menu" id="tp-days" role="menu" aria-label="Recorded day" hidden></div>
+
     <div class="details frame" id="details" hidden>
       <div class="module" style="width: 300px">
         <div class="head"><span class="cap">Observer</span><span class="note">the station is the point of view</span></div>
@@ -315,6 +316,29 @@
         </div>
       </div>
     </div>
+
+    <!-- ============================================================ T6.13: About, the tour, the context menu (over everything) -->
+    <div class="about frame" id="about" role="dialog" aria-labelledby="about-title" hidden>
+      <div class="about-head"><span id="about-title">Worldtable</span><span class="about-ver" id="about-ver"></span><span class="spacer"></span><button type="button" class="chip" id="about-close" data-hint="Close About.">Close</button></div>
+      <p>A drone instrument that plays Earth's magnetic field as the sun shakes it.</p>
+      <div class="info-grid">
+        <span class="k">field</span><span>USGS Geomagnetism Program, College (<b>CMO</b>), public domain</span>
+        <span class="k">Kp</span><span>GFZ Potsdam, CC BY 4.0, doi:10.5880/Kp.0001; NOAA SWPC</span>
+        <span class="k">wind</span><span>NASA OMNI (NASA open data); NOAA SWPC, public domain</span>
+        <span class="k">stars</span><span>Yale Bright Star Catalogue, public domain</span>
+        <span class="k">type</span><span>Instrument Sans, JetBrains Mono: SIL Open Font License 1.1</span>
+        <span class="k">built</span><span>with JUCE 8</span>
+        <span class="k">licence</span><span>open source; the licence is set before the first release</span>
+      </div>
+    </div>
+    <div id="tour-dim" hidden><div id="tour-spot"></div></div>
+    <div id="tour-card" role="dialog" aria-labelledby="tour-title" aria-describedby="tour-text" hidden>
+      <div class="tour-n" id="tour-n"></div>
+      <h4 id="tour-title"></h4>
+      <p id="tour-text"></p>
+      <div class="tour-b"><button type="button" id="tour-skip" data-hint="End the tour. It is on the bottom bar and on right-click.">Skip tour</button><button type="button" id="tour-go" data-hint="The next step of the tour.">Next</button></div>
+    </div>
+    <div class="ctx-menu" id="ctx-menu" role="menu" tabindex="-1" aria-label="Menu" hidden></div>
   </div>
 
   <script src="params.js"></script>
@@ -323,7 +347,11 @@
   <script src="dome.js"></script>
   <script src="widgets.js"></script>
   <script src="views.js"></script>
+  <script src="resonators.js"></script>
   <script src="app.js"></script>
+  <script src="transport.js"></script>
+  <script src="menu.js"></script>
+  <script src="tour.js"></script>
   <script src="mock.js"></script>
 </body>
 </html>

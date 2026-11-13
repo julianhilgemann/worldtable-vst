@@ -2,6 +2,7 @@ juce_add_console_app(WorldtableTests PRODUCT_NAME "WorldtableTests")
 
 target_sources(WorldtableTests PRIVATE
     unit/PluginProcessorTests.cpp
+    unit/UiSettingsTests.cpp
     unit/WorldDataTests.cpp
     unit/WavetableBuilderTests.cpp
     unit/DspUnitTests.cpp

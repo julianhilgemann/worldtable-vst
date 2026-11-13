@@ -169,8 +169,8 @@ header {
 .clock b { font: 500 17px/1 var(--mono); color: var(--ink-hi); }
 #cv-hmeter { width: 120px; height: 22px; display: block; }
 
-/* chips: Journey, Ping-pong, Details (spec/09 §4: 22–28 high, radius 5–7) */
-.chip, .mode {
+/* chips: Loop, Ping-pong, Details (spec/09 §4: 22–28 high, radius 5–7) */
+.chip {
   display: inline-flex; align-items: center; gap: 7px;
   height: 28px; padding: 0 11px;
   border: 1px solid var(--line-hi); border-radius: 7px;
@@ -180,15 +180,50 @@ header {
 }
 .chip { height: 24px; padding: 0 7px; border-radius: 6px; border-color: var(--line); color: var(--muted); }
 .chip:hover { background: rgba(201, 211, 230, 0.07); color: var(--ink-hi); }
-.chip.on, .chip[aria-expanded="true"], .mode {
+.chip.on, .chip[aria-expanded="true"] {
   background: var(--selected); color: var(--ink-hi); border-color: var(--line-hi);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-/* Journey is running, so its dot breathes; slowly, and in ink */
-.mode { cursor: default; }
-.mode i { width: 6px; height: 6px; border-radius: 3px; background: var(--ink-hi); animation: breathe-dot 4s ease-in-out infinite; }
-.mode b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
-@keyframes breathe-dot { 50% { opacity: 0.4; } }
+
+/* the Journey transport (T6.9, mockup top bar): run or freeze, the clock, speed, day, loop */
+.transport { display: flex; align-items: center; gap: 10px; }
+.ibtn {
+  width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--line-hi);
+  display: grid; place-items: center; color: var(--ink-hi);
+  transition: background-color 0.2s;
+}
+.ibtn svg { display: block; }
+.ibtn:hover, .drop:hover { background: rgba(201, 211, 230, 0.07); }
+.seg.tp-speed { padding: 2px; }
+.seg.tp-speed button { height: 22px; padding: 0 9px; border-radius: 5px; font: 400 11.5px/1 var(--mono); }
+.drop {
+  height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line-hi);
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  font: 400 12px/1 var(--sans); color: var(--muted);
+  transition: background-color 0.2s;
+}
+.drop b { font-weight: 500; color: var(--ink-hi); }
+.drop .chev { color: var(--ink); transition: transform 0.2s; }
+.drop[aria-expanded="true"] { background: var(--selected); }
+.drop[aria-expanded="true"] .chev { transform: rotate(180deg); }
+#tp-loop { height: 22px; }
+/* the day menu drops over the strip and the dome: its own compositing layer (spec/06 §Rendering) */
+.tp-menu {
+  position: absolute; z-index: 30; transform: translateZ(0);
+  min-width: 250px; padding: 5px; border-radius: 9px;
+  background: #121826; border: 1px solid var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.tp-menu button {
+  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 7px 9px; border-radius: 6px; text-align: left;
+  font: 400 12.5px/1.2 var(--sans); color: var(--ink);
+}
+.tp-menu button:hover:not([disabled]), .tp-menu button:focus-visible { background: rgba(201, 211, 230, 0.08); }
+.tp-menu button small { margin-left: 10px; font: 400 12px/1 var(--sans); color: var(--muted); }
+.tp-menu button[disabled] { opacity: 0.45; cursor: default; }
+.tp-menu button.on::after { content: "✓"; color: var(--ink-hi); }
+.tp-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px; }
 
 /* ---------------------------------------------------------------- bottom bar: details, the hint line, auto-gain */
 #hintbar {
@@ -299,26 +334,50 @@ header {
 .handle .handle-field { top: calc(100% + 4px); pointer-events: auto; }
 .head .chip b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
 
-/* resonators: the picture over two rows of knobs (level over decay per band │ detune, drift, width) */
-.res-knobs { display: flex; justify-content: space-between; align-items: center; flex: none; padding: 0 2px; }
-.res-knobs .kcol { display: flex; flex-direction: column; }
-.res-knobs .kcol > .knob + .knob { margin-top: -4px; }
-.res-knobs .vr { align-self: stretch; width: 1px; margin: 8px 0; background: var(--line); }
+/* ======== T6.11: the resonator display over the band row (the selected band │ detune, drift, width) */
 .head .low-note { overflow: visible; font-size: 12px; }
 .head .low-note b { font-family: var(--mono); font-weight: 500; color: var(--ink-hi); }
-/* the Bands popover (T3.8's parameters, until T6.11 draws them in the picture) */
-.more.wide .head { margin-bottom: 2px; }
-.more.wide .head .cap { font-size: 12px; }
-.module .more.wide .knobs { justify-content: space-between; gap: 0; }
-.band-rows { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 0; margin-top: 2px; }
-.band-rows > .cap { font: 400 12px/1 var(--sans); color: var(--muted); }
+#resonators-more .head { margin-bottom: 2px; }
+#resonators-more .head .cap { font-size: 12px; }
+.res-well { position: relative; flex: 1 1 0; min-height: 0; margin: 6px 0 4px; overflow: hidden; }
+/* sized by the well, never by its own backing store (spec/06 §Rendering) */
+.res-well canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+/* a handle's proxy (spec/09 §5): the picture takes the pointer, the proxy the focus and the keys */
+.proxy { position: absolute; left: 0; top: 0; pointer-events: none; border-radius: 5px; }
+.proxy.grip { width: 14px; height: 28px; margin: -14px 0 0 -7px; }
+.proxy.level { width: 24px; height: 12px; margin: -6px 0 0 -12px; }
+.proxy:focus-visible { outline: 1.5px solid var(--ink-hi); outline-offset: 1px; }
+.proxy-field { pointer-events: auto; top: calc(100% + 4px); }
+.bandrow { display: flex; align-items: flex-start; gap: 6px; flex: none; }
+.bn-band { display: flex; align-items: flex-start; gap: 6px; }
+.bn-band[hidden] { display: none; }
+.bandsel { display: flex; flex-direction: column; gap: 5px; width: 128px; padding-top: 5px; }
+.bandsel .nm { display: flex; align-items: center; gap: 7px; font: 500 13px/1 var(--sans); color: var(--ink-hi); height: 16px; }
+.bandsel .nm i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.bandrow .kr { display: flex; align-items: flex-start; gap: 2px; flex: none; }
+.bandrow .res-globals { flex: 1; justify-content: space-around; }
+.bandrow .vr { align-self: stretch; width: 1px; margin: 4px 2px; background: var(--line); }
+/* a chip that steps through a parameter's values: its caption, then the value */
+.chip.vchip { height: 22px; padding: 0 8px; gap: 6px; font-size: 11.5px; min-width: 0; overflow: hidden; }
+.chip.vchip b { font-weight: 500; color: var(--ink-hi); overflow: hidden; text-overflow: ellipsis; }
+.chip.vchip.off { cursor: default; }
+.chip.vchip.off:hover { background: none; color: var(--muted); }
+.chip.vchip.off b { color: var(--muted); }
+/* ======== end T6.11 */
 
-/* the tone module: T3.9's EQ as plain knobs until its display (T6.14): a column per band, the drive
-   under the gain; the frequencies, widths and the sky in its More popover */
-.eq-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); justify-items: center; margin-top: auto; flex: none; }
-.eq-grid > div:nth-child(n + 5) { margin-top: -4px; }
-#eq-more .head { margin-bottom: 2px; }
-#eq-more .head .cap { font-size: 12px; }
+/* the tone module: the EQ display (T6.14), the whole control of the EQ. The read-out of the band
+   pointed at in the title row; the picture fills the rest. The canvas is placed absolutely in its
+   well (its box never follows its backing store); the handles' proxies sit on the handles, take
+   the focus and the keys, and let the pointer through to the canvas */
+#eq .eq-say { min-width: 0; overflow: hidden; font: 400 11px/1 var(--mono); color: var(--muted); white-space: nowrap; }
+#eq .eq-say b { font-weight: 500; color: var(--ink-hi); }
+.eq-well { position: relative; flex: 1 1 0; min-height: 0; margin-top: 6px; }
+#cv-eq { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.eq-proxy { position: absolute; left: 0; top: 0; width: 18px; height: 18px; border-radius: 50%; pointer-events: none; }
+.eq-proxy.eq-bar { width: 13px; height: 26px; border-radius: 4px; }
+.eq-proxy.eq-sky { width: 14px; height: 14px; }
+.eq-proxy:focus-visible { outline-offset: 1px; }
+.knob-field.eq-field { top: 0; z-index: 1; }
 
 /* ---------------------------------------------------------------- harmony: the chord, why, the rule, the notes, the choices */
 #chord-state.held { color: var(--ink-hi); font-weight: 500; }
@@ -449,5 +508,76 @@ header {
 .shot *, .shot *::before, .shot *::after { transition: none !important; animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
-  .mode i { animation: none; }
+}
+
+/* ---------------------------------------------------------------- T6.13: sizes, the context menu, About, the tour
+   (menu.js, tour.js). Everything here opens over the dome's WebGL canvas, so each overlay has its own
+   compositing layer (translateZ(0)): without it WebKit makes it clickable but does not paint it. */
+/* S M L on the bottom bar */
+.size-seg { flex: none; }
+/* T6.13 acceptance: no new text under 10 px on screen at Small, so 12 px here and in the menu's notes */
+.size-seg button { min-width: 26px; padding: 0 7px; font: 400 12px/1 var(--mono); }
+
+/* the context menu (the mockup's .menu): drawn by the page, never the web view's */
+.ctx-menu {
+  position: absolute; z-index: 30; transform: translateZ(0);
+  min-width: 250px; max-width: 300px; padding: 5px;
+  border-radius: 9px; background: #121826; border: 1px solid var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.ctx-menu:focus, .ctx-menu:focus-visible { outline: none; }
+.ctx-menu button {
+  display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 16px;
+  min-height: 28px; padding: 7px 9px; border-radius: 6px;
+  font: 400 12.5px/1.1 var(--sans); color: var(--ink); text-align: left; white-space: nowrap;
+}
+.ctx-menu button:hover, .ctx-menu button:focus-visible { background: rgba(201, 211, 230, 0.08); color: var(--ink-hi); outline: none; }
+.ctx-menu button small { font: 400 12px/1 var(--mono); color: var(--muted); }
+.ctx-menu button > span > small { margin-left: 10px; }
+.ctx-menu button.on::after { content: "✓"; color: var(--ink-hi); }
+.ctx-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px; }
+/* a control's hint, dimmed, as the menu's first line */
+.ctx-hint { padding: 6px 9px 7px; font: 400 12px/1.35 var(--sans); color: var(--muted); white-space: normal; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+
+/* About: centred over the page */
+.about {
+  position: absolute; left: 50%; top: 50%; z-index: 25; width: 470px;
+  transform: translate(-50%, -50%) translateZ(0);
+  padding: 14px 16px 16px; border-color: var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+.about-head { display: flex; align-items: center; gap: 10px; }
+.about-head .spacer { flex: 1; }
+#about-title { font: 500 15px/1 var(--sans); color: var(--ink-hi); }
+.about-ver { font: 400 12px/1 var(--mono); color: var(--muted); white-space: pre; }
+.about p { margin: 10px 0 4px; font: 400 12.5px/1.45 var(--sans); color: var(--ink); }
+.about .info-grid { margin-top: 10px; }
+.about .info-grid b { font-weight: 500; }
+
+/* the tour: one stage-sized layer dims the page and clips the spotlight's shadow; the pointer goes
+   through it, so the page stays live; the card sits beside the spotlighted region */
+#tour-dim { position: absolute; inset: 0; z-index: 20; overflow: hidden; pointer-events: none; transform: translateZ(0); }
+#tour-spot {
+  position: absolute; border: 1.5px solid var(--ink-hi); border-radius: 12px;
+  box-shadow: 0 0 0 2000px rgba(3, 4, 8, 0.6);
+  transition: left 0.45s cubic-bezier(0.3, 0.7, 0.2, 1), top 0.45s cubic-bezier(0.3, 0.7, 0.2, 1),
+              width 0.45s cubic-bezier(0.3, 0.7, 0.2, 1), height 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+#tour-card {
+  position: absolute; z-index: 21; width: 290px; transform: translateZ(0);
+  display: flex; flex-direction: column; gap: 8px; padding: 14px;
+  border-radius: 10px; background: #121826; border: 1px solid var(--line-hi);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+  transition: left 0.45s cubic-bezier(0.3, 0.7, 0.2, 1), top 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+#tour-dim.cut #tour-spot, #tour-card.cut { transition: none; }
+.tour-n { font: 400 12px/1.5 var(--mono); color: var(--muted); }
+#tour-card h4 { margin: 0; font: 500 14px/1.3 var(--sans); color: var(--ink-hi); }
+#tour-card p { margin: 0; font: 400 12.5px/1.45 var(--sans); color: var(--ink); }
+.tour-b { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+#tour-skip { height: 26px; padding: 0 2px; font: 400 12px/1 var(--mono); color: var(--muted); }
+#tour-skip:hover { color: var(--ink-hi); }
+#tour-go { height: 26px; padding: 0 14px; border-radius: 6px; background: var(--ink-hi); color: var(--ground); font-weight: 500; }
+@media (prefers-reduced-motion: reduce) {
+  #tour-spot, #tour-card { transition: none; }
 }

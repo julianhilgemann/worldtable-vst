@@ -11,6 +11,12 @@
 //                                  and the probe runs again at its end)
 //   WorldtableUICheck --at X,Y   → puts the window's top-left there (screen points), e.g. on a taller
 //                                  display so a screencapture holds the whole editor
+//   WorldtableUICheck --size N   → opens (and leaves) the editor at size N: 0 Small, 1 Medium (the
+//                                  default), 2 Large
+//
+// T6.13: the check never touches the person's own settings file. It points $WORLDTABLE_SETTINGS_FILE
+// at a fresh file in the temp folder (only the size in it, so the tour opens by itself), unless the
+// variable is already set, in which case that file is used as it is.
 //
 // Checks: backend attached (not the browser mock), telemetry is streaming, parameters
 // sync C++ → JS and JS → C++, every parameter has exactly one control, the header shows the
@@ -19,6 +25,7 @@
 // every parameter's control has a hint, a role and a value text and can be set with the keyboard
 // alone (and a typed value lands), every picture has a hint, red/green/violet stay on the bands in
 // the DOM, and the macro rings follow the engine (Space 0 / 0.5 / 1 → reverb mix ×0.5 / ×1 / ×1.5).
+// T6.9: the Journey transport's controls, journeySet and the day menu reach the processor.
 // T6.10: the day strip is a slider with a hint and a value sentence, its keogram is built, its canvas
 // is no larger than its box × dpr, an arrow key seeks 10 minutes on, and a pointer drag across it
 // seeks (at its start and on release) and the sky lands there.
@@ -28,11 +35,22 @@
 // T6.12: the effect pictures are controls: a drag in each sets its parameters (read back in C++), the
 // telemetry carries the input spectrum and the phaser's phase, every proxy sits inside its picture,
 // and the page's phaser response is dsp::Phaser::magnitude.
+// T6.14: the EQ display draws, a dot dragged, a bell scrolled, a drive bar pulled, the sky's end
+// dragged and a dot's keys set the right parameters, and the processor gets them.
+// T6.11: a crossover dragged in the resonator display moves its parameter in the engine; the
+// grips and levels have proxies.
+// T6.13: the welcome tour opens by itself on a clean settings file, its five spotlights land on their
+// regions (at all three sizes), Next runs it to Done and marks it seen in the file, the Tour button
+// and the menu reopen it, Escape and Skip end it; a right-click is the page's menu (the web view's is
+// prevented), clamped to the stage, with the sizes, the tour and About, or on a control its hint,
+// Reset and Enter value (both land); every overlay has its own compositing layer; S, L and the arrow
+// keys set the window's size, the editor takes it, the file keeps it and every canvas re-fits.
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "dsp/fx/Phaser.h"
 
+#include <cstdlib>
 #include <iostream>
 
 namespace
@@ -78,8 +96,10 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
     if (!target || !el.contains(document.activeElement)) return 'focus';
     var v0 = WT.get(id);
     var key = function (k) { document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); };
-    key('ArrowUp');
-    if (WT.get(id) === v0) key('ArrowDown');
+    // a picture's handle may name the keys that move it (T6.14: a dot's frequency is ← →, its width [ ])
+    var keys = (el.getAttribute('data-keys') || 'ArrowUp,ArrowDown').split(',');
+    key(keys[0]);
+    if (WT.get(id) === v0) key(keys[1]);
     var moved = WT.get(id) !== v0;
     UI.commit(id, v0);
     return moved ? '' : 'keys';
@@ -122,10 +142,11 @@ const char* const accessProbe = R"JS(JSON.stringify((function () {
   rm.blur();
   [].forEach.call(document.querySelectorAll('#stage canvas'), function (c) { if (!c.closest('[data-hint]')) bad.pictures.push(c.id || 'canvas'); });
   // spec/09 rule 2 in the DOM (canvas pixels are reviewed in the code): the bands' knobs, the
-  // Layers picture, the keyboard strip, the dome, the day strip, the brand mark
+  // resonator display and the band row's swatches (T6.11), the keyboard strip, the dome, the day
+  // strip, the brand mark
   var HUE = { red: '255, 107, 107', green: '92, 242, 160', violet: '143, 123, 255' };
   [].forEach.call(document.querySelectorAll('#stage *'), function (e) {
-    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #strip, #cv-layers, #cv-keys, .brand')) return;
+    if (e.closest('.k-red, .k-green, .k-violet, #dome-wrap, #strip, #cv-res, .bn-sw, #cv-keys, .brand')) return;
     var cs = getComputedStyle(e);
     var v = [cs.color, cs.backgroundColor, cs.borderTopColor, cs.borderBottomColor, cs.borderLeftColor, cs.borderRightColor,
              cs.fill, cs.stroke, cs.backgroundImage, cs.boxShadow, cs.outlineColor].join('|');
@@ -231,6 +252,111 @@ const char* const layoutProbe = R"JS(JSON.stringify((function () {
   });
   return out;
 })()))JS";
+// T6.9: the Journey transport's controls: each has a hint and a role, the day list and the speeds
+// came with the day, telemetry carries the journey
+const char* const transportProbe = R"JS(JSON.stringify((function () {
+  var bad = [];
+  ['tp-run', 'tp-speed', 'tp-day', 'tp-loop', 'clock'].forEach(function (id) {
+    var e = document.getElementById(id);
+    if (!e) { bad.push(id + ' missing'); return; }
+    var h = e.getAttribute('data-hint') || '';
+    if (!h || h.length > 90) bad.push(id + ' hint');
+  });
+  if (document.getElementById('tp-speed').getAttribute('role') !== 'radiogroup') bad.push('tp-speed role');
+  if (document.getElementById('tp-loop').getAttribute('role') !== 'switch') bad.push('tp-loop role');
+  if (document.getElementById('tp-day').getAttribute('aria-haspopup') !== 'menu') bad.push('tp-day popup');
+  if (!document.querySelector('#tp-speed [role="radio"][tabindex="0"]')) bad.push('tp-speed focus');
+  return { bad: bad, speeds: document.querySelectorAll('#tp-speed button').length,
+           days: __wtState.day && __wtState.day.days ? __wtState.day.days.length : 0,
+           journey: __wtState.tel.journey || null, dayButton: document.getElementById('tp-day').textContent };
+})()))JS";
+
+// T6.14: the EQ display in the real editor (spec/tasks/T6.14-eq-display.md). Synthetic pointer, wheel
+// and key events on the picture; the values it touches are kept in window.__eqSaved and restored after
+// the C++ side has read them.
+const char* const eqProbe = R"JS(JSON.stringify((function () {
+  var out = { bad: [] };
+  var cv = document.getElementById('cv-eq');
+  // the picture is drawn: the share of its backing store's pixels that are not empty
+  var px = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, lit = 0;
+  for (var i = 3; i < px.length; i += 4) if (px[i] > 0) lit++;
+  out.drawn = Math.round(lit / (px.length / 4) * 1000) / 1000;
+  out.size = [cv.clientWidth, cv.clientHeight, cv.width, cv.height];
+  var ids = ['eq1_drive', 'eq2_freq', 'eq2_gain', 'eq3_q', 'eq4_freq', 'eq_sky'];
+  var saved = { eq2_q: WT.get('eq2_q') };
+  ids.forEach(function (id) { saved[id] = WT.get(id); });
+  window.__eqSaved = saved;
+  UI.commit('eq4_freq', 6500);   // a cut below the top, so the sky's reach is drawn
+  UI.commit('eq_sky', 0.3);
+  var ev = function (type, x, y) {
+    cv.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, button: 0,
+                                              buttons: type === 'pointerup' ? 0 : 1, isPrimary: true, pointerType: 'mouse' }));
+  };
+  var pull = function (a, dx, dy) {
+    ev('pointerdown', a.x, a.y);
+    for (var i = 1; i <= 4; i++) ev('pointermove', a.x + dx * a.scale * i / 4, a.y + dy * a.scale * i / 4);
+    ev('pointerup', a.x + dx * a.scale, a.y + dy * a.scale);
+  };
+  var near = function (x, y, tol) { return Math.abs(x - y) <= tol; };
+  // a dot: band 2, 30 px right (frequency) and 15 px up (gain)
+  var a = UI.eq.at('dot', 1), f0 = WT.get('eq2_freq'), g0 = WT.get('eq2_gain');
+  pull(a, 30, -15);
+  var fx = f0 * Math.pow(1000, 30 / a.w), gx = Math.min(12, g0 + 15 / a.span * 12);
+  out.dot = [Math.round(WT.get('eq2_freq')), Math.round(fx), WT.get('eq2_gain'), Math.round(gx * 10) / 10];
+  if (!near(Math.log(WT.get('eq2_freq') / fx), 0, 0.02) || !near(WT.get('eq2_gain'), gx, 0.15)) out.bad.push('dot');
+  // scroll over a bell: band 3's width, one notch up (narrower)
+  var b = UI.eq.at('dot', 2), q0 = WT.get('eq3_q');
+  cv.dispatchEvent(new WheelEvent('wheel', { clientX: b.x, clientY: b.y, deltaY: -100, bubbles: true, cancelable: true }));
+  out.wheel = [q0, Math.round(WT.get('eq3_q') * 1000) / 1000];
+  if (!near(WT.get('eq3_q'), q0 * Math.exp(0.11), 0.01)) out.bad.push('wheel');
+  // pull a drive bar: band 1, from its foot 11 px up → 12 of its 22 px
+  var c = UI.eq.at('bar', 0);
+  pull(c, 0, -11);
+  out.bar = Math.round(WT.get('eq1_drive') * 1000) / 1000;
+  if (!near(WT.get('eq1_drive'), 12 / c.bh, 0.02)) out.bad.push('bar');
+  // the sky's reach: its end 20 px to the left
+  var s = UI.eq.at('sky'), s0 = WT.get('eq_sky');
+  pull(s, -20, 0);
+  var sx = s0 - 20 / s.w * Math.log2(1000) / 3;
+  out.sky = [s0, Math.round(WT.get('eq_sky') * 1000) / 1000, Math.round(sx * 1000) / 1000];
+  if (!near(WT.get('eq_sky'), sx, 0.01)) out.bad.push('sky');
+  // the keys on a dot: up and down move the gain, left and right the frequency, ] the width
+  var dot = document.querySelector('[data-param="eq2_freq"]'), key = function (k) {
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  };
+  dot.focus();
+  var v = [WT.get('eq2_freq'), WT.get('eq2_gain'), WT.get('eq2_q')];
+  key('ArrowUp');
+  if (WT.get('eq2_gain') <= v[1] || WT.get('eq2_freq') !== v[0]) out.bad.push('key up');
+  key('ArrowLeft');
+  if (WT.get('eq2_freq') >= v[0]) out.bad.push('key left');
+  key(']');
+  if (WT.get('eq2_q') <= v[2]) out.bad.push('key ]');
+  key('Backspace');   // the frequency's default
+  dot.blur();
+  cv.dispatchEvent(new PointerEvent('pointerleave', { pointerId: 1, pointerType: 'mouse' }));   // the pointer goes
+  out.after = ids.map(function (id) { return Math.round(WT.get(id) * 1000) / 1000; });
+  return out;
+})()))JS";
+// T6.11: drag the Low|Red crossover four semitones up in the resonator display, with pointer events
+// as a person's drag sends them; the parameter is read back here and in C++, then restored.
+const char* const resonatorProbe = R"JS(JSON.stringify((function () {
+  var cv = document.getElementById('cv-res'), r = cv.getBoundingClientRect(), k = r.width / cv.clientWidth, g = UI.res.geom();
+  var x0 = WT.get('band_x1'), y = r.top + g.gy * k;
+  var send = function (type, m) {
+    cv.dispatchEvent(new PointerEvent(type, { pointerId: 1, pointerType: 'mouse', isPrimary: true, bubbles: true, cancelable: true,
+                                              button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: r.left + g.X(m) * k, clientY: y }));
+  };
+  send('pointermove', x0);
+  send('pointerdown', x0);
+  send('pointermove', x0 + 2);
+  send('pointermove', x0 + 4);
+  send('pointerup', x0 + 4);
+  send('pointerleave', x0 + 4);   // the pointer goes, the grip is no longer hot
+  return { from: x0, to: WT.get('band_x1'), grips: document.querySelectorAll('#resonators .proxy.grip[data-param]').length,
+           levels: document.querySelectorAll('#resonators .proxy.level[data-param]').length, canvas: cv.width + 'x' + cv.height,
+           css: cv.clientWidth + 'x' + cv.clientHeight, lines: UI.res.lines().length };
+})()))JS";
 
 // T6.12: a drag in each picture, with pointer events dispatched in WebKit (the views' own handlers);
 // values are restored afterwards by restoreProbe, after C++ has read them.
@@ -276,6 +402,158 @@ const char* const restoreProbe = R"JS((function () {
   Object.keys(b).forEach(function (id) { UI.commit(id, b[id]); });
   return Object.keys(b).length;
 })())JS";
+
+// T6.13: walks the open tour from step 1 to Done (transitions held, so the boxes are where they land):
+// each spotlight is its region's box plus 3 px, the card is inside the stage and off the region, the
+// texts and the button are right. Kept on window for the size probe, which walks it at every size.
+const char* const tourProbe = R"JS(JSON.stringify((function () {
+  window.__tourWalk = function () {
+    var bad = [], T = UI.tour, root = document.documentElement, shot = root.classList.contains('shot');
+    root.classList.add('shot');
+    var st = document.getElementById('stage').getBoundingClientRect(), k = UI.scale;
+    var box = function (e) { var r = e.getBoundingClientRect(); return { x: (r.left - st.left) / k, y: (r.top - st.top) / k, w: r.width / k, h: r.height / k }; };
+    var off = function (a, b) { return Math.abs(a - b) > 1; };
+    if (T.step !== 0) bad.push('not at step 1');
+    // WebKit paints them over the dome only on a compositing layer of their own (read while shown)
+    ['tour-dim', 'tour-card'].forEach(function (id) { if (getComputedStyle(document.getElementById(id)).transform === 'none') bad.push(id + ': no layer'); });
+    for (var i = 0; i < T.steps && T.step === i; i++) {
+      var reg = T.regionOf(UI.TOUR[i][0]), s = box(document.getElementById('tour-spot')), c = box(document.getElementById('tour-card'));
+      if (reg.w < 100 || reg.h < 80) bad.push('region ' + (i + 1));
+      if (off(s.x, reg.x - 3) || off(s.y, reg.y - 3) || off(s.w, reg.w + 6) || off(s.h, reg.h + 6)) bad.push('spot ' + (i + 1) + ' ' + JSON.stringify([s, reg]));
+      if (c.x < 0 || c.y < 0 || c.x + c.w > 1350 || c.y + c.h > 900) bad.push('card outside ' + (i + 1));
+      if (c.x < reg.x + reg.w && c.x + c.w > reg.x && c.y < reg.y + reg.h && c.y + c.h > reg.y) bad.push('card over region ' + (i + 1));
+      if (document.getElementById('tour-n').textContent !== 'Step ' + (i + 1) + ' of 5') bad.push('count ' + (i + 1));
+      if (document.getElementById('tour-title').textContent !== UI.TOUR[i][1]) bad.push('title ' + (i + 1));
+      var go = document.getElementById('tour-go');
+      if (go.textContent !== (i === T.steps - 1 ? 'Done' : 'Next')) bad.push('button ' + (i + 1));
+      go.click();
+    }
+    if (T.step !== -1 || !document.getElementById('tour-card').hidden || !document.getElementById('tour-dim').hidden) bad.push('not closed after Done');
+    if (!shot) root.classList.remove('shot');
+    return bad;
+  };
+  var r = { auto: UI.tour.step };
+  if (UI.tour.step !== 0) UI.tour.start(0);   // a settings file that has seen it: open it by hand
+  r.walk = window.__tourWalk();
+  r.seen = UI.settings.get().tourSeen;
+  // the bottom bar's Tour reopens it and Escape ends it; the menu's Welcome tour reopens it and Skip ends it
+  document.getElementById('tour-btn').click();
+  r.button = UI.tour.step;
+  document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  r.escape = UI.tour.step;
+  UI.menu.openAt(600, 300);
+  var t = document.querySelector('#ctx-menu [data-action="tour"]');
+  if (t) t.click();
+  r.menu = UI.tour.step;
+  document.getElementById('tour-skip').click();
+  r.skip = UI.tour.step;
+  return r;
+})()))JS";
+
+// T6.13: the context menu, by synthetic right-clicks (the web view's own menu is the event's default:
+// it must be prevented), and About.
+const char* const menuProbe = R"JS(JSON.stringify((function () {
+  var r = { problems: [] }, M = document.getElementById('ctx-menu');
+  var rc = function (el, fx, fy) {
+    var b = el.getBoundingClientRect();
+    var ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, buttons: 2, clientX: b.left + b.width * fx, clientY: b.top + b.height * fy });
+    el.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  };
+  var actions = function () { return [].map.call(M.querySelectorAll('button'), function (b) { return b.dataset.action; }).join(','); };
+  var inside = function () { return M.offsetLeft >= 6 && M.offsetTop >= 6 && M.offsetLeft + M.offsetWidth <= 1344 && M.offsetTop + M.offsetHeight <= 894; };
+  var esc = function () { (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); };
+  // over the dome: the window menu, the current size ticked
+  if (!rc(document.getElementById('dome'), 0.5, 0.5)) r.problems.push('dome: not prevented');
+  if (M.hidden || M.dataset.kind !== 'window') r.problems.push('dome: no window menu');
+  if (actions() !== 'size-0,size-1,size-2,tour,about') r.problems.push('dome: items ' + actions());
+  var cur = M.querySelector('[aria-checked="true"]');
+  if (!cur || cur.dataset.action !== 'size-' + UI.settings.get().size) r.problems.push('dome: tick');
+  if (!inside()) r.problems.push('dome: outside');
+  // WebKit paints an overlay over the dome only on a compositing layer of its own (read while shown)
+  if (getComputedStyle(M).transform === 'none') r.problems.push('ctx-menu: no layer');
+  esc();
+  if (!M.hidden) r.problems.push('dome: escape');
+  // in the bottom-right corner it stays inside the stage; a press outside closes it
+  rc(document.getElementById('out-note'), 0.98, 0.9);
+  if (M.hidden || !inside()) r.problems.push('corner: ' + [M.offsetLeft, M.offsetTop, M.offsetWidth, M.offsetHeight].join());
+  document.getElementById('stage').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 }));
+  if (!M.hidden) r.problems.push('corner: press outside');
+  // on a knob: its hint, Reset to default, Enter value… (both land)
+  var knob = document.querySelector('[data-param="rev_mix"]'), v0 = WT.get('rev_mix'), d = UI.defaultValue('rev_mix');
+  UI.commit('rev_mix', d > 0.5 ? 0.1 : 0.9);
+  rc(knob, 0.5, 0.3);
+  var hint = M.querySelector('.ctx-hint');
+  if (M.dataset.kind !== 'control' || !hint || hint.textContent !== knob.dataset.hint) r.problems.push('knob: hint');
+  if (actions() !== 'reset,enter') r.problems.push('knob: items ' + actions());
+  var reset = M.querySelector('[data-action="reset"]');
+  if (reset) reset.click();
+  if (Math.abs(WT.get('rev_mix') - d) > 1e-6) r.problems.push('knob: reset');
+  if (!M.hidden) r.problems.push('knob: still open');
+  rc(knob, 0.5, 0.3);
+  var enter = M.querySelector('[data-action="enter"]');
+  if (enter) enter.click();
+  var f = knob.querySelector('input');
+  if (!f || document.activeElement !== f) r.problems.push('knob: no field');
+  else { f.value = '50 %'; f.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); }
+  r.typed = WT.get('rev_mix');
+  if (Math.abs(r.typed - 0.5) > 1e-3) r.problems.push('knob: typed');
+  UI.commit('rev_mix', v0);
+  knob.blur();
+  // on a choice and on a value chip: Reset only; on a picture's handle (its proxy): Reset, Enter value
+  rc(document.querySelector('[data-param="mood"]'), 0.5, 0.5);
+  if (M.dataset.kind !== 'control' || actions() !== 'reset') r.problems.push('choice: items ' + actions());
+  esc();
+  var chip = document.querySelector('button[role="slider"][data-param]');
+  if (chip) { rc(chip, 0.5, 0.5); if (actions() !== 'reset') r.problems.push('chip: items ' + actions()); esc(); }
+  var px = document.querySelector('.proxy[data-param]');
+  r.proxy = px ? px.dataset.param : '';
+  if (px) { rc(px, 0.5, 0.5); if (M.dataset.kind !== 'control' || actions() !== 'reset,enter') r.problems.push('proxy: items ' + actions()); esc(); }
+  // About from the menu; Escape closes it
+  rc(document.getElementById('cv-phaser'), 0.5, 0.5);
+  var ab = M.querySelector('[data-action="about"]');
+  if (ab) ab.click();
+  if (!UI.menu.about.open) r.problems.push('about: open');
+  if (getComputedStyle(document.getElementById('about')).transform === 'none') r.problems.push('about: no layer');
+  r.version = document.getElementById('about-ver').textContent;
+  esc();
+  if (UI.menu.about.open) r.problems.push('about: escape');
+  // the bottom bar's new controls follow T6.7: a hint, a role, the keyboard (the size's keys: the size probe)
+  ['tour-btn', 'size-seg'].forEach(function (id) { var h = document.getElementById(id).dataset.hint || ''; if (!h || h.length > 90) r.problems.push(id + ': hint'); });
+  if (document.getElementById('size-seg').getAttribute('role') !== 'radiogroup' || document.querySelectorAll('#size-seg [role="radio"][tabindex="0"]').length !== 1) r.problems.push('size-seg: roles');
+  return r;
+})()))JS";
+
+// T6.13: after a size change: the window, the zoom, every canvas re-fitted to its box × min(3, dpr ×
+// zoom) (the dome: × min(dpr × zoom, 2.5)), the tour's spotlights at this size, and the words drawn
+// under 10 px on screen (reported, not failed: the Sky block, the dome's corners and axis numbers are
+// smaller by design, spec/09 §4).
+const char* const sizeProbe = R"JS(JSON.stringify((function () {
+  var r = { inner: [innerWidth, innerHeight], scale: Math.round(UI.scale * 1000) / 1000, dpr: UI.dpr, canvas: [], fitted: 0,
+            seg: document.getElementById('size-seg').getAttribute('aria-valuetext') };
+  var k2 = Math.min(3, UI.dpr * UI.scale), kd = Math.min(UI.dpr * UI.scale, 2.5);
+  [].forEach.call(document.querySelectorAll('#stage canvas'), function (c) {
+    if (!c.clientWidth || !c.getClientRects().length) return;
+    var dome = c.id === 'dome' || c.id === 'dome-ov';
+    var w = dome ? Math.max(64, Math.round(c.clientWidth * kd)) : Math.round(Math.min(c.clientWidth, 2048) * k2);
+    if (Math.abs(c.width - w) > 1) r.canvas.push((c.id || 'canvas') + ' ' + c.clientWidth + ' css, ' + c.width + ' px, want ' + w);
+    else r.fitted++;
+  });
+  // the words on screen, with the tour's card and the menu open too
+  UI.tour.start(0);
+  UI.menu.openAt(600, 300);
+  var small = {};
+  [].forEach.call(document.querySelectorAll('#stage *'), function (e) {
+    if (!e.getClientRects().length || e.closest('[hidden]')) return;
+    if (![].some.call(e.childNodes, function (n) { return n.nodeType === 3 && n.textContent.trim(); })) return;
+    var px = parseFloat(getComputedStyle(e).fontSize) * UI.scale;
+    if (px < 9.95) small[((e.closest('[id]') || e).id || e.tagName) + ' ' + Math.round(px * 10) / 10] = 1;
+  });
+  r.smallText = Object.keys(small);
+  UI.menu.close();
+  r.tour = window.__tourWalk();
+  return r;
+})()))JS";
 } // namespace
 
 int main (int argc, char* argv[])
@@ -284,6 +562,7 @@ int main (int argc, char* argv[])
     bool soak = false;
     juce::String probe;
     juce::Point<int> at (40, 40);
+    int openSize = -1;
     for (int i = 1; i < argc; ++i)
     {
         const juce::String a (argv[i]);
@@ -297,7 +576,36 @@ int main (int argc, char* argv[])
             at = { xy.upToFirstOccurrenceOf (",", false, false).getIntValue(),
                    xy.fromFirstOccurrenceOf (",", false, false).getIntValue() };
         }
+        else if (a == "--size" && i + 1 < argc)
+            openSize = juce::jlimit (0, worldtable::UiSettings::kNumSizes - 1, juce::String (argv[++i]).getIntValue());
     }
+
+    // T6.13: a settings file of the check's own (see the top of this file), fresh unless one was named
+    juce::File settingsFile;
+    if (juce::SystemStats::getEnvironmentVariable ("WORLDTABLE_SETTINGS_FILE", {}).isNotEmpty())
+    {
+        settingsFile = worldtable::UiSettings::defaultFile();
+        if (openSize >= 0)
+            worldtable::UiSettings (settingsFile).setSize (openSize);
+    }
+    else
+    {
+        settingsFile = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("WorldtableUICheck.settings");
+        settingsFile.deleteFile();
+       #if JUCE_WINDOWS
+        _putenv_s ("WORLDTABLE_SETTINGS_FILE", settingsFile.getFullPathName().toRawUTF8());
+       #else
+        setenv ("WORLDTABLE_SETTINGS_FILE", settingsFile.getFullPathName().toRawUTF8(), 1);
+       #endif
+        worldtable::UiSettings (settingsFile).setSize (openSize >= 0 ? openSize : worldtable::UiSettings::kMedium);
+    }
+    if (worldtable::UiSettings::defaultFile() != settingsFile)
+    {
+        std::cerr << "the settings file override did not take\n";
+        return 1;
+    }
+    const int sizeAtOpen = worldtable::UiSettings (settingsFile).size();
+    const bool tourSeenAtOpen = worldtable::UiSettings (settingsFile).tourSeen();
 
     worldtable::PluginProcessor processor (false);
     processor.setPlayConfigDetails (0, 2, 48000.0, 512);
@@ -341,6 +649,28 @@ int main (int argc, char* argv[])
         if (ready == "true")
             break;
     }
+
+    // T6.13: on a clean settings file the tour opens by itself 1.5 s after the page; run it first, so
+    // it is out of the way of the other probes
+    const auto openedAt = juce::Point<int> (editor->getWidth(), editor->getHeight());
+    juce::String tourAuto = "-1";
+    for (int i = 0; i < 50 && ! tourSeenAtOpen; ++i)
+    {
+        processor.processBlock (buffer, midi);
+        pump (100);
+        tourAuto = evalSync (*browser, "String(UI.tour ? UI.tour.step : -2)");
+        if (tourAuto == "0")
+            break;
+    }
+    const auto tour = evalSync (*browser, juce::String::fromUTF8 (tourProbe), 10000);
+    pump (400);   // setTourSeen travels to the editor
+    auto parsedTour = juce::JSON::parse (tour);
+    const bool tourSeenInFile = worldtable::UiSettings (settingsFile).tourSeen();
+    const bool tourOk = parsedTour.isObject() && (tourSeenAtOpen || static_cast<int> (parsedTour["auto"]) == 0)
+                     && parsedTour["walk"].isArray() && parsedTour["walk"].size() == 0
+                     && static_cast<bool> (parsedTour["seen"]) && tourSeenInFile
+                     && static_cast<int> (parsedTour["button"]) == 0 && static_cast<int> (parsedTour["escape"]) == -1
+                     && static_cast<int> (parsedTour["menu"]) == 0 && static_cast<int> (parsedTour["skip"]) == -1;
 
     const auto state = evalSync (*browser,
         "JSON.stringify({ mock: WT.isMock, bands: (__wtState.tel.spectrum || []).length,"
@@ -399,7 +729,21 @@ int main (int argc, char* argv[])
     bool layoutOk = parsedLayout.isObject();
     for (const auto* list : { "sizes", "canvas", "more" })
         layoutOk = layoutOk && parsedLayout[list].isArray() && parsedLayout[list].size() == 0;
-    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 5 && static_cast<int> (parsedLayout["moreParams"]) >= 20;
+    // T6.11: the band edges, tones and shifts left Resonators' More for the display; T6.12 and T6.14
+    // emptied others (the EQ has none)
+    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 4 && static_cast<int> (parsedLayout["moreParams"]) >= 5;
+
+    // T6.11: a crossover dragged in the picture moves the parameter, in the page and in the engine
+    const auto resDrag = evalSync (*browser, juce::String::fromUTF8 (resonatorProbe));
+    pump (300);
+    auto parsedRes = juce::JSON::parse (resDrag);
+    const float cppX1 = processor.getValueTreeState().getRawParameterValue ("band_x1")->load();
+    const int x1From = static_cast<int> (parsedRes["from"]);
+    const bool resOk = parsedRes.isObject() && static_cast<int> (parsedRes["to"]) == x1From + 4
+                    && std::abs (cppX1 - static_cast<float> (x1From + 4)) < 0.001f
+                    && static_cast<int> (parsedRes["grips"]) == 5 && static_cast<int> (parsedRes["levels"]) == 4;
+    evalSync (*browser, "UI.commit('band_x1', " + juce::String (x1From) + "); true");
+    pump (300);
 
     // T6.12: the pictures as controls. The drags' values must have reached the processor.
     const auto pictures = evalSync (*browser, juce::String::fromUTF8 (picturesProbe), 20000);
@@ -438,6 +782,28 @@ int main (int argc, char* argv[])
                    && parsedPictures["response"].size() > 100;
     for (const auto* list : { "telemetry", "proxies" })
         picturesOk = picturesOk && parsedPictures[list].isArray() && parsedPictures[list].size() == 0;
+
+    // T6.14: the EQ display, by pointer and keys; the values it set arrive in the processor
+    const auto eqRun = evalSync (*browser, juce::String::fromUTF8 (eqProbe), 20000);
+    pump (400);
+    auto parsedEq = juce::JSON::parse (eqRun);
+    bool eqOk = parsedEq.isObject() && parsedEq["bad"].isArray() && parsedEq["bad"].size() == 0
+             && static_cast<double> (parsedEq["drawn"]) > 0.05;
+    juce::String eqCpp;
+    {
+        const char* const ids[] = { "eq1_drive", "eq2_freq", "eq2_gain", "eq3_q", "eq4_freq", "eq_sky" };
+        const auto* after = parsedEq["after"].getArray();
+        eqOk = eqOk && after != nullptr && after->size() == 6;
+        for (int i = 0; eqOk && i < 6; ++i)
+        {
+            const double inCpp = cpp (ids[i]), inJs = (*after)[i];
+            eqCpp << (i ? ", " : "") << ids[i] << " " << inCpp;
+            eqOk = eqOk && std::abs (inCpp - inJs) <= 0.002 * std::max (1.0, std::abs (inJs));
+        }
+    }
+    evalSync (*browser, "Object.keys(window.__eqSaved).forEach(function (id) { UI.commit(id, window.__eqSaved[id]); }); true");
+    pump (300);
+
     bool accessOk = parsedAccess.isObject();
     for (const auto* list : { "hint", "long", "role", "text", "focus", "keys", "pictures", "hues" })
         accessOk = accessOk && parsedAccess[list].isArray() && parsedAccess[list].size() == 0;
@@ -447,6 +813,31 @@ int main (int argc, char* argv[])
             && std::abs (static_cast<double> ((*ring)[0]) - 0.5) < 1.0e-3
             && std::abs (static_cast<double> ((*ring)[1]) - 1.0) < 1.0e-3
             && std::abs (static_cast<double> ((*ring)[2]) - 1.5) < 1.0e-3;
+
+    // T6.9: the transport, in the real editor: its controls, journeySet reaching the processor, a day
+    // picked from the menu loading, then the defaults back
+    const auto transport = evalSync (*browser, juce::String::fromUTF8 (transportProbe));
+    auto parsedTransport = juce::JSON::parse (transport);
+    evalSync (*browser, "WT.native('journeySet', { speed: 240, loop: true }); true");
+    for (int k = 0; k < 10; ++k) { processor.processBlock (buffer, midi); pump (25); }
+    const auto set = processor.getJourney();
+    const bool setOk = set.speed == 240.0 && set.loop && processor.getSky().model().speed() == 240.0;
+    evalSync (*browser, "document.getElementById('tp-day').click();"
+                        " document.querySelectorAll('#tp-days [role=\"menuitemradio\"]')[2].click(); true");
+    for (int k = 0; k < 40; ++k) { processor.processBlock (buffer, midi); pump (25); }
+    const auto picked = evalSync (*browser, "JSON.stringify({ day: __wtState.day && __wtState.day.day,"
+                                            " tel: __wtState.tel.journey && __wtState.tel.journey.day,"
+                                            " menu: document.getElementById('tp-days').hidden })");
+    const auto parsedPicked = juce::JSON::parse (picked);
+    const bool pickOk = processor.getSkyFeed().dayId() == "2025-01-25" && parsedPicked["day"].toString() == "2025-01-25"
+                     && parsedPicked["tel"].toString() == "2025-01-25" && static_cast<bool> (parsedPicked["menu"]);
+    evalSync (*browser, "WT.native('journeySet', { day: '2024-05-10', speed: 24, loop: false }); true");
+    for (int k = 0; k < 40; ++k) { processor.processBlock (buffer, midi); pump (25); }
+    const bool transportOk = parsedTransport.isObject() && parsedTransport["bad"].isArray() && parsedTransport["bad"].size() == 0
+                          && static_cast<int> (parsedTransport["speeds"]) == static_cast<int> (worldtable::JourneyState::kSpeeds.size())
+                          && static_cast<int> (parsedTransport["days"]) == 3
+                          && parsedTransport["journey"].isObject() && parsedTransport["journey"]["day"].toString() == "2024-05-10"
+                          && setOk && pickOk && processor.getSkyFeed().dayId() == "2024-05-10";
 
     // T6.10: the day strip; after the drag the sky must have landed where it let go, then it goes back
     const auto strip = evalSync (*browser, juce::String::fromUTF8 (stripProbe), 10000);
@@ -463,11 +854,60 @@ int main (int argc, char* argv[])
     const bool stripOk = parsedStrip.isObject() && parsedStrip["problems"].isArray() && parsedStrip["problems"].size() == 0
                       && landed >= target - 1.0 && landed < target + 120.0;   // ≈ 0.6 s at 24× after the seek
 
+    // T6.13: the context menu and About
+    const auto menu = evalSync (*browser, juce::String::fromUTF8 (menuProbe), 10000);
+    pump (400);   // the restored values travel back to C++
+    auto parsedMenu = juce::JSON::parse (menu);
+    const bool menuOk = parsedMenu.isObject() && parsedMenu["problems"].isArray() && parsedMenu["problems"].size() == 0
+                     && parsedMenu["version"].toString().startsWith (WORLDTABLE_VERSION);
+
+    // T6.13: the sizes, from the bottom bar: S and L by a click, back to M by the arrow key; at each
+    // the editor takes the size, the settings file keeps it, the page re-fits; it ends where it opened
+    struct SizeStep { int index; bool byKey; };
+    std::vector<SizeStep> sizeSteps { { worldtable::UiSettings::kSmall, false }, { worldtable::UiSettings::kLarge, false },
+                                      { worldtable::UiSettings::kMedium, true } };
+    const int restoreSize = sizeAtOpen >= 0 ? sizeAtOpen : worldtable::UiSettings::kMedium;
+    if (restoreSize != worldtable::UiSettings::kMedium)
+        sizeSteps.push_back ({ restoreSize, false });
+    juce::StringArray sizeReports;
+    bool sizesOk = true;
+    for (const auto& step : sizeSteps)
+    {
+        evalSync (*browser, step.byKey
+            ? juce::String ("var b = document.querySelector('#size-seg [tabindex=\"0\"]'); b.focus();"
+                            " b.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })); document.activeElement.blur(); true")
+            : "document.querySelector('#size-seg [data-size=\"" + juce::String (step.index) + "\"]').click(); true");
+        for (int k = 0; k < 60; ++k)   // ≈ 1.5 s: the window resizes, the page rescales and redraws
+        {
+            processor.processBlock (buffer, midi);
+            pump (25);
+        }
+        const auto want = worldtable::UiSettings::sizeOf (step.index);
+        const auto got = evalSync (*browser, juce::String::fromUTF8 (sizeProbe), 10000);
+        auto parsedSize = juce::JSON::parse (got);
+        const bool ok = editor->getWidth() == want.x && editor->getHeight() == want.y
+                     && worldtable::UiSettings (settingsFile).size() == step.index
+                     && parsedSize.isObject()
+                     && static_cast<int> (parsedSize["inner"][0]) == want.x && static_cast<int> (parsedSize["inner"][1]) == want.y
+                     && parsedSize["canvas"].isArray() && parsedSize["canvas"].size() == 0
+                     && static_cast<int> (parsedSize["fitted"]) >= 10
+                     && parsedSize["tour"].isArray() && parsedSize["tour"].size() == 0;
+        sizesOk = sizesOk && ok;
+        sizeReports.add (juce::String (step.index) + (step.byKey ? " (key)" : "") + ": editor " + juce::String (editor->getWidth())
+                         + "x" + juce::String (editor->getHeight()) + ", " + got + (ok ? "" : "  <-- FAILED"));
+    }
+
     auto parsed = juce::JSON::parse (state);
     const bool ok = ready == "true"
+                 && tourOk
+                 && menuOk
+                 && sizesOk
+                 && transportOk
                  && accessOk
+                 && eqOk
                  && stripOk
                  && layoutOk
+                 && resOk
                  && picturesOk
                  && parsedSky["date"].toString().startsWith ("10 May")
                  && parsedSky["ut"].toString().endsWith ("UT")
@@ -484,7 +924,7 @@ int main (int argc, char* argv[])
                  && static_cast<int> (parsed["bands"]) > 0
                  && parsed["chord"].toString().isNotEmpty()
                  && static_cast<int> (parsed["voices"]) > 0
-                 && static_cast<int> (parsed["knobs"]) >= 40
+                 && static_cast<int> (parsed["knobs"]) >= 30   // T6.11, T6.12, T6.14 put values in pictures
                  && static_cast<int> (parsed["segs"]) >= 4
                  && parsed["unbound"].isArray() && parsed["unbound"].size() == 0
                  && std::abs (jsRevMix.getFloatValue() - 0.77f) < 0.001f
@@ -500,11 +940,22 @@ int main (int argc, char* argv[])
               << "keyboard, hints, colour, rings: " << access << "\n"
               << "day strip:  " << strip << ", the sky landed " << juce::String (landed - target, 1) << " s after the drag's end\n"
               << "layout, canvases, More: " << layout << "\n"
+              << "EQ display: " << eqRun << "\n"
+              << "EQ in C++:  " << eqCpp << "\n"
+              << "resonators, a crossover dragged: " << resDrag << ", C++ band_x1 " << cppX1 << "\n"
+              << "transport:  " << transport << "; journeySet 240x + loop → C++ " << set.speed << "x, loop " << (set.loop ? "on" : "off")
+              << "; day menu → " << picked << " (C++ " << processor.getSkyFeed().dayId() << " after the restore, load "
+              << juce::String (processor.getSkyFeed().lastLoadMs(), 1) << " ms)" << (transportOk ? "" : "  FAILED") << "\n"
               << "pictures (T6.12): drags " << (dragBad.isEmpty() ? juce::String ("all read back in C++") : dragBad.joinIntoString ("; "))
               << ", page phaser response vs dsp::Phaser " << responseError << " dB"
               << ", telemetry " << juce::JSON::toString (parsedPictures["telemetry"], true)
               << ", proxies off their picture " << juce::JSON::toString (parsedPictures["proxies"], true)
               << ", restored " << restored << "\n"
+              << "settings:   " << settingsFile.getFullPathName() << ", opened at " << openedAt.x << "x" << openedAt.y
+              << ", tour seen in the file " << (tourSeenInFile ? "yes" : "no") << "\n"
+              << "tour:       " << tour << "\n"
+              << "menu:       " << menu << "\n"
+              << "sizes:      " << sizeReports.joinIntoString ("\n            ") << "\n"
               << (ok ? "UI CHECK PASSED" : "UI CHECK FAILED") << std::endl;
 
     if (probe.isNotEmpty())

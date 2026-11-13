@@ -114,20 +114,20 @@
     play_release: "How long a played note rings on after you let go.",
     play_velocity: "How much louder a harder note plays. At 0 every note is the same.",
     play_drone: "How much of the sky's drone plays on under your notes.",
-    low_level: "Level of the low resonator, on the chord's root under the bands.",
-    red_level: "Level of the red band, the low notes of the chord.",
-    green_level: "Level of the green band, the body of the chord.",
-    violet_level: "Level of the violet band, the high notes.",
+    low_level: "Level of the low resonator, on the chord's root. Drag the band up or down.",
+    red_level: "Level of the red band. Drag the band up or down.",
+    green_level: "Level of the green band. Drag the band up or down.",
+    violet_level: "Level of the violet band. Drag the band up or down.",
     low_decay: "How long the low resonator rings on.",
     red_decay: "How long the red band rings on after the sky strikes it.",
     green_decay: "How long the green band rings on after the sky strikes it.",
     violet_decay: "How long the violet band rings on after the sky strikes it.",
     width: "How wide the curtain is spread between the speakers.",
-    band_floor: "The low band's lowest note. The low resonator sits within an octave above it.",
-    band_x1: "Where the low band ends and the red band begins.",
-    band_x2: "Where the red band ends and the green band begins.",
-    band_x3: "Where the green band ends and the violet band begins.",
-    band_ceiling: "The first note above the violet band.",
+    band_floor: "The floor: the lowest note the resonators reach. Shift-drag moves all five.",
+    band_x1: "Crossover between Low and Red. Drag: one band grows, the other shrinks.",
+    band_x2: "Crossover between Red and Green. Drag: one band grows, the other shrinks.",
+    band_x3: "Crossover between Green and Violet. Drag: one band grows, the other shrinks.",
+    band_ceiling: "The ceiling: the highest note the resonators reach. Shift-drag moves all five.",
     band_blend: "How far neighbouring bands reach into each other, in semitones.",
     red_tones: "Which chord tones the red band rings: root, root and fifth, chord, colours, all.",
     green_tones: "Which chord tones the green band rings: root, root and fifth, chord, colours, all.",
@@ -199,6 +199,18 @@
     });
   }
   UI.commit = (id, v) => gesture(id).commit(v);
+  /** A run of discrete changes (keys, wheel) to one parameter as one gesture, for a picture's handles (T6.14). */
+  UI.step = (id, fn) => gesture(id).step(fn);
+  /** A pointer drag of a picture's handle over one or more parameters (T6.14: a dot moves frequency
+   *  and gain at once): one host gesture per parameter for the whole drag, a pending key or wheel run
+   *  on any of them ended first. Returns { set(id, v), end() }. */
+  UI.drag = function (ids) {
+    for (const id of ids) { gesture(id).flush(); WT.begin(id); }
+    return { set: (id, v) => WT.set(id, v), end() { for (const id of ids) WT.end(id); } };
+  };
+  /** A drag in a picture (T6.11): begin ends a pending key run first, as a knob's drag does. */
+  UI.begin = (id) => { gesture(id).flush(); WT.begin(id); };
+  UI.end = (id) => WT.end(id);
 
   // ---------- drag (vertical, shift = fine) and wheel ----------
   function verticalDrag(target, id, opts = {}) {
@@ -263,6 +275,7 @@
     if (k === "Backspace" || k === "Delete") { g.commit(defaultValue(id)); return true; }
     return false;
   }
+  UI.sliderKey = sliderKey;
 
   /** Arrow keys in a radiogroup (the ARIA pattern): Right/Down next, Left/Up previous, wrapping;
    *  Home/End; Backspace or Delete = default. Returns true if handled. */
@@ -296,7 +309,9 @@
     const d = SIZES[size], R = d / 2, W = d + 20, c = W / 2;
     const BAND = ["red", "green", "violet"].includes(opts.color) ? opts.color : "ink";
     const root = el("div", `knob ${size} k-${BAND}`, host);
-    root.dataset.param = id;
+    // a second view of a parameter bound elsewhere (T6.11: the band row's Level, whose binding is
+    // the band's handle in the picture) says so, and is not counted as the parameter's control
+    if (opts.view) root.dataset.paramView = id; else root.dataset.param = id;
     root.dataset.hint = opts.hint || UI.hintOf(id);
     root.tabIndex = 0;
     root.setAttribute("role", "slider");
@@ -640,6 +655,104 @@
     cutHz: cutHz || WT.get("eq4_freq"),
   });
 
+  // ---------- a picture's handles (spec/09 §5, T6.11) ----------
+  /** The binding of a handle in a picture: a small focusable element the picture places on its
+   *  handle, so the focus ring shows there. It carries data-param, the role, the value text, the
+   *  hint and the keyboard (arrows a step, Shift fine, PageUp/Down, Home/End, Enter to type,
+   *  Backspace or a double-click for the default); the picture does the pointer. `limits()` →
+   *  [lo, hi] narrows an int handle's range (a crossover between its neighbours). */
+  function Proxy(host, id, opts = {}) {
+    const m = WT.META[id];
+    const root = el("div", "proxy" + (opts.cls ? " " + opts.cls : ""), host);
+    root.dataset.param = id;
+    root.dataset.hint = opts.hint || UI.hintOf(id);
+    root.tabIndex = 0;
+    root.setAttribute("role", "slider");
+    root.setAttribute("aria-label", opts.label || m.name);
+    const [lo, hi] = rangeOf(id);
+    root.setAttribute("aria-valuemin", String(lo));
+    root.setAttribute("aria-valuemax", String(hi));
+    WT.onParam(id, (v) => {
+      root.setAttribute("aria-valuenow", String(v));
+      root.setAttribute("aria-valuetext", UI.format(id, v));
+    });
+    const limited = (v) => (opts.limits ? clamp(v, ...opts.limits()) : v);
+    let field = null;
+    const closeField = (commit) => {
+      if (!field) return;
+      const f = field;
+      field = null;
+      if (commit) { const v = UI.parse(id, f.value); if (v !== null && isFinite(v)) gesture(id).commit(limited(v)); }
+      f.remove();
+      root.focus({ preventScroll: true });
+    };
+    root.addEventListener("keydown", (e) => {
+      if (e.target !== root) return;
+      const k = e.key;
+      if (k === "Enter") {
+        e.preventDefault();
+        if (field) return;
+        field = el("input", "knob-field proxy-field", root);
+        field.type = "text";
+        field.value = UI.format(id, WT.get(id));
+        field.setAttribute("aria-label", m.name + ", type a value");
+        field.spellcheck = false;
+        field.addEventListener("keydown", (ev) => {
+          ev.stopPropagation();
+          if (ev.key === "Enter") { ev.preventDefault(); closeField(true); } else if (ev.key === "Escape") { ev.preventDefault(); closeField(false); }
+        });
+        field.addEventListener("blur", () => closeField(false));
+        field.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+        field.focus({ preventScroll: true });
+        field.select();
+        return;
+      }
+      if (!opts.limits) { if (sliderKey(id, e)) e.preventDefault(); return; }
+      const [a, b] = opts.limits();
+      const dir = k === "ArrowUp" || k === "ArrowRight" ? 1 : k === "ArrowDown" || k === "ArrowLeft" ? -1 : k === "PageUp" ? 12 : k === "PageDown" ? -12 : 0;
+      const to = dir ? null : k === "Home" ? a : k === "End" ? b : k === "Backspace" || k === "Delete" ? clamp(defaultValue(id), a, b) : undefined;
+      if (dir) gesture(id).step(() => WT.set(id, clamp(WT.get(id) + dir, a, b)));
+      else if (to !== undefined) gesture(id).commit(to);
+      else return;
+      e.preventDefault();
+    });
+    root.addEventListener("dblclick", () => gesture(id).commit(limited(defaultValue(id))));
+    return root;
+  }
+
+  /** A chip that steps through a parameter's values (T6.11: a band's Tones and Shift): its caption
+   *  and the value in words. Click: the next value of `cycle` (or the next choice, wrapping);
+   *  Shift-click the previous. The keyboard as on a knob. */
+  function Chip(host, id, opts = {}) {
+    const m = WT.META[id];
+    const b = el("button", "chip vchip" + (opts.cls ? " " + opts.cls : ""), host);
+    b.type = "button";
+    b.dataset.param = id;
+    b.dataset.hint = opts.hint || UI.hintOf(id);
+    b.setAttribute("role", "slider");
+    b.setAttribute("aria-label", m.name);
+    const [lo, hi] = rangeOf(id);
+    b.setAttribute("aria-valuemin", String(lo));
+    b.setAttribute("aria-valuemax", String(hi));
+    el("span", "", b).textContent = opts.label || m.name;
+    const val = el("b", "", b);
+    WT.onParam(id, (v) => {
+      const text = opts.fmt ? opts.fmt(v) : UI.format(id, v);
+      val.textContent = text;
+      b.setAttribute("aria-valuenow", String(v));
+      b.setAttribute("aria-valuetext", text);
+    });
+    const cycle = opts.cycle || Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+    b.addEventListener("click", (e) => {
+      const v = Math.round(WT.get(id)), n = cycle.length;
+      let i = cycle.indexOf(v);
+      if (i < 0) i = e.shiftKey ? 0 : n - 1;   // off the cycle: start it again
+      gesture(id).commit(cycle[(i + (e.shiftKey ? n - 1 : 1)) % n]);
+    });
+    b.addEventListener("keydown", (e) => { if (e.key !== "Enter" && e.key !== " " && sliderKey(id, e)) e.preventDefault(); });
+    return b;
+  }
+
   // ---------- canvas ----------
   /** Sizes a canvas backing store for the stage zoom and the display; returns {ctx, w, h} in CSS px.
    *  Capped (T6.6): a canvas whose CSS size follows its own backing store would otherwise grow by
@@ -665,5 +778,5 @@
   const MONO = (px) => `${px}px "JetBrains Mono", ui-monospace, monospace`;
   const SANS = (px, w) => `${w || 400} ${px}px "Instrument Sans", -apple-system, sans-serif`;
 
-  Object.assign(UI, { Knob, Seg, Keys, Toggle, Handle, Cycle, dragPicture, setNorm, eqDb, eqParams, fit, el, svg, C, rgba, MONO, SANS, KEY_NAMES, defaultValue, clamp });
+  Object.assign(UI, { Knob, Seg, Keys, Toggle, Handle, Cycle, dragPicture, setNorm, eqDb, eqParams, Proxy, Chip, fit, el, svg, C, rgba, MONO, SANS, KEY_NAMES, defaultValue, clamp });
 })();
