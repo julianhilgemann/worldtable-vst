@@ -4,6 +4,7 @@
 //                    [--set progression=0 --set mood=Bittersweet --set eq1_drive=0.5 ...]
 //                    [--midi notes.mid] [--block 512] [--bands]
 //                    [--sweep band_x2=33:96[:t0:t1] ...]
+//   WorldtableRender --bands-of renders/x.wav       (the octave bands of an existing render, T3.9)
 //
 // --midi plays a Standard MIDI File into the processor at its sample positions (all tracks, the
 // file's tempo map); with --set play=1 that is Play mode (T3.7). --bands prints the mono mix's
@@ -93,7 +94,7 @@ void printBands (const juce::AudioBuffer<float>& audio, double rate, double skip
         }
         const double rms = std::sqrt (sum / std::max (1, total - skip));
         std::cout << (fc < 1000.0 ? juce::String (fc, fc < 100.0 ? 1 : 0) : juce::String (fc / 1000.0, 0) + "k") << " "
-                  << juce::String (juce::Decibels::gainToDecibels (static_cast<float> (rms), -200.0f), 1) << "  ";
+                  << juce::String (juce::Decibels::gainToDecibels (static_cast<float> (rms), -200.0f), 2) << "  ";
     }
     std::cout << "\n";
 }
@@ -484,6 +485,20 @@ int main (int argc, char* argv[])
         }
         else if (a == "--blend")   sky.edges.blend = next().getDoubleValue();
         else if (a == "--sweep")   sweepArgs.add (next());
+        else if (a == "--bands-of")
+        {
+            // the octave bands of a render already made (to compare with one from another build)
+            const auto file = juce::File::getCurrentWorkingDirectory().getChildFile (next());
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> reader (wav.createReaderFor (file.createInputStream().release(), true));
+            if (reader == nullptr || reader->numChannels < 2)
+                return fail ("cannot read a stereo WAV from " + file.getFullPathName());
+            juce::AudioBuffer<float> audio (2, static_cast<int> (reader->lengthInSamples));
+            reader->read (&audio, 0, audio.getNumSamples(), 0, true, true);
+            std::cout << "file:    " << file.getFileName() << ", " << audio.getNumSamples() / reader->sampleRate << " s\n";
+            printBands (audio, reader->sampleRate, std::min (2.0, 0.25 * audio.getNumSamples() / reader->sampleRate));
+            return 0;
+        }
         else if (a == "--progression") sky.progression = juce::jlimit (0.0, 1.0, next().getDoubleValue());
         else return fail ("unknown argument " + a);
     }
