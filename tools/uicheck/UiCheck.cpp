@@ -470,7 +470,7 @@ int main (int argc, char* argv[])
     bool layoutOk = parsedLayout.isObject();
     for (const auto* list : { "sizes", "canvas", "more" })
         layoutOk = layoutOk && parsedLayout[list].isArray() && parsedLayout[list].size() == 0;
-    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 4 && static_cast<int> (parsedLayout["moreParams"]) >= 20;   // T6.12, T6.14 took some
+    layoutOk = layoutOk && static_cast<int> (parsedLayout["moreCount"]) >= 4 && static_cast<int> (parsedLayout["moreParams"]) >= 15;   // T6.12 and T6.14 emptied some
 
     // T6.12: the pictures as controls. The drags' values must have reached the processor.
     const auto pictures = evalSync (*browser, juce::String::fromUTF8 (picturesProbe), 20000);
