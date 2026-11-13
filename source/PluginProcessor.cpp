@@ -40,7 +40,10 @@ juce::ValueTree PluginProcessor::migrateState (juce::ValueTree state)
         return {};
 
     // v1 → v2 (T3.6): the POC parameters are gone. Their properties are ignored by the new APVTS,
-    // so nothing has to be rewritten; unknown IDs simply don't bind. Future upgrades go here.
+    // so nothing has to be rewritten; unknown IDs simply don't bind.
+    // v2 → v3 (T3.8): register_semis, spread and low_octave gave way to the band edges, tones and
+    // shifts. The old three no longer bind; the new parameters are absent from a v2 state, so they
+    // load at their defaults (the default bands). Future upgrades go here.
     state.setProperty (kStateVersionId, kStateVersion, nullptr);
     return state;
 }

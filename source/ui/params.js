@@ -74,25 +74,6 @@ window.WT_PARAMS = {
     "default": 0,
     "unit": "st"
   },
-  "register_semis": {
-    "name": "Register",
-    "type": "int",
-    "group": "harmony",
-    "min": -24,
-    "max": 24,
-    "default": 0,
-    "unit": "st"
-  },
-  "spread": {
-    "name": "Voicing Spread",
-    "type": "float",
-    "group": "harmony",
-    "min": 0.5,
-    "max": 4,
-    "default": 2,
-    "skew": 1.0,
-    "unit": "oct"
-  },
   "detune": {
     "name": "Detune",
     "type": "float",
@@ -242,15 +223,121 @@ window.WT_PARAMS = {
     "skew": 0.487655947,
     "unit": "s"
   },
-  "low_octave": {
-    "name": "Low Octave",
+  "band_floor": {
+    "name": "Band Floor",
+    "type": "int",
+    "group": "bands",
+    "min": 21,
+    "max": 60,
+    "default": 24
+  },
+  "band_x1": {
+    "name": "Crossover Low/Red",
+    "type": "int",
+    "group": "bands",
+    "min": 28,
+    "max": 84,
+    "default": 36
+  },
+  "band_x2": {
+    "name": "Crossover Red/Green",
+    "type": "int",
+    "group": "bands",
+    "min": 33,
+    "max": 96,
+    "default": 50
+  },
+  "band_x3": {
+    "name": "Crossover Green/Violet",
+    "type": "int",
+    "group": "bands",
+    "min": 38,
+    "max": 103,
+    "default": 73
+  },
+  "band_ceiling": {
+    "name": "Band Ceiling",
+    "type": "int",
+    "group": "bands",
+    "min": 43,
+    "max": 108,
+    "default": 91
+  },
+  "band_blend": {
+    "name": "Band Blend",
+    "type": "float",
+    "group": "bands",
+    "min": 0,
+    "max": 6,
+    "default": 1.5,
+    "skew": 1.0,
+    "unit": "st"
+  },
+  "red_tones": {
+    "name": "Red Tones",
     "type": "choice",
-    "group": "layers",
+    "group": "bands",
     "choices": [
-      "Sub",
-      "Bass"
+      "Root",
+      "Root + fifth",
+      "Chord",
+      "Colours",
+      "All"
     ],
-    "default": 0
+    "default": 1
+  },
+  "green_tones": {
+    "name": "Green Tones",
+    "type": "choice",
+    "group": "bands",
+    "choices": [
+      "Root",
+      "Root + fifth",
+      "Chord",
+      "Colours",
+      "All"
+    ],
+    "default": 2
+  },
+  "violet_tones": {
+    "name": "Violet Tones",
+    "type": "choice",
+    "group": "bands",
+    "choices": [
+      "Root",
+      "Root + fifth",
+      "Chord",
+      "Colours",
+      "All"
+    ],
+    "default": 3
+  },
+  "red_shift": {
+    "name": "Red Shift",
+    "type": "int",
+    "group": "bands",
+    "min": -12,
+    "max": 12,
+    "default": 0,
+    "unit": "st"
+  },
+  "green_shift": {
+    "name": "Green Shift",
+    "type": "int",
+    "group": "bands",
+    "min": -12,
+    "max": 12,
+    "default": 0,
+    "unit": "st"
+  },
+  "violet_shift": {
+    "name": "Violet Shift",
+    "type": "int",
+    "group": "bands",
+    "min": -12,
+    "max": 12,
+    "default": 0,
+    "unit": "st"
   },
   "macro_storm": {
     "name": "Storm",

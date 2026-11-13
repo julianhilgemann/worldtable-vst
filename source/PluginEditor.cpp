@@ -409,6 +409,13 @@ juce::var PluginEditor::makeChordTelemetry()
         layers.add (juce::var (notes));
     }
     o->setProperty ("notes", layers);
+
+    // the band edges the notes were voiced with (T3.8): floor, x1, x2, x3, ceiling; the blend
+    juce::Array<juce::var> edges;
+    for (const auto e : c.edges)
+        edges.add (static_cast<int> (e));
+    o->setProperty ("edges", edges);
+    o->setProperty ("blend", round3 (c.blend));
     return juce::var (o);
 }
 

@@ -45,18 +45,11 @@ inline constexpr int kNumLayers = 3;
 inline constexpr int kSlots = 5;
 using Slots = std::array<int, kSlots>;
 
-/** Pitch classes per layer, padded to kSlots. red: root + fifth; green: the chord, padded with
-    root, fifth, then the rest; violet: the tones other than root and fifth. */
-Slots layerSlots (const Chord&, Layer) noexcept;
-
 /** A MIDI range [lo, hi], both ends included. */
 struct NoteRange
 {
     int lo, hi;
 };
-
-/** MIDI range [lo, hi] of a layer at `registerSemitones` and `spread` (octaves per layer at 2). */
-NoteRange layerRange (Layer, double registerSemitones, double spread) noexcept;
 
 //== Bands (T3.8, spec/tasks/T3.8-resonator-bands.md) ===============================================
 
@@ -84,7 +77,11 @@ struct BandEdges
     /** Edge i: 0 floor, 1–3 the crossovers, 4 the ceiling. */
     int edge (int i) const noexcept;
 
-    bool operator== (const BandEdges&) const noexcept = default;
+    bool operator== (const BandEdges& o) const noexcept
+    {
+        return floor == o.floor && x1 == o.x1 && x2 == o.x2 && x3 == o.x3 && ceiling == o.ceiling
+            && ! (blend < o.blend) && ! (blend > o.blend);
+    }
 };
 
 /** Order and minimum widths, whatever the host automates, clamped from the floor upward: the floor

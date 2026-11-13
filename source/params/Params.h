@@ -16,8 +16,6 @@ namespace id
     inline constexpr const char* chord_shape = "chord_shape";
     inline constexpr const char* progression = "progression";
     inline constexpr const char* transpose = "transpose";
-    inline constexpr const char* register_semis = "register_semis";
-    inline constexpr const char* spread = "spread";
     inline constexpr const char* detune = "detune";
     inline constexpr const char* drift = "drift";
     inline constexpr const char* play = "play";
@@ -34,7 +32,18 @@ namespace id
     inline constexpr const char* width = "width";
     inline constexpr const char* low_level = "low_level";
     inline constexpr const char* low_decay = "low_decay";
-    inline constexpr const char* low_octave = "low_octave";
+    inline constexpr const char* band_floor = "band_floor";
+    inline constexpr const char* band_x1 = "band_x1";
+    inline constexpr const char* band_x2 = "band_x2";
+    inline constexpr const char* band_x3 = "band_x3";
+    inline constexpr const char* band_ceiling = "band_ceiling";
+    inline constexpr const char* band_blend = "band_blend";
+    inline constexpr const char* red_tones = "red_tones";
+    inline constexpr const char* green_tones = "green_tones";
+    inline constexpr const char* violet_tones = "violet_tones";
+    inline constexpr const char* red_shift = "red_shift";
+    inline constexpr const char* green_shift = "green_shift";
+    inline constexpr const char* violet_shift = "violet_shift";
     inline constexpr const char* macro_storm = "macro_storm";
     inline constexpr const char* macro_breath = "macro_breath";
     inline constexpr const char* macro_glow = "macro_glow";
@@ -75,7 +84,9 @@ struct Key { enum : int { kC = 0, kCSharp = 1, kD = 2, kDSharp = 3, kE = 4, kF =
 struct Mood { enum : int { kBright = 0, kBittersweet = 1, kNocturnal = 2, kCount = 3 }; };
 struct Scale { enum : int { kMajor = 0, kLydian = 1, kPentaMajor = 2, kMinor = 3, kDorian = 4, kPentaMinor = 5, kCount = 6 }; };
 struct ChordShape { enum : int { kShape1 = 0, kShape2 = 1, kShape3 = 2, kCount = 3 }; };
-struct LowOctave { enum : int { kSub = 0, kBass = 1, kCount = 2 }; };
+struct RedTones { enum : int { kRoot = 0, kRootFifth = 1, kChord = 2, kColours = 3, kAll = 4, kCount = 5 }; };
+struct GreenTones { enum : int { kRoot = 0, kRootFifth = 1, kChord = 2, kColours = 3, kAll = 4, kCount = 5 }; };
+struct VioletTones { enum : int { kRoot = 0, kRootFifth = 1, kChord = 2, kColours = 3, kAll = 4, kCount = 5 }; };
 struct FltType { enum : int { kLP12 = 0, kLP24 = 1, kBP = 2, kHP = 3, kCount = 4 }; };
 
 /** Raw value pointers into the APVTS, for lock-free reads on the audio thread. */
@@ -87,8 +98,6 @@ struct ParamPointers
     std::atomic<float>* chord_shape = nullptr;
     std::atomic<float>* progression = nullptr;
     std::atomic<float>* transpose = nullptr;
-    std::atomic<float>* register_semis = nullptr;
-    std::atomic<float>* spread = nullptr;
     std::atomic<float>* detune = nullptr;
     std::atomic<float>* drift = nullptr;
     std::atomic<float>* play = nullptr;
@@ -105,7 +114,18 @@ struct ParamPointers
     std::atomic<float>* width = nullptr;
     std::atomic<float>* low_level = nullptr;
     std::atomic<float>* low_decay = nullptr;
-    std::atomic<float>* low_octave = nullptr;
+    std::atomic<float>* band_floor = nullptr;
+    std::atomic<float>* band_x1 = nullptr;
+    std::atomic<float>* band_x2 = nullptr;
+    std::atomic<float>* band_x3 = nullptr;
+    std::atomic<float>* band_ceiling = nullptr;
+    std::atomic<float>* band_blend = nullptr;
+    std::atomic<float>* red_tones = nullptr;
+    std::atomic<float>* green_tones = nullptr;
+    std::atomic<float>* violet_tones = nullptr;
+    std::atomic<float>* red_shift = nullptr;
+    std::atomic<float>* green_shift = nullptr;
+    std::atomic<float>* violet_shift = nullptr;
     std::atomic<float>* macro_storm = nullptr;
     std::atomic<float>* macro_breath = nullptr;
     std::atomic<float>* macro_glow = nullptr;
@@ -143,7 +163,7 @@ struct ParamPointers
     void bind (juce::AudioProcessorValueTreeState&);
 };
 
-inline constexpr int kNumParameters = 58;
+inline constexpr int kNumParameters = 67;
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 

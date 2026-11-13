@@ -30,12 +30,23 @@ constexpr double kDriftKnotSeconds = 20.0;
 double midiHz (double note) noexcept { return 440.0 * std::pow (2.0, (note - 69.0) / 12.0); }
 
 int minuteOf (double modelTimeUtc) noexcept { return static_cast<int> (std::floor (modelTimeUtc / 60.0)); }
+
+/** Two band settings voice alike: the same edges, reach (the blend as it is rounded), tones and
+    shifts. A blend move that keeps its rounding re-voices nothing. */
+bool sameVoicing (const Bands& a, const Bands& b) noexcept
+{
+    for (int i = 0; i < BandEdges::kCount; ++i)
+        if (a.edges.edge (i) != b.edges.edge (i))
+            return false;
+    return std::lround (a.edges.blend) == std::lround (b.edges.blend) && a.tones == b.tones && a.shift == b.shift;
+}
 } // namespace
 
 void SkySound::prepare (double rate, int nodes, uint32_t soundSeed, const Settings& s, const Chord& start) noexcept
 {
     settings = s;
     settings.voicesPerNode = std::clamp (s.voicesPerNode, 1, 2);
+    settings.bands = clampBands (s.bands);
     sampleRate = rate;
     seed = soundSeed;
     numNodes = std::clamp (nodes, 2, sky::SkySnapshot::kMaxNodes);
@@ -63,6 +74,11 @@ void SkySound::prepare (double rate, int nodes, uint32_t soundSeed, const Settin
     breath01 = 0.0;
     xfStart = xfEnd = 0.0;
     dampStart = -1.0;
+    dampT60 = kDampT60;
+    settled = settings.bands;
+    voicedWith.fill (settled);
+    bandsMovedTick = 0;
+    revoiceWanted = false;
     applied = start;
     pending = {};
     pendingValid = pendingUrgent = false;
@@ -78,8 +94,12 @@ void SkySound::prepare (double rate, int nodes, uint32_t soundSeed, const Settin
 void SkySound::setSettings (const Settings& s) noexcept
 {
     const int vpn = settings.voicesPerNode;
+    const Bands bands = clampBands (s.bands);
+    if (! sameVoicing (bands, settings.bands))
+        bandsMovedTick = tickCount;   // the 300 ms count starts again (counted in ticks: rule 5)
     settings = s;
     settings.voicesPerNode = vpn;   // fixed by prepare()
+    settings.bands = bands;
     exciter.setSettings (settings.exciter);
 }
 
@@ -170,9 +190,24 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
         pendingUrgent = harmonyEngine.pendingUrgent();
     }
 
+    // A band change (T3.8), still for 300 ms: the chord is voiced again, through the crossfade, as a
+    // key change by hand. A chord already waiting is voiced with the new bands when it lands.
+    if (! sameVoicing (settings.bands, settled) && tickCount - bandsMovedTick >= static_cast<uint64_t> (kRevoiceStillTicks))
+    {
+        settled = settings.bands;
+        revoiceWanted = true;
+        if (! pendingValid)
+        {
+            pending = applied;
+            pendingValid = true;
+            pendingUrgent = true;
+            pendingFromHarmony = false;
+        }
+    }
+
     // Chord changes: the old bank retires once silent (one T60 after the crossfade), then the next
     // may come. An urgent change doesn't wait: it ends the crossfade and damps the old bank over
-    // kDampT60 instead.
+    // kDampT60 instead (a re-voice over kRevoiceDampT60, so it is heard within a second).
     if (xf < 1.0)
     {
         xf = std::min (1.0, (realS - xfStart) / s.crossfadeSeconds);
@@ -180,16 +215,26 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
             xfEnd = realS;
     }
     const int other = 1 - cur;   // the sketch computes this before a change on this tick (see below)
-    if (pendingValid && pendingUrgent && resonators.isActive (other) && dampStart < 0.0)
+    const double wantDamp = revoiceWanted ? kRevoiceDampT60 : kDampT60;
+    if (pendingValid && (pendingUrgent || revoiceWanted) && resonators.isActive (other))
     {
-        if (xf < 1.0)
+        if (dampStart < 0.0)
         {
-            xf = 1.0;
-            xfEnd = realS;
+            if (xf < 1.0)
+            {
+                xf = 1.0;
+                xfEnd = realS;
+            }
+            dampStart = realS;
+            dampT60 = wantDamp;
         }
-        dampStart = realS;
+        else if (wantDamp < dampT60)
+        {
+            dampStart = realS;   // a re-voice shortens a damping under way
+            dampT60 = wantDamp;
+        }
     }
-    const double ringOut = dampStart >= 0.0 ? kDampT60 : std::max ({ s.t60[0], s.t60[1], s.t60[2] });
+    const double ringOut = dampStart >= 0.0 ? dampT60 : std::max ({ s.t60[0], s.t60[1], s.t60[2] });
     const double since = dampStart >= 0.0 ? dampStart : xfEnd;
     if (resonators.isActive (other) && xf >= 1.0 && realS - since >= ringOut)
     {
@@ -247,7 +292,7 @@ void SkySound::skyTicked (const sky::SkyModel& model, std::span<const sky::SkyEv
         radius[l] = resonators.radius (s.t60[l]);
         norm[l] = std::sqrt (1.0 - radius[l] * radius[l]);
     }
-    const double dampR = resonators.radius (kDampT60);
+    const double dampR = resonators.radius (dampT60);
     const double preGain = 2.0 / std::sqrt (3.0 * V);
 
     // `other` was computed before applyChord(): on the tick a chord is taken it names the new bank,
@@ -322,8 +367,10 @@ void SkySound::geometry (const sky::SkyModel& model) noexcept
     }
 }
 
-/** Voices a chord into `bank`: from scratch (fromBank < 0), or led from `fromBank` (each voice
-    keeps its slot and takes the nearest octave in its layer's range). */
+/** Voices a chord into `bank` with the settled bands (T3.8): from scratch (fromBank < 0), or led
+    from `fromBank` (each voice keeps its slot and takes the nearest octave in its band). When the
+    band itself moved, a voice keeps its place within the band (the old note mapped onto the new
+    range), so a band that moves an octave keeps its voices spread rather than folded into one end. */
 void SkySound::voiceBank (int bank, const Chord& chord, int fromBank) noexcept
 {
     const auto b = static_cast<size_t> (bank);
@@ -331,19 +378,29 @@ void SkySound::voiceBank (int bank, const Chord& chord, int fromBank) noexcept
     {
         const auto li = static_cast<size_t> (l);
         const auto layer = static_cast<Layer> (l);
-        const Slots next = layerSlots (chord, layer);
-        const auto range = layerRange (layer, settings.registerSemitones, settings.spread);
+        const Slots next = bandSlots (chord, settled.tones[li], settled.shift[li]);
+        const auto range = bandRange (settled.edges, layer);
+        const auto was = fromBank < 0 ? range : bandRange (voicedWith[static_cast<size_t> (fromBank)].edges, layer);
+        const bool moved = was.lo != range.lo || was.hi != range.hi;
+        const double scale = was.hi > was.lo ? static_cast<double> (range.hi - range.lo) / (was.hi - was.lo) : 1.0;
         const Slots slots = fromBank < 0 ? next : leadSlots (slotPcs[static_cast<size_t> (fromBank)][li], next).slots;
         for (int v = 0; v < numVoices; ++v)
         {
             const auto vi = static_cast<size_t> (v);
-            const double near = fromBank < 0
-                ? range.lo + sky::rng::rand01 (seed, 71u + static_cast<uint32_t> (l), static_cast<uint32_t> (v)) * (range.hi - range.lo)
-                : notes[static_cast<size_t> (fromBank)][li][vi];
+            double near = 0.0;
+            if (fromBank < 0)
+                near = range.lo + sky::rng::rand01 (seed, 71u + static_cast<uint32_t> (l), static_cast<uint32_t> (v)) * (range.hi - range.lo);
+            else
+            {
+                near = notes[static_cast<size_t> (fromBank)][li][vi];
+                if (moved)
+                    near = range.lo + (near - was.lo) * scale;
+            }
             notes[b][li][vi] = static_cast<int16_t> (nearestNote (slots[static_cast<size_t> (slotOf[vi])], near, range.lo, range.hi));
         }
         slotPcs[b][li] = slots;
     }
+    voicedWith[b] = settled;
 }
 
 void SkySound::applyChord (double realS) noexcept
@@ -358,6 +415,7 @@ void SkySound::applyChord (double realS) noexcept
     applied = pending;
     pendingValid = false;
     pendingFromHarmony = false;
+    revoiceWanted = false;
     chordTick = tickCount;
     ++changes;
 }

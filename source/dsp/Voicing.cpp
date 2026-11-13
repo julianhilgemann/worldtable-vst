@@ -4,7 +4,8 @@
 #include <cmath>
 #include <cstdlib>
 
-// prototype/sky/sound/harmony.js, the voicing section, line by line.
+// prototype/sky/sound/harmony.js, the voicing section, line by line; the bands (T3.8) are the
+// port's own (the sketch keeps its fixed layer ranges).
 
 namespace worldtable::dsp
 {
@@ -60,9 +61,6 @@ constexpr std::array<Permutation, kPermutations> kPerms = []
     while (std::next_permutation (q.begin(), q.end()));
     return p;
 }();
-
-/** The sketch's `Math.round` for the non-negative values here. */
-int roundHalfUp (double x) noexcept { return static_cast<int> (std::floor (x + 0.5)); }
 } // namespace
 
 bool Chord::has (int interval) const noexcept
@@ -73,72 +71,122 @@ bool Chord::has (int interval) const noexcept
     return false;
 }
 
-Slots layerSlots (const Chord& c, Layer layer) noexcept
-{
-    PitchClasses pcs;
-    if (layer == Layer::red)
-    {
-        pcs.add (pcOf (c, 0));
-        if (c.has (7))
-            pcs.add (pcOf (c, 7));
-        return pad (pcs);
-    }
-
-    if (layer == Layer::green)
-    {
-        PitchClasses tones, priority;   // pad with root, fifth, then the rest
-        priority.add (pcOf (c, 0));
-        priority.add (pcOf (c, 7));
-        for (int i = 0; i < c.count; ++i)
-        {
-            tones.add (pcOf (c, c.intervals[static_cast<size_t> (i)]));
-            priority.add (pcOf (c, c.intervals[static_cast<size_t> (i)]));
-        }
-        Slots s {};
-        for (int k = 0; k < kSlots; ++k)
-            s[static_cast<size_t> (k)] = k < tones.count ? tones[k] : priority[(k - tones.count) % priority.count];
-        return s;
-    }
-
-    for (int i = 0; i < c.count; ++i)
-    {
-        const int iv = c.intervals[static_cast<size_t> (i)];
-        if (iv % 12 != 0 && iv % 12 != 7)
-            pcs.add (pcOf (c, iv));
-    }
-    if (pcs.count == 0)
-    {
-        pcs.add (pcOf (c, 7));
-        pcs.add (pcOf (c, 0));
-    }
-    return pad (pcs);
-}
-
-NoteRange layerRange (Layer layer, double registerSemitones, double spread) noexcept
-{
-    // centre and half-width at Register 0 and Voicing spread 2
-    static constexpr std::array<std::array<double, 2>, kNumLayers> kRange { { { 40.0, 9.0 }, { 62.0, 12.0 }, { 81.0, 9.0 } } };
-    const auto& [centre, half] = kRange[static_cast<size_t> (layer)];
-    const double h = std::max (6.0, (half * spread) / 2.0);
-    return { roundHalfUp (centre + registerSemitones - h), roundHalfUp (centre + registerSemitones + h) };
-}
-
-//== Bands (T3.8): stubs, implemented in the next commit ===========================================
+//== Bands (T3.8) ==================================================================================
 int BandEdges::edge (int i) const noexcept
 {
-    (void) i;
-    return 0;
+    switch (i)
+    {
+        case 0:  return floor;
+        case 1:  return x1;
+        case 2:  return x2;
+        case 3:  return x3;
+        default: return ceiling;
+    }
 }
 
-BandEdges clampEdges (const BandEdges& e) noexcept { return e; }
+BandEdges clampEdges (const BandEdges& e) noexcept
+{
+    // Each edge's parameter maximum (parameters.yaml). Pushed up from the floor, an edge can never
+    // pass it: 60 + 12 ≤ 84, 84 + 5 ≤ 96, 96 + 5 ≤ 101 ≤ 103, 103 + 5 ≤ 108.
+    static constexpr std::array<int, BandEdges::kCount> kMax { BandEdges::kHighestFloor, 84, 96, 103, BandEdges::kHighestCeiling };
+    static constexpr std::array<int, BandEdges::kCount> kMinWidth { 0, BandEdges::kMinLow, BandEdges::kMinBand, BandEdges::kMinBand, BandEdges::kMinBand };
 
-NoteRange bandRange (const BandEdges&, Layer) noexcept { return { 0, 0 }; }
+    std::array<int, BandEdges::kCount> x { e.floor, e.x1, e.x2, e.x3, e.ceiling };
+    x[0] = std::clamp (x[0], BandEdges::kLowestFloor, kMax[0]);
+    for (size_t i = 1; i < x.size(); ++i)
+        x[i] = std::clamp (x[i], x[i - 1] + kMinWidth[i], std::max (kMax[i], x[i - 1] + kMinWidth[i]));
 
-int lowNote (int pitchClass, int) noexcept { return pitchClass; }
+    BandEdges c;
+    c.floor = x[0];
+    c.x1 = x[1];
+    c.x2 = x[2];
+    c.x3 = x[3];
+    c.ceiling = x[4];
+    c.blend = std::isfinite (e.blend) ? std::clamp (e.blend, 0.0, BandEdges::kMaxBlend) : BandEdges {}.blend;
+    return c;
+}
 
-Slots bandSlots (const Chord&, Tones, int) noexcept { return {}; }
+NoteRange bandRange (const BandEdges& e, Layer layer) noexcept
+{
+    const auto band = static_cast<int> (layer) + 1;   // band 0 is the low one
+    const int reach = static_cast<int> (std::lround (std::max (0.0, e.blend)));
+    const int lo = e.edge (band) - reach;              // every layer's lower side touches a band
+    const int hi = e.edge (band + 1) - 1 + (layer == Layer::violet ? 0 : reach);
+    return { std::max (e.floor, lo), std::min (e.ceiling - 1, hi) };
+}
 
-Bands clampBands (const Bands& b) noexcept { return b; }
+int lowNote (int pitchClass, int floor) noexcept
+{
+    return floor + (((pitchClass - floor) % 12) + 12) % 12;
+}
+
+Slots bandSlots (const Chord& c, Tones tones, int shiftSemitones) noexcept
+{
+    PitchClasses pcs;
+    Slots s {};
+    switch (tones)
+    {
+        case Tones::root:
+            pcs.add (pcOf (c, 0));
+            s = pad (pcs);
+            break;
+
+        case Tones::rootFifth:   // red before T3.8
+            pcs.add (pcOf (c, 0));
+            if (c.has (7))
+                pcs.add (pcOf (c, 7));
+            s = pad (pcs);
+            break;
+
+        case Tones::colours:     // violet before T3.8
+            for (int i = 0; i < c.count; ++i)
+            {
+                const int iv = c.intervals[static_cast<size_t> (i)];
+                if (iv % 12 != 0 && iv % 12 != 7)
+                    pcs.add (pcOf (c, iv));
+            }
+            if (pcs.count == 0)
+            {
+                pcs.add (pcOf (c, 7));
+                pcs.add (pcOf (c, 0));
+            }
+            s = pad (pcs);
+            break;
+
+        case Tones::chord:       // green before T3.8
+        case Tones::all:
+        default:
+        {
+            PitchClasses priority;   // pad with root, fifth, then the rest
+            priority.add (pcOf (c, 0));
+            priority.add (pcOf (c, 7));
+            for (int i = 0; i < c.count; ++i)
+            {
+                pcs.add (pcOf (c, c.intervals[static_cast<size_t> (i)]));
+                priority.add (pcOf (c, c.intervals[static_cast<size_t> (i)]));
+            }
+            for (int k = 0; k < kSlots; ++k)
+                s[static_cast<size_t> (k)] = k < pcs.count ? pcs[k] : priority[(k - pcs.count) % priority.count];
+            break;
+        }
+    }
+
+    for (auto& pc : s)
+        pc = (((pc + shiftSemitones) % 12) + 12) % 12;
+    return s;
+}
+
+Bands clampBands (const Bands& b) noexcept
+{
+    Bands c;
+    c.edges = clampEdges (b.edges);
+    for (size_t l = 0; l < kNumLayers; ++l)
+    {
+        c.tones[l] = static_cast<Tones> (std::clamp (static_cast<int> (b.tones[l]), 0, kNumTones - 1));
+        c.shift[l] = std::clamp (b.shift[l], -Bands::kMaxShift, Bands::kMaxShift);
+    }
+    return c;
+}
 
 //==================================================================================================
 int nearestNote (int pc, double near, int lo, int hi) noexcept

@@ -85,8 +85,6 @@
           <div class="knobs">
             <div data-knob="progression" data-label="Progression" data-color="green"></div>
             <div data-knob="transpose" data-label="Transpose" data-color="ink"></div>
-            <div data-knob="register_semis" data-label="Register" data-color="ink"></div>
-            <div data-knob="spread" data-label="Spread" data-color="ink"></div>
             <div data-knob="detune" data-label="Detune" data-color="violet"></div>
             <div data-knob="drift" data-label="Drift" data-color="red"></div>
           </div>
@@ -115,7 +113,24 @@
     <main id="main">
       <div class="col" id="col-left">
         <div class="module frame" id="layers">
-          <div class="head"><span class="cap"><b>Layers</b></span><span class="note">low, red, green, violet</span><span class="spacer"></span><span class="note low-note" id="low-note" title="The low resonator's note: the chord's root, or the lowest note you hold in Play mode"></span><div data-seg="low_octave" data-labels="Sub,Bass" class="small" title="Where the low resonator sits: the sub octave (C1–B1) or the bass octave (C2–B2)"></div></div>
+          <div class="head"><span class="cap"><b>Layers</b></span><span class="note">low, red, green, violet</span><span class="spacer"></span><span class="note low-note" id="low-note" title="The low resonator's note: the chord's root, or the lowest note you hold in Play mode"></span><button type="button" class="details-btn bands-btn" id="bands-btn" aria-expanded="false" aria-controls="bands-panel" title="The bands: where each layer sits on the pitch axis, which chord tones it rings, its shift">Bands</button></div>
+          <!-- T3.8: plain controls for the band parameters until the resonator display (T6.11) -->
+          <div class="bands-panel frame" id="bands-panel" aria-label="Bands" hidden>
+            <div class="head"><span class="cap"><b>Bands</b></span><span class="note">MIDI notes; a move re-voices after 300 ms</span></div>
+            <div class="knobs">
+              <div data-knob="band_floor" data-label="Floor" data-color="ink" title="The floor: the lowest note of the low band (the low resonator sits within an octave above it)"></div>
+              <div data-knob="band_x1" data-label="Low|Red" data-color="ink" title="Crossover between the low and red bands"></div>
+              <div data-knob="band_x2" data-label="Red|Grn" data-color="ink" title="Crossover between the red and green bands"></div>
+              <div data-knob="band_x3" data-label="Grn|Vio" data-color="ink" title="Crossover between the green and violet bands"></div>
+              <div data-knob="band_ceiling" data-label="Ceiling" data-color="ink" title="The ceiling: the first note above the violet band"></div>
+              <div data-knob="band_blend" data-label="Blend" data-color="ink" title="How far neighbouring bands reach into each other"></div>
+            </div>
+            <div class="band-rows">
+              <span class="cap">red</span><div data-seg="red_tones" data-labels="Root,Root+5,Chord,Colours,All" class="small" title="Which chord tones the red band rings"></div><div data-knob="red_shift" data-label="Shift" data-color="red" title="Transpose the red band against the chord"></div>
+              <span class="cap">green</span><div data-seg="green_tones" data-labels="Root,Root+5,Chord,Colours,All" class="small" title="Which chord tones the green band rings"></div><div data-knob="green_shift" data-label="Shift" data-color="green" title="Transpose the green band against the chord"></div>
+              <span class="cap">violet</span><div data-seg="violet_tones" data-labels="Root,Root+5,Chord,Colours,All" class="small" title="Which chord tones the violet band rings"></div><div data-knob="violet_shift" data-label="Shift" data-color="violet" title="Transpose the violet band against the chord"></div>
+            </div>
+          </div>
           <div class="layers-grid">
             <canvas id="cv-layers" title="Each layer's level and ring-out time; the low resonator in ink"></canvas>
             <div class="layer-knobs">

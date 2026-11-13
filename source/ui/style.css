@@ -364,6 +364,16 @@ header {
 .layers-grid canvas { width: 100%; height: 100%; display: block; }
 .layer-knobs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 8px; align-content: end; }
 .layers-grid .width-knob { align-self: end; }
+/* T3.8: the band parameters, plain, in a popover over the Layers card until T6.11 draws them */
+#layers { position: relative; }
+.bands-btn { height: 20px; padding: 0 8px; font-size: 10px; margin: -2px 0; }
+.bands-panel {
+  position: absolute; left: 8px; right: 8px; top: 34px; z-index: 4; transform: translateZ(0);
+  padding: 8px 12px 10px; background-color: rgba(8, 11, 20, 0.97); border: 1px solid var(--hair);
+}
+.bands-panel[hidden] { display: none; }
+.bands-panel .knobs { margin-top: 8px; }
+.band-rows { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 2px; margin-top: 8px; }
 
 /* details popover: observer, journey, data */
 .details {

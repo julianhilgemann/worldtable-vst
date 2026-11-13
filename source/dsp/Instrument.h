@@ -89,6 +89,11 @@ struct ChordState
     std::array<char, 24> label {};
     std::array<char, 16> roman {};
     std::array<std::array<int16_t, kMaxNotes>, kNumLayers> notes {};
+    /** The band edges the notes were voiced with (T3.8): floor, low│red, red│green, green│violet,
+        ceiling (MIDI notes), and the blend (semitones). In Play mode, the applied bands (the low
+        note's floor). */
+    std::array<int16_t, BandEdges::kCount> edges {};
+    float blend = 0.0f;
     int key = 2;          ///< pitch class of the chord root
     int function = 0;     ///< ChordFunction
     int shape = 0;        ///< index within the function
@@ -172,8 +177,9 @@ private:
     /** One block's parameters: the targets read from the APVTS, and the glided values sent on. */
     struct Controls
     {
-        int key = 2, mood = 0, scale = 0, shape = 0, transpose = 0, registerSemis = 0;
-        float progression = 1.0f, spread = 2.0f, detune = 3.0f, drift = 4.0f, width = 0.9f;
+        int key = 2, mood = 0, scale = 0, shape = 0, transpose = 0;
+        float progression = 1.0f, detune = 3.0f, drift = 4.0f, width = 0.9f;
+        Bands bands;   ///< T3.8: snap (SkySound applies them once still for 300 ms)
         std::array<float, kNumLayers> level { 1.0f, 0.7f, 0.4f };
         std::array<float, kNumLayers> t60 { 20.0f, 6.0f, 2.5f };
         float storm = 0.5f, breath = 0.35f, glow = 0.5f, space = 0.5f, driftMacro = 0.5f;
@@ -191,7 +197,7 @@ private:
         bool play = false;
         float playAttack = 0.01f, playRelease = 2.5f, playVelocity = 0.6f, playDrone = 0.0f;
         float lowLevel = 0.5f, lowDecay = 8.0f;
-        int lowOctave = 0, fltType = 0;
+        int fltType = 0;
         float fltCutoff = 20000.0f, fltReso = 0.1f, fltSky = 0.3f;
     };
 
@@ -239,6 +245,7 @@ private:
     bool chordPublished = false;
     uint32_t publishedChanges = 0;
     bool publishedLatched = false, publishedPending = false, publishedPlay = false;
+    Bands publishedBands {};
     std::array<uint64_t, 2> publishedHeld {};
     sky::TripleBuffer<PlayState> playBuffer;
     std::array<PlayVoices::View, PlayVoices::kSlots> playView {};
