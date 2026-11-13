@@ -747,7 +747,7 @@
 
         const { ctx, w, h } = UI.fit(canvas);
         ctx.clearRect(0, 0, w, h);
-        const base = h - 18, H = base - 8, yBar = h - 8;
+        const base = h - 18, yBar = h - 8;
         // what goes in (the source through the tone stage) and what comes out
         const n = Math.max(40, Math.round(w / 1.5));
         const fin = new Float32Array(n + 1), fout = new Float32Array(n + 1);
@@ -756,10 +756,12 @@
           const f = 20 * Math.pow(1000, i / n);
           fin[i] = specAt(f) + tone(f, tel);
           fout[i] = fin[i] + 20 * Math.log10(Math.max(1e-6, phaserResponse(f, fc, fs, N, fb, mix)));
-          peak = Math.max(peak, fin[i]);
+          peak = Math.max(peak, fin[i], fout[i]);   // the feedback's resonance can stand above what goes in
         }
-        ref += (Math.max(-60, peak) - ref) * (primed ? 0.05 : 1);
-        const Y = (db) => base - H * 0.8 * Math.min(1.25, Math.pow(10, (db - ref) / LIFT));
+        // the tallest point of either curve sits at 90 % of the chart: quick up, slow down, and never past it
+        peak = Math.max(-60, peak);
+        ref += (peak - ref) * (!primed ? 1 : peak > ref ? 0.5 : 0.05);
+        const Y = (db) => base - base * 0.9 * Math.min(1, Math.pow(10, (db - ref) / LIFT));
         const path = (arr) => { ctx.beginPath(); ctx.moveTo(0, base); for (let i = 0; i <= n; i++) ctx.lineTo((i / n) * w, Y(arr[i])); ctx.lineTo(w, base); ctx.closePath(); };
         path(fin); ctx.fillStyle = "rgba(201,211,230,0.06)"; ctx.fill(); ctx.strokeStyle = "rgba(201,211,230,0.3)"; ctx.lineWidth = 1; ctx.stroke();
         path(fout);
