@@ -291,9 +291,14 @@
       </div>
     </section>
 
-    <!-- ============================================================ bottom bar: details, the hint line, auto-gain -->
+    <!-- ============================================================ bottom bar: details, the tour, the size, the hint line, auto-gain -->
     <footer id="hintbar">
       <button type="button" class="chip info-btn" id="details-btn" aria-label="Details" aria-expanded="false" aria-controls="details" data-hint="Details: the station, the journey so far, the sky's numbers, where the data comes from.">i</button>
+      <!-- T6.13 (menu.js, tour.js): the welcome tour and the window's size, both also on right-click -->
+      <button type="button" class="chip" id="tour-btn" data-hint="The welcome tour: five steps through the window, what each part does.">Tour</button>
+      <div class="seg size-seg" id="size-seg" role="radiogroup" aria-label="Window size" data-hint="Window size: small, medium or large. Also on right-click.">
+        <button type="button" role="radio" aria-label="Small" data-size="0">S</button><button type="button" role="radio" aria-label="Medium" data-size="1">M</button><button type="button" role="radio" aria-label="Large" data-size="2">L</button>
+      </div>
       <span id="hint" aria-live="polite"></span>
       <span class="note" id="out-note" data-hint="Auto-gain: how much the drone is lifted or lowered to keep it even."></span>
     </footer>
@@ -324,6 +329,29 @@
         </div>
       </div>
     </div>
+
+    <!-- ============================================================ T6.13: About, the tour, the context menu (over everything) -->
+    <div class="about frame" id="about" role="dialog" aria-labelledby="about-title" hidden>
+      <div class="about-head"><span id="about-title">Worldtable</span><span class="about-ver" id="about-ver"></span><span class="spacer"></span><button type="button" class="chip" id="about-close" data-hint="Close About.">Close</button></div>
+      <p>A drone instrument that plays Earth's magnetic field as the sun shakes it.</p>
+      <div class="info-grid">
+        <span class="k">field</span><span>USGS Geomagnetism Program, College (<b>CMO</b>), public domain</span>
+        <span class="k">Kp</span><span>GFZ Potsdam, CC BY 4.0, doi:10.5880/Kp.0001; NOAA SWPC</span>
+        <span class="k">wind</span><span>NASA OMNI (NASA open data); NOAA SWPC, public domain</span>
+        <span class="k">stars</span><span>Yale Bright Star Catalogue, public domain</span>
+        <span class="k">type</span><span>Instrument Sans, JetBrains Mono: SIL Open Font License 1.1</span>
+        <span class="k">built</span><span>with JUCE 8</span>
+        <span class="k">licence</span><span>open source; the licence is set before the first release</span>
+      </div>
+    </div>
+    <div id="tour-dim" hidden><div id="tour-spot"></div></div>
+    <div id="tour-card" role="dialog" aria-labelledby="tour-title" aria-describedby="tour-text" hidden>
+      <div class="tour-n" id="tour-n"></div>
+      <h4 id="tour-title"></h4>
+      <p id="tour-text"></p>
+      <div class="tour-b"><button type="button" id="tour-skip" data-hint="End the tour. It is on the bottom bar and on right-click.">Skip tour</button><button type="button" id="tour-go" data-hint="The next step of the tour.">Next</button></div>
+    </div>
+    <div class="ctx-menu" id="ctx-menu" role="menu" tabindex="-1" aria-label="Menu" hidden></div>
   </div>
 
   <script src="params.js"></script>
@@ -333,6 +361,8 @@
   <script src="widgets.js"></script>
   <script src="views.js"></script>
   <script src="app.js"></script>
+  <script src="menu.js"></script>
+  <script src="tour.js"></script>
   <script src="mock.js"></script>
 </body>
 </html>

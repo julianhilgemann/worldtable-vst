@@ -51,7 +51,85 @@ juce::var floats (const std::vector<float>& values, double scale)
 
 constexpr std::array<const char*, 4> kPhaseNames { "quiet", "growth", "onset", "recovery" };
 constexpr std::array<const char*, 3> kOnsetKindNames { "loaded", "forced", "pseudo" };
+
+juce::PropertiesFile::Options settingsOptions()
+{
+    juce::PropertiesFile::Options o;
+    o.applicationName = "Worldtable";
+    o.filenameSuffix = ".settings";
+    o.folderName = "Worldtable";
+    o.osxLibrarySubFolder = "Application Support";
+    o.storageFormat = juce::PropertiesFile::storeAsXML;
+    o.millisecondsBeforeSaving = -1;   // UiSettings saves at once, explicitly
+    return o;
+}
+
+/** The usable area of the display the editor is about to open on: the one under the pointer (the
+    person just clicked the plug-in open there), else the main one. */
+juce::Rectangle<int> openingDisplayArea()
+{
+    const auto& displays = juce::Desktop::getInstance().getDisplays();
+    const auto* d = displays.getDisplayForPoint (juce::Desktop::getMousePosition().toFloat());
+    if (d == nullptr)
+        d = displays.getPrimaryDisplay();
+    return d != nullptr ? d->userBounds.toNearestIntEdges() : juce::Rectangle<int> { 0, 0, 1920, 1080 };
+}
 } // namespace
+
+//==============================================================================
+UiSettings::UiSettings (juce::File settingsFile) : file (std::move (settingsFile)) {}
+
+juce::File UiSettings::defaultFile()
+{
+    if (const auto path = juce::SystemStats::getEnvironmentVariable ("WORLDTABLE_SETTINGS_FILE", {}); path.isNotEmpty())
+        return juce::File::getCurrentWorkingDirectory().getChildFile (path);
+    return settingsOptions().getDefaultFile();
+}
+
+int UiSettings::size() const
+{
+    const juce::PropertiesFile props (file, settingsOptions());
+    const int v = props.getIntValue ("uiSize", -1);
+    return v >= 0 && v < kNumSizes ? v : -1;
+}
+
+void UiSettings::setSize (int index)
+{
+    juce::PropertiesFile props (file, settingsOptions());
+    props.setValue ("uiSize", juce::jlimit (0, kNumSizes - 1, index));
+    props.saveIfNeeded();
+}
+
+bool UiSettings::tourSeen() const
+{
+    const juce::PropertiesFile props (file, settingsOptions());
+    return props.getBoolValue ("tourSeen", false);
+}
+
+void UiSettings::setTourSeen (bool seen)
+{
+    juce::PropertiesFile props (file, settingsOptions());
+    props.setValue ("tourSeen", seen);
+    props.saveIfNeeded();
+}
+
+juce::Point<int> UiSettings::sizeOf (int index)
+{
+    switch (index)
+    {
+        case kSmall: return { 1148, 765 };    // 85 %
+        case kLarge: return { 1688, 1125 };   // 125 %
+        default:     return { PluginEditor::kBaseWidth, PluginEditor::kBaseHeight };
+    }
+}
+
+int UiSettings::openingSize (int saved, juce::Rectangle<int> usableArea)
+{
+    if (saved >= 0 && saved < kNumSizes)
+        return saved;
+    const auto medium = sizeOf (kMedium);
+    return usableArea.getWidth() < medium.x + 80 || usableArea.getHeight() < medium.y + 80 ? kSmall : kMedium;
+}
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (p), wtProcessor (p),
@@ -93,6 +171,30 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                      if (const double utc = args[0]; std::isfinite (utc))
                                          wtProcessor.getSky().seek (utc);
                                  complete (true);
+                             })
+        // T6.13: the window's size (Small, Medium, Large) and the welcome tour, kept per computer
+        .withNativeFunction ("getUiSettings", [this] (const juce::Array<juce::var>&, auto complete)
+                             {
+                                 complete (makeUiSettings());
+                             })
+        .withNativeFunction ("setUiSize", [this] (const juce::Array<juce::var>& args, auto complete)
+                             {
+                                 const int index = args.isEmpty() ? -1 : static_cast<int> (args[0]);
+                                 const bool valid = index >= 0 && index < UiSettings::kNumSizes;
+                                 complete (valid);
+                                 if (! valid)
+                                     return;
+                                 // resized after the page's call has returned, not from inside it
+                                 juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<PluginEditor> (this), index]
+                                 {
+                                     if (safe != nullptr)
+                                         safe->applyUiSize (index);
+                                 });
+                             })
+        .withNativeFunction ("setTourSeen", [this] (const juce::Array<juce::var>&, auto complete)
+                             {
+                                 settings.setTourSeen (true);
+                                 complete (true);
                              });
 
     for (auto* param : wtProcessor.getParameters())
@@ -108,13 +210,32 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     browser->goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
    #endif
 
-    setResizable (true, true);
-    setResizeLimits (840, 560, 2400, 1600);
-    if (auto* c = getConstrainer())
-        c->setFixedAspectRatio (static_cast<double> (kBaseWidth) / kBaseHeight);
-    setSize (kBaseWidth, kBaseHeight);
+    // T6.13: three fixed sizes instead of a free resize; the page scales itself to the window
+    setResizable (false, false);
+    uiSize = UiSettings::openingSize (settings.size(), openingDisplayArea());
+    const auto size = UiSettings::sizeOf (uiSize);
+    setSize (size.x, size.y);
 
     startTimerHz (30);
+}
+
+void PluginEditor::applyUiSize (int index)
+{
+    uiSize = juce::jlimit (0, UiSettings::kNumSizes - 1, index);
+    settings.setSize (uiSize);
+    const auto size = UiSettings::sizeOf (uiSize);
+    setSize (size.x, size.y);
+}
+
+juce::var PluginEditor::makeUiSettings() const
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("size", uiSize);
+    o->setProperty ("tourSeen", settings.tourSeen());
+    o->setProperty ("version", juce::String (WORLDTABLE_VERSION));
+    if (wtProcessor.wrapperType != juce::AudioProcessor::wrapperType_Undefined)
+        o->setProperty ("wrapper", juce::String (juce::AudioProcessor::getWrapperTypeDescription (wtProcessor.wrapperType)));
+    return juce::var (o);
 }
 
 void PluginEditor::onPageReady()

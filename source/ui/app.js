@@ -140,13 +140,16 @@
   if (hash.has("view")) viewPop.set(true);
 
   // ---------------------------------------------------------------- scaling
+  // The page fills the window (T6.13: the editor's window is Small, Medium or Large). In the browser
+  // mock the chosen size caps the zoom instead (`UI.sizeFactor`, set by menu.js).
   function rescale() {
-    UI.scale = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H);
+    UI.scale = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H, UI.sizeFactor || Infinity);
     UI.dpr = window.devicePixelRatio || 1;
     const x = (window.innerWidth - BASE_W * UI.scale) / 2, y = (window.innerHeight - BASE_H * UI.scale) / 2;
     $("stage").style.transform = `translate(${x}px, ${y}px) scale(${UI.scale})`;
   }
   window.addEventListener("resize", rescale);
+  UI.rescale = rescale;
   rescale();
 
   // ---------------------------------------------------------------- views
